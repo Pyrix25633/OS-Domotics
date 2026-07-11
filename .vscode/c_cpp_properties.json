@@ -1,0 +1,11 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/src/headers"
+            ]
+        }
+    ],
+    "version": 4
+}

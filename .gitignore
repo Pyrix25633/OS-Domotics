@@ -1,0 +1,6 @@
+# Binary files
+bin/*
+*.o
+
+# Temporary IPC files
+ipc/*
