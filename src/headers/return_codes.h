@@ -30,10 +30,11 @@ typedef unsigned char error_code_t;
 // - CAUSED BY THE APPLICATION - (should never happen)
 
 #define APPLICATION_ERROR     0x20
-#define CODE_FORMAT_ERROR     0x21
-#define COMMAND_FORMAT_ERROR  0x22
-#define RESPONSE_FORMAT_ERROR 0x23
-#define BUFFER_TOO_SHORT      0x24
+#define MISSING_ID_ARGUMENT   0x21
+#define CODE_FORMAT_ERROR     0x22
+#define COMMAND_FORMAT_ERROR  0x23
+#define RESPONSE_FORMAT_ERROR 0x24
+#define BUFFER_TOO_SHORT      0x25
 
 // - CAUSE RELATED TO PROCESSES -
 
@@ -46,6 +47,10 @@ typedef unsigned char error_code_t;
 // - CAUSE RELATED TO IPC -
 
 #define IPC_ERROR             0x50
+#define UNABLE_TO_OPEN_PIPE   0x51
+#define UNABLE_TO_CREATE_PIPE 0x52
+#define UNABLE_TO_CLOSE_PIPE  0x53
+#define UNABLE_TO_REMOVE_PIPE 0x54
 
 // Macros for error checking
 
@@ -75,6 +80,6 @@ typedef unsigned char error_code_t;
  * 
  * TODO: Complete the printing for all possible errors
  */
-void print_error(int fd, int error_code, device_id_t device_id, char *message);
+void print_error(int fd, int error_code, int device_id, char *message);
 
 #endif

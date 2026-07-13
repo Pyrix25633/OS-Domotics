@@ -12,8 +12,9 @@ typedef unsigned char device_type_t;
 
 // Fixed IDS
 
-#define MANUAL_INTERACTION_ID 0 // Special case, it is not really a device with an ID, used for error printing
-#define CONTROLLER_ID         1
+#define NO_ID                 -2 // Special case, the ID is missing, used for error printing
+#define MANUAL_INTERACTION_ID -1 // Special case, it is not really a device with an ID, used for error printing
+#define CONTROLLER_ID         0
 
 // Constants for device types
 
