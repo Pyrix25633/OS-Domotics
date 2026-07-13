@@ -1,7 +1,7 @@
 # Compiler
 CC = gcc
-# TODO: add extra flags for specific libraries, add -Wall -Wextra -pedantic
-CFLAGS = -Isrc/headers
+# TODO: add extra flags for specific libraries
+CFLAGS = -Isrc/headers -Wall -Wextra
 # Name of the file to be compiled and run
 EXEC_NAME = bin/$(FILE)
 # All devices source files for complete compilation

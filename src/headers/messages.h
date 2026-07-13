@@ -6,7 +6,7 @@
 #define DOMOTICS_MESSAGES_H
 
 #include "return_codes.h"
-#include "device_types.h"
+#include "devices.h"
 #include "sys/types.h"
 
 typedef unsigned char command_code_t;

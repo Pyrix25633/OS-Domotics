@@ -5,7 +5,7 @@
 #ifndef DOMOTICS_UTILS_H
 #define DOMOTICS_UTILS_H
 
-#include "device_types.h"
+#include "devices.h"
 #include "return_codes.h"
 
 #define _XOPEN_SOURCE 700

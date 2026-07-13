@@ -1,9 +1,11 @@
 /**
- * This file contains constant definitions and function declarations specific to device types
+ * This file contains constant definitions and function declarations specific to device types, IDs and states
  */
 
-#ifndef DOMOTICS_DEVICE_TYPES_H
-#define DOMOTICS_DEVICE_TYPES_H
+#ifndef DOMOTICS_DEVICES_H
+#define DOMOTICS_DEVICES_H
+
+#include <stdbool.h>
 
 // Data types
 
@@ -40,5 +42,14 @@ typedef unsigned char device_type_t;
 #define IS_HUB(t)         (t & CONTROL_DEVICE_MASK) == HUB
 #define IS_TIMER(t)       (t & CONTROL_DEVICE_MASK) == TIMER
 #define IS_EMPTY(t)       (t & LEAF_DEVICE_MASK) == 0b0000
+
+// Constants for device states
+
+typedef bool leaf_device_state_t;
+typedef unsigned char control_device_state_t;
+
+#define STATE_CLOSED          0
+#define STATE_OPEN            1
+#define STATE_MANUAL_OVERRIDE 2
 
 #endif

@@ -5,7 +5,7 @@
 #ifndef DOMOTICS_RETURN_CODES_H
 #define DOMOTICS_RETURN_CODES_H
 
-#include "device_types.h"
+#include "devices.h"
 
 typedef unsigned char error_code_t;
 

@@ -8,7 +8,25 @@
 #include <sys/stat.h>
 #include <signal.h>
 
-device_id_t id;
+// - Explicit device data -
+
+device_id_t id; // Never changes
+leaf_device_state_t state = STATE_CLOSED; // Modified by switch commands
+u_int8_t autoclose_delay = DEFAULT_AUTOCLOSE_DELAY; // Can be modified
+u_int8_t fill_percentage = DEFAULT_FILL_PERCENTAGE; // Can be modified only manually
+u_int8_t thermostat = DEFAULT_THERMOSTAT; // Can be modified only manually
+u_int32_t seconds_open = INITIAL_SECONDS_OPEN; // Updated automatically, converted into hours for info command
+u_int8_t current_temperature = INITIAL_TEMPERATURE; // Updated automatically
+
+// - Auxiliary device data -
+
+time_t last_opened; // Timestamp needed to calculate the open time and current temperature
+temperature_direction_t temperature_direction = INITIAL_TEMPERATURE_DIRECTION; // Temperature direction needed to calculate current temperature
+
+// - Concurrency management data -
+
+// - IPC data -
+
 int rcv_commands_fd;
 int snd_responses_fd;
 

@@ -1,5 +1,5 @@
 #include "controller.h"
-#include "device_types.h"
+#include "devices.h"
 #include "return_codes.h"
 #include "messages.h"
 #include "utils.h"
