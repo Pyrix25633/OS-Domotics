@@ -6,10 +6,17 @@
 #define DOMOTICS_DEVICE_TYPES_H
 
 // Data types
+
 typedef unsigned device_id_t;
 typedef unsigned char device_type_t;
 
-// Constants
+// Fixed IDS
+
+#define MANUAL_INTERACTION_ID 0 // Special case, it is not really a device with an ID, used for error printing
+#define CONTROLLER_ID         1
+
+// Constants for device types
+
 #define LEAF_DEVICE_MASK    0b0011
 #define BULB                0b0001
 #define WINDOW              0b0010
@@ -20,6 +27,7 @@ typedef unsigned char device_type_t;
 #define TIMER               0b1100
 
 // Macros for type checking
+
 #define IS_LEAF(t)        (t & CONTROL_DEVICE_FLAG) == 0b0000
 #define IS_BULB(t)        t == BULB
 #define IS_WINDOW(t)      t == WINDOW
