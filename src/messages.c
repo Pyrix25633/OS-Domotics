@@ -1,8 +1,9 @@
+#define _XOPEN_SOURCE 700
+
 #include "messages.h"
 #include "return_codes.h"
 #include "utils.h"
 
-#define _XOPEN_SOURCE 800
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
@@ -15,7 +16,8 @@ error_code_t parse_command(command_t *command, char *buffer, size_t size) {
     }
 
     // Parse destination
-    char *token = strtok(buffer, " ");
+    char *last;
+    char *token = strtok_r(buffer, " ", &last);
     if(token == NULL) {
         return COMMAND_FORMAT_ERROR;
     }
@@ -25,7 +27,7 @@ error_code_t parse_command(command_t *command, char *buffer, size_t size) {
     }
 
     // Parse command code
-    token = strtok(NULL, " ");
+    token = strtok_r(NULL, " ", &last);
     if(token == NULL) {
         return COMMAND_FORMAT_ERROR;
     }
@@ -39,7 +41,7 @@ error_code_t parse_command(command_t *command, char *buffer, size_t size) {
 
     // Parse command argument if present
     if(HAS_COMMAND_ARGUMENT(command_code)) {
-        token = strtok(NULL, " ");
+        token = strtok_r(NULL, " ", &last);
         if(token == NULL) {
             return COMMAND_FORMAT_ERROR;
         }
@@ -77,7 +79,8 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
     }
 
     // Parse source
-    char *token = strtok(buffer, " ");
+    char *last;
+    char *token = strtok_r(buffer, " ", &last);
     if(token == NULL) {
         return COMMAND_FORMAT_ERROR;
     }
@@ -87,7 +90,7 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
     }
 
     // Parse command code
-    token = strtok(NULL, " ");
+    token = strtok_r(NULL, " ", &last);
     if(token == NULL) {
         return COMMAND_FORMAT_ERROR;
     }
@@ -97,7 +100,7 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
     }
 
     // Parse response code
-    token = strtok(NULL, " ");
+    token = strtok_r(NULL, " ", &last);
     if(token == NULL) {
         return COMMAND_FORMAT_ERROR;
     }
@@ -114,7 +117,7 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
     if(HAS_RESPONSE_ARGUMENTS(command_code) && response->response_code == OK) {
         unsigned i = 0;
         int parsed;
-        token = strtok(NULL, " ");
+        token = strtok_r(NULL, " ", &last);
         if(token == NULL) {
             return RESPONSE_FORMAT_ERROR;
         }
@@ -125,7 +128,7 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
             }
             response->arguments[i] = parsed;
             i++;
-            token = strtok(NULL, " ");
+            token = strtok_r(NULL, " ", &last);
         } while(token != NULL && i < MAX_RESPONSE_ARGUMENTS);
         response->arguments_size = i;
     }
