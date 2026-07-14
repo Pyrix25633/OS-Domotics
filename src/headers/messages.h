@@ -9,7 +9,14 @@
 #include "devices.h"
 #include "sys/types.h"
 
-typedef unsigned char command_code_t;
+typedef u_int8_t command_code_t;
+
+// The id is 32 bits, it can be at maximum 4294967295, so 10 digits
+// The command code is 8 bits, it can be at maximum 255, so 3 digits
+// The argument is 16 bits, it can be at maximum 65535, so 5 digits
+// There are 2 spaces and the terminator char
+// So maximum size is 10 + 3 + 5 + 2 + 1 = 21, round to 24 just to be sure
+#define MAX_COMMAND_SIZE 24
 
 typedef struct command_t {
     device_id_t destination;
@@ -19,6 +26,14 @@ typedef struct command_t {
 
 #define MAX_RESPONSE_ARGUMENTS 6 // Maximum is from a fridge info
 
+// The id is 32 bits, it can be at maximum 4294967295, so 10 digits
+// The command code is 8 bits, it can be at maximum 255, so 3 digits
+// The response code is 16 bits, it can be at maximum 65535, so 5 digits
+// Each argument is 16 bits, it can be at maximum 65535, so 5 digits
+// There are maximum 6 arguments, 2 + 5 = 7 spaces and the terminator char
+// So maximum size is 10 + 3 + 5 + 5*6 + 7 = 55, round to 64 just to be sure
+#define MAX_RESPONSE_SIZE 64
+
 typedef struct response_t {
     device_id_t source;
     command_code_t command_code;
@@ -26,6 +41,8 @@ typedef struct response_t {
     u_int16_t arguments[MAX_RESPONSE_ARGUMENTS];
     size_t arguments_size; // Not present in the formatted response, set before formatting
 } response_t;
+
+// Command codes (`0b` prefix indicates binary, it's an extension)
 
 #define COMMAND_ARGUMENT_FLAG   0b0100000
 #define RESPONSE_ARGUMENTS_FLAG 0b1000000
@@ -52,6 +69,7 @@ typedef struct response_t {
 #define DELETE                  0b0011000
 #define LINK                    0b1101000
 #define REGISTRY                0b1110000
+#define NULL_COMMAND            0b0000000 // Used when the command could not be parsed but is needed in the response
 
 #define IS_INFO(c)                (c & COMMAND_MASK) == INFO
 #define IS_LINK(c)                (c & COMMAND_MASK) == LINK

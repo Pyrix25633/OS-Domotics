@@ -6,11 +6,12 @@
 #define DOMOTICS_DEVICES_H
 
 #include <stdbool.h>
+#include <sys/types.h>
 
 // Data types
 
-typedef unsigned device_id_t;
-typedef unsigned char device_type_t;
+typedef u_int32_t device_id_t;
+typedef u_int8_t device_type_t;
 
 // Fixed IDS
 

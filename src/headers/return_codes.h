@@ -7,7 +7,9 @@
 
 #include "devices.h"
 
-typedef unsigned char error_code_t;
+#include <sys/types.h>
+
+typedef u_int8_t error_code_t;
 
 // -- SUCCESS CODES --
 
