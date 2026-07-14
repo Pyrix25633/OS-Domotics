@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 700
+
 #include "hub.h"
 #include "devices.h"
 #include "return_codes.h"

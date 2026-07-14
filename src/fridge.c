@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 700
+
 #include "fridge.h"
 #include "utils.h"
 #include "return_codes.h"
@@ -7,6 +9,8 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <time.h>
+#include <pthread.h>
 
 // - Explicit device data -
 
@@ -24,6 +28,8 @@ time_t last_opened; // Timestamp needed to calculate the open time and current t
 temperature_direction_t temperature_direction = INITIAL_TEMPERATURE_DIRECTION; // Temperature direction needed to calculate current temperature
 
 // - Concurrency management data -
+
+pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely
 
 // - IPC data -
 
@@ -53,4 +59,34 @@ void handle_shutdown() {
     }
     // TODO: add here things to do on deletion
     exit(error_code);
+}
+
+error_code_t set_state(leaf_device_state_t new_state) {
+    if(pthread_mutex_lock(&data_mutex) < 0) {
+        return UNABLE_TO_LOCK_MUTEX;
+    }
+
+    if(new_state != state) {
+        state = new_state;
+        if(state == STATE_OPEN) {
+            last_opened = time(NULL);
+        } else {
+            seconds_open = calculate_seconds_open();
+        }
+        current_temperature = calculate_current_temperature();
+    }
+
+    if(pthread_mutex_unlock(&data_mutex) < 0) {
+        return UNABLE_TO_UNLOCK_MUTEX;
+    }
+    return OK;
+}
+
+u_int32_t calculate_seconds_open() {
+    return seconds_open + (time(NULL) - last_opened);
+}
+
+u_int8_t calculate_current_temperature() {
+    // TODO: actually implement the function
+    return current_temperature;
 }

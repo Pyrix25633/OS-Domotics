@@ -8,7 +8,6 @@
 #include "devices.h"
 #include "return_codes.h"
 
-#define _XOPEN_SOURCE 700
 #include <stdbool.h>
 #include <sys/types.h>
 
@@ -97,5 +96,17 @@ void start_device_fifos(device_id_t device_id, int *rcv_commands_fd, int *snd_re
  * `OK` otherwise
  */
 error_code_t end_device_fifos(device_id_t device_id, int rcv_commands_fd, int snd_responses_fd, int rcv_responses_fd);
+
+/**
+ * Closes the current pipe used to send commands to the parent and replaces it with the new one
+ * 
+ * @param parent_id New parent device ID
+ * @param snd_responses_fd Pointer where to get the old file descriptor and put the new file descriptor
+ * 
+ * @returns `UNABLE_TO_CLOSE_PIPE` if the pipe could not be closed,
+ * `UNABLE_TO_OPEN_PIPE` if the pipe could not be opened,
+ * `OK` otherwise
+ */
+error_code_t change_snd_responses_pipe(device_id_t parent_id, int *snd_responses_fd);
 
 #endif

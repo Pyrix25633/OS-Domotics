@@ -1,6 +1,7 @@
+#define _XOPEN_SOURCE 700
+
 #include "return_codes.h"
 
-#define _XOPEN_SOURCE 700
 #include <stdio.h>
 #include <errno.h>
 

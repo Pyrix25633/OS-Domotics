@@ -22,35 +22,37 @@ typedef unsigned char error_code_t;
 
 // - CAUSED BY USER -
 
-#define USER_ERROR            0x10
-#define INVALID_COMMAND       0x11
-#define DEVICE_TYPE_MISMATCH  0x12
-#define DEVICE_NOT_FOUND      0x13
+#define USER_ERROR             0x10
+#define INVALID_COMMAND        0x11
+#define DEVICE_TYPE_MISMATCH   0x12
+#define DEVICE_NOT_FOUND       0x13
 
 // - CAUSED BY THE APPLICATION - (should never happen)
 
-#define APPLICATION_ERROR     0x20
-#define MISSING_ID_ARGUMENT   0x21
-#define CODE_FORMAT_ERROR     0x22
-#define COMMAND_FORMAT_ERROR  0x23
-#define RESPONSE_FORMAT_ERROR 0x24
-#define BUFFER_TOO_SHORT      0x25
+#define APPLICATION_ERROR      0x20
+#define MISSING_ID_ARGUMENT    0x21
+#define CODE_FORMAT_ERROR      0x22
+#define COMMAND_FORMAT_ERROR   0x23
+#define RESPONSE_FORMAT_ERROR  0x24
+#define BUFFER_TOO_SHORT       0x25
 
 // - CAUSE RELATED TO PROCESSES -
 
-#define PROCESS_ERROR         0x30
+#define PROCESS_ERROR          0x30
 
 // - CAUSE RELATED TO THREADS -
 
-#define THREAD_ERROR          0x40
+#define THREAD_ERROR           0x40
+#define UNABLE_TO_LOCK_MUTEX   0x41
+#define UNABLE_TO_UNLOCK_MUTEX 0x42
 
 // - CAUSE RELATED TO IPC -
 
-#define IPC_ERROR             0x50
-#define UNABLE_TO_OPEN_PIPE   0x51
-#define UNABLE_TO_CREATE_PIPE 0x52
-#define UNABLE_TO_CLOSE_PIPE  0x53
-#define UNABLE_TO_REMOVE_PIPE 0x54
+#define IPC_ERROR              0x50
+#define UNABLE_TO_OPEN_PIPE    0x51
+#define UNABLE_TO_CREATE_PIPE  0x52
+#define UNABLE_TO_CLOSE_PIPE   0x53
+#define UNABLE_TO_REMOVE_PIPE  0x54
 
 // Macros for error checking
 
