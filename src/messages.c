@@ -8,7 +8,7 @@
 #include <string.h>
 #include <limits.h>
 
-error_code_t parse_command(command_t *command, char *buffer, size_t size) {
+error_code_t parse_request(request_t *request, char *buffer, size_t size) {
     // Check that the string is NULL-terminated, if not the buffer was too short
     size_t length = string_length(buffer, size);
     if(length == size) {
@@ -19,54 +19,54 @@ error_code_t parse_command(command_t *command, char *buffer, size_t size) {
     char *last;
     char *token = strtok_r(buffer, " ", &last);
     if(token == NULL) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
     int destination = string_to_unsigned(token);
     if(IS_RETURN_ERROR(destination)) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
 
     // Parse command code
     token = strtok_r(NULL, " ", &last);
     if(token == NULL) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
     int command_code = string_to_unsigned(token);
     if(IS_RETURN_ERROR(command_code)) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
 
-    command->destination = destination;
-    command->command_code = command_code;
+    request->destination = destination;
+    request->command_code = command_code;
 
     // Parse command argument if present
     if(HAS_COMMAND_ARGUMENT(command_code)) {
         token = strtok_r(NULL, " ", &last);
         if(token == NULL) {
-            return COMMAND_FORMAT_ERROR;
+            return REQUEST_FORMAT_ERROR;
         }
         int argument = string_to_unsigned(token);
         if(IS_RETURN_ERROR(argument)) {
-            return COMMAND_FORMAT_ERROR;
+            return REQUEST_FORMAT_ERROR;
         }
-        command->argument = argument;
+        request->argument = argument;
     }
 
     return OK;
 }
 
-error_code_t format_command(command_t *command, char *buffer, size_t size) {
+error_code_t format_request(request_t *request, char *buffer, size_t size) {
     int length;
-    if(HAS_COMMAND_ARGUMENT(command->command_code)) {
-        length = snprintf(buffer, size, "%u %u %u", command->destination, command->command_code, command->argument);
+    if(HAS_COMMAND_ARGUMENT(request->command_code)) {
+        length = snprintf(buffer, size, "%u %u %u", request->destination, request->command_code, request->argument);
     } else {
-        length = snprintf(buffer, size, "%u %u", command->destination, command->command_code);
+        length = snprintf(buffer, size, "%u %u", request->destination, request->command_code);
     }
     if(length >= size) {
         return BUFFER_TOO_SHORT;
     }
     if(length < 0) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
     return OK;
 }
@@ -82,31 +82,31 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
     char *last;
     char *token = strtok_r(buffer, " ", &last);
     if(token == NULL) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
     int source = string_to_unsigned(token);
     if(IS_RETURN_ERROR(source)) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
 
     // Parse command code
     token = strtok_r(NULL, " ", &last);
     if(token == NULL) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
     int command_code = string_to_unsigned(token);
     if(IS_RETURN_ERROR(command_code)) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
 
     // Parse response code
     token = strtok_r(NULL, " ", &last);
     if(token == NULL) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
     int response_code = string_to_unsigned(token);
     if(IS_RETURN_ERROR(response_code)) {
-        return COMMAND_FORMAT_ERROR;
+        return REQUEST_FORMAT_ERROR;
     }
 
     response->source = source;

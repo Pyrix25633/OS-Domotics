@@ -27,7 +27,7 @@ void print_error(int fd, int error_code, int device_id, char *message) {
 
         case MISSING_ID_ARGUMENT:   dprintf(fd, "missing ID argument");       break;
         case CODE_FORMAT_ERROR:     dprintf(fd, "code format error");         break;
-        case COMMAND_FORMAT_ERROR:  dprintf(fd, "command format error");      break;
+        case REQUEST_FORMAT_ERROR:  dprintf(fd, "command format error");      break;
         case RESPONSE_FORMAT_ERROR: dprintf(fd, "response forma error");      break;
         case BUFFER_TOO_SHORT:      dprintf(fd, "buffer too short");          break;
 

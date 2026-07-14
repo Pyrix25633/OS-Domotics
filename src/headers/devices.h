@@ -50,7 +50,9 @@ typedef bool leaf_device_state_t;
 typedef unsigned char control_device_state_t;
 
 #define STATE_CLOSED          0
+#define STATE_OFF             0
 #define STATE_OPEN            1
+#define STATE_ON              1
 #define STATE_MANUAL_OVERRIDE 2
 
 #endif

@@ -55,11 +55,11 @@ error_code_t create_fifo_name(device_id_t device_id, bool down, char* buffer, si
     return OK;
 }
 
-void start_device_fifos(device_id_t device_id, int *rcv_commands_fd, int *snd_responses_fd, int *rcv_responses_fd) {
+void start_device_fifos(device_id_t device_id, int *rcv_requests_fd, int *snd_responses_fd, int *rcv_responses_fd) {
     char name[PIPE_NAME_MAX_LENGTH];
     if(create_fifo_name(device_id, true, name, PIPE_NAME_MAX_LENGTH) != OK
         || mkfifo(name, PIPE_PERMISSIONS) < 0
-        || (*rcv_commands_fd = open(name, O_RDONLY)) < 0) {
+        || (*rcv_requests_fd = open(name, O_RDONLY)) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, device_id, "creating the device pipe to receive commands");
         exit(UNABLE_TO_CREATE_PIPE);
     }
@@ -78,12 +78,12 @@ void start_device_fifos(device_id_t device_id, int *rcv_commands_fd, int *snd_re
     }
 }
 
-error_code_t end_device_fifos(device_id_t device_id, int rcv_commands_fd, int snd_responses_fd, int rcv_responses_fd) {
+error_code_t end_device_fifos(device_id_t device_id, int rcv_requests_fd, int snd_responses_fd, int rcv_responses_fd) {
     error_code_t error_code = OK;
     char name[PIPE_NAME_MAX_LENGTH];
 
     // Close the parent command fifo, close and delete `"./ipc/<id>_down.fifo"`
-    if(close(rcv_commands_fd) < 0) {
+    if(close(rcv_requests_fd) < 0) {
         error_code = UNABLE_TO_CLOSE_PIPE;
     }
     if(close(snd_responses_fd) < 0) {

@@ -16,13 +16,13 @@ typedef u_int8_t command_code_t;
 // The argument is 16 bits, it can be at maximum 65535, so 5 digits
 // There are 2 spaces and the terminator char
 // So maximum size is 10 + 3 + 5 + 2 + 1 = 21, round to 24 just to be sure
-#define MAX_COMMAND_SIZE 24
+#define MAX_REQUEST_SIZE 24
 
-typedef struct command_t {
+typedef struct request_t {
     device_id_t destination;
     command_code_t command_code;
     u_int16_t argument;
-} command_t;
+} request_t;
 
 #define MAX_RESPONSE_ARGUMENTS 6 // Maximum is from a fridge info
 
@@ -71,6 +71,8 @@ typedef struct response_t {
 #define REGISTRY                0b1110000
 #define NULL_COMMAND            0b0000000 // Used when the command could not be parsed but is needed in the response
 
+// Command checking macros
+
 #define IS_INFO(c)                (c & COMMAND_MASK) == INFO
 #define IS_LINK(c)                (c & COMMAND_MASK) == LINK
 #define LINK_SUBCOMMAND(c)        c & LINK_MASK
@@ -81,31 +83,43 @@ typedef struct response_t {
 #define HAS_COMMAND_ARGUMENT(c)   (c & COMMAND_ARGUMENT_FLAG) == COMMAND_ARGUMENT_FLAG
 #define HAS_RESPONSE_ARGUMENTS(c) (c & RESPONSE_ARGUMENTS_FLAG) == RESPONSE_ARGUMENTS_FLAG
 
+// Response argument positions
+
+#define STATE_ARGUMENT           0
+#define OPEN_HOURS_ARGUMENT      1
+#define ON_HOURS_ARGUMENT        1
+#define AUTOCLOSE_DELAY_ARGUMENT 2
+#define BEGIN_ARGUMENT           2
+#define FILL_PERCENTAGE_ARGUMENT 3
+#define END_ARGUMENT             3
+#define THERMOSTAT_ARGUMENT      4
+#define TEMPERATURE_ARGUMENT     5
+
 /**
- * Parses a string command and puts information in the command data structure
+ * Parses a string request and puts information in the request data structure
  * 
- * @param command Pointer to the data structure in which to put the parsed command
- * @param buffer Pointer to the string command to be parsed
+ * @param request Pointer to the data structure in which to put the parsed request
+ * @param buffer Pointer to the string request to be parsed
  * @param size Size of the buffer
  * 
  * @returns `BUFFER_TOO_SHORT` if the string is not NULL-terminated and so the reading buffer was too short,
- * `COMMAND_FORMAT_ERROR` if there was an error in the format,
+ * `REQUEST_FORMAT_ERROR` if there was an error in the format,
  * `OK` otherwise
  */
-error_code_t parse_command(command_t *command, char *buffer, size_t size);
+error_code_t parse_request(request_t *request, char *buffer, size_t size);
 
 /**
- * Creates a string command from information in the command data structure
+ * Creates a string request from information in the request data structure
  * 
- * @param command Pointer to the data structure containing the command to format as string
- * @param buffer Pointer to a string buffer in which the command will be put
+ * @param request Pointer to the data structure containing the request to format as string
+ * @param buffer Pointer to a string buffer in which the request will be put
  * @param size Size of the buffer
  * 
- * @returns `BUFFER_TOO_SHORT` if the formatted command does not fit in the buffer,
- * `COMMAND_FORMAT_ERROR` if there was an error formatting the string,
+ * @returns `BUFFER_TOO_SHORT` if the formatted request does not fit in the buffer,
+ * `REQUEST_FORMAT_ERROR` if there was an error formatting the string,
  * `OK` otherwise
  */
-error_code_t format_command(command_t *command, char *buffer, size_t size);
+error_code_t format_request(request_t *request, char *buffer, size_t size);
 
 /**
  * Parses a string response and puts information in the response data structure

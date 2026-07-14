@@ -56,8 +56,9 @@ void handle_shutdown();
  * 
  * @param new_state The new state
  * 
- * @returns `UNABLE_TO_LOCK_MUTEX` or `UNABLE_TO_UNLOCK_MUTEX` if errors happened while trying to access
- * the data using the mutex,
+ * If the mutex cannot be unlocked the function exits as it's a fatal non-solvable error
+ * 
+ * @returns `UNABLE_TO_LOCK_MUTEX` the mutex could not be locked,
  * `OK` otherwise
  */
 error_code_t set_state(leaf_device_state_t new_state);
