@@ -15,6 +15,11 @@
 #define PIPE_PERMISSIONS 0660
 #define NO_FILE_DESCRIPTOR -1
 
+typedef bool pipe_direction_t;
+
+#define DIRECTION_UP   0
+#define DIRECTION_DOWN 1
+
 /**
  * Measures the length of a possibly not NULL-terminated string
  * @param string The string to measure
@@ -46,7 +51,7 @@ int get_id_from_arguments(int argc, char *argv[]);
  * Create the pipe name from the ID and the direction
  * 
  * @param device_id The device ID
- * @param down `true` if the direction is down, `false` if the direction is up
+ * @param direction The pipe direction
  * @param buffer Where to put the name string
  * @param size Maximum size of the buffer
  * 
@@ -54,20 +59,17 @@ int get_id_from_arguments(int argc, char *argv[]);
  * `CODE_FORMAT_ERROR` if there was a problem formatting the string,
  * `OK` otherwise
  */
-error_code_t create_fifo_name(device_id_t device_id, bool down, char* buffer, size_t size);
+error_code_t create_fifo_name(device_id_t device_id, pipe_direction_t direction, char* buffer, size_t size);
 
 /**
- * Initializes device fifos, opens the pipe to the Controller and creates its pipe in `"./ipc/<id>_down.fifo"`
- * and optionally `"./ipc/<id>_up.fifo"` for a control device
+ * Initializes device fifos, opens the pipes to the Controller and its pipe in `"./ipc/<id>_down.fifo"`
+ * and optionally creates and opens `"./ipc/<id>_up.fifo"` for a control device
  * 
  * @param device_id The device ID
  * @param rcv_requests_fd Pointer where the function will put the file descriptor where to receive requests from the parent
  * @param snd_responses_fd Pointer where the function will put the file descriptor where to send responses to the parent
  * @param rcv_responses_fd Pointer where the function will put the file descriptor where to receive responses from the
  * child/children, `NULL` for a leaf device
- * 
- * This function blocks until pipes opened in reading mode are opened in writing mode by other processes and viceversa,
- * for testing use `echo "" > ./ipc/<id>_down.fifo` and `cat 0_up.fifo`
  * 
  * If any error happens the function exits as it's a critical non-solvable error
  * 

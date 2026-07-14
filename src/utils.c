@@ -44,8 +44,8 @@ int get_id_from_arguments(int argc, char *argv[]) {
     exit(MISSING_ID_ARGUMENT);
 }
 
-error_code_t create_fifo_name(device_id_t device_id, bool down, char* buffer, size_t size) {
-    int length = snprintf(buffer, size, "./ipc/%u_%s.fifo", device_id, down ? "down" : "up");
+error_code_t create_fifo_name(device_id_t device_id, pipe_direction_t direction, char* buffer, size_t size) {
+    int length = snprintf(buffer, size, "./ipc/%u_%s.fifo", device_id, direction == DIRECTION_DOWN ? "down" : "up");
     if(length < 0) {
         return CODE_FORMAT_ERROR;
     }
@@ -58,9 +58,8 @@ error_code_t create_fifo_name(device_id_t device_id, bool down, char* buffer, si
 void start_device_fifos(device_id_t device_id, int *rcv_requests_fd, int *snd_responses_fd, int *rcv_responses_fd) {
     char name[PIPE_NAME_MAX_LENGTH];
     if(create_fifo_name(device_id, true, name, PIPE_NAME_MAX_LENGTH) != OK
-        || mkfifo(name, PIPE_PERMISSIONS) < 0
         || (*rcv_requests_fd = open(name, O_RDONLY)) < 0) {
-        print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, device_id, "creating the device pipe to receive commands");
+        print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, device_id, "opening the device pipe to receive commands");
         exit(UNABLE_TO_CREATE_PIPE);
     }
     if(create_fifo_name(CONTROLLER_ID, false, name, PIPE_NAME_MAX_LENGTH) != OK
@@ -89,10 +88,6 @@ error_code_t end_device_fifos(device_id_t device_id, int rcv_requests_fd, int sn
     if(close(snd_responses_fd) < 0) {
         error_code = UNABLE_TO_CLOSE_PIPE;
     }
-    if(create_fifo_name(device_id, true, name, PIPE_NAME_MAX_LENGTH) != OK
-        || remove(name) < 0) {
-        error_code = UNABLE_TO_REMOVE_PIPE;
-    }
     
     if(rcv_responses_fd != NO_FILE_DESCRIPTOR) {
         // Close and delete `"./ipc/<id>_up.fifo"`
@@ -111,9 +106,10 @@ error_code_t change_snd_responses_pipe(device_id_t parent_id, int *snd_responses
     if(close(*snd_responses_fd) < 0) {
         return UNABLE_TO_CLOSE_PIPE;
     }
-    char *name[PIPE_NAME_MAX_LENGTH];
+    char name[PIPE_NAME_MAX_LENGTH];
     if(create_fifo_name(parent_id, false, name, PIPE_NAME_MAX_LENGTH) != OK
         || (*snd_responses_fd = open(name, O_WRONLY)) < 0) {
         return UNABLE_TO_OPEN_PIPE;
     }
+    return OK;
 }

@@ -21,7 +21,7 @@ u_int8_t autoclose_delay = DEFAULT_AUTOCLOSE_DELAY; // Can be modified
 u_int8_t fill_percentage = DEFAULT_FILL_PERCENTAGE; // Can be modified only manually
 u_int8_t thermostat = DEFAULT_THERMOSTAT; // Can be modified only manually
 u_int32_t seconds_open = INITIAL_SECONDS_OPEN; // Updated automatically, converted into hours for info request
-u_int8_t current_temperature = INITIAL_TEMPERATURE; // Updated automatically
+u_int8_t last_temperature = INITIAL_TEMPERATURE; // Updated automatically
 
 // - Auxiliary device data -
 
@@ -52,24 +52,29 @@ int main(int argc, char *argv[]) {
 
     // TODO: check what happens when the parent closes the pipe because the device is moved around
     // TODO: it probably exits from the while, it must be solved somehow
-    char command_buffer[MAX_REQUEST_SIZE];
+    char request_buffer[MAX_REQUEST_SIZE];
     char response_buffer[MAX_RESPONSE_SIZE];
+    request_t request;
+    response_t response;
+    response.source = id;
+    error_code_t error_code;
     while(!force_exit) {
-        // TODO: check for errors in reading
-        read(rcv_requests_fd, command_buffer, MAX_REQUEST_SIZE);
-        request_t request;
-        response_t response;
-        response.source = id;
-        error_code_t error_code = parse_request(&request, command_buffer, MAX_REQUEST_SIZE);
-        if(error_code != OK) {
+        response.arguments_size = 0;
+        if(read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE) < 0 || printf("Read: %s\n", request_buffer) < 0) {
+            response.command_code = NULL_COMMAND; // Could not be parsed
+            response.response_code = UNABLE_TO_READ_PIPE;
+            printf("Read error\n"); // ! remove
+        }
+        else if((error_code = parse_request(&request, request_buffer, MAX_REQUEST_SIZE)) != OK) {
             response.command_code = NULL_COMMAND; // Could not be parsed
             response.response_code = error_code;
-            response.arguments_size = 0;
+            printf("Parse error: %u\n", error_code); // ! remove
         }
         else {
             response.command_code = request.command_code;
             response.response_code = OK;
             response.arguments_size = 0;
+            printf("Received command: %u\n", request.command_code); // ! remove
             if(pthread_mutex_lock(&data_mutex) < 0) {
                 response.response_code = UNABLE_TO_LOCK_MUTEX;
             } else if(request.destination != id) {
@@ -77,21 +82,21 @@ int main(int argc, char *argv[]) {
             } else if(IS_INFO(request.command_code)) {
                 response.arguments_size = 6;
                 response.arguments[STATE_ARGUMENT] = state;
-                response.arguments[OPEN_HOURS_ARGUMENT] = calculate_seconds_open();
+                response.arguments[OPEN_HOURS_ARGUMENT] = calculate_seconds_open() / (60*60);
                 response.arguments[AUTOCLOSE_DELAY_ARGUMENT] = autoclose_delay;
                 response.arguments[FILL_PERCENTAGE_ARGUMENT] = fill_percentage;
                 response.arguments[THERMOSTAT_ARGUMENT] = thermostat;
-                response.arguments[TEMPERATURE_ARGUMENT] = current_temperature;
+                response.arguments[TEMPERATURE_ARGUMENT] = calculate_current_temperature();
             } else if(IS_LINK(request.command_code) && LINK_SUBCOMMAND(request.command_code) == LINK_CHANGE_PARENT) {
                 response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
             } else if(IS_DELETE(request.command_code)) {
-                // TODO
+                // TODO: check if there are other things to do
                 force_exit = true;
             } else if(IS_REGISTRY(request.command_code)) {
                 if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_DELAY) {
                     autoclose_delay = request.argument;
                 } else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_THERMOSTAT) {
-                    // TODO: validate
+                    // TODO: validate thermostat
                     thermostat = request.argument;
                 } else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_PERCENTAGE) {
                     if(request.argument <= 100) {
@@ -99,6 +104,18 @@ int main(int argc, char *argv[]) {
                     } else {
                         response.response_code = INVALID_REQUEST_ARGUMENT;
                     }
+                }
+            } else if(IS_SWITCH(request.command_code)) {
+                if(SWITCH_LABEL(request.command_code) == SWITCH_OPEN) {
+                    if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
+                        set_state(STATE_OPEN);
+                    }
+                } else if(SWITCH_LABEL(request.command_code) == SWITCH_CLOSE) {
+                    if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
+                        set_state(STATE_CLOSED);
+                    }
+                } else {
+                    response.response_code = INVALID_COMMAND;
                 }
             } else {
                 response.response_code = INVALID_COMMAND;
@@ -109,8 +126,10 @@ int main(int argc, char *argv[]) {
         }
         // TODO: wait a random time
         error_code = format_response(&response, response_buffer, MAX_RESPONSE_SIZE);
-        if(error_code != OK || write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
-            print_error(STDERR_FILENO, error_code, id, "while sending response");
+        if(error_code != OK) {
+            print_error(STDERR_FILENO, error_code, id, "while formatting response");
+        } else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
+            print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
         }
     }
 
@@ -126,11 +145,7 @@ void handle_shutdown() {
     exit(error_code);
 }
 
-error_code_t set_state(leaf_device_state_t new_state) {
-    if(pthread_mutex_lock(&data_mutex) < 0) {
-        return UNABLE_TO_LOCK_MUTEX;
-    }
-
+void set_state(leaf_device_state_t new_state) {
     if(new_state != state) {
         state = new_state;
         if(state == STATE_OPEN) {
@@ -138,14 +153,8 @@ error_code_t set_state(leaf_device_state_t new_state) {
         } else {
             seconds_open = calculate_seconds_open();
         }
-        current_temperature = calculate_current_temperature();
+        last_temperature = calculate_current_temperature();
     }
-
-    if(pthread_mutex_unlock(&data_mutex) < 0) {
-        print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while setting state");
-        exit(UNABLE_TO_UNLOCK_MUTEX);
-    }
-    return OK;
 }
 
 u_int32_t calculate_seconds_open() {
@@ -154,5 +163,5 @@ u_int32_t calculate_seconds_open() {
 
 u_int8_t calculate_current_temperature() {
     // TODO: actually implement the function
-    return current_temperature;
+    return last_temperature;
 }

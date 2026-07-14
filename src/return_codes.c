@@ -21,22 +21,25 @@ void print_error(int fd, int error_code, int device_id, char *message) {
     }
     dprintf(fd, " error: 0x%2x ", error_code);
     switch(error_code) {
-        case INVALID_COMMAND:       dprintf(fd, "invalid command");           break;
-        case DEVICE_TYPE_MISMATCH:  dprintf(fd, "device type mismatch");      break;
-        case DEVICE_NOT_FOUND:      dprintf(fd, "device not found");          break;
+        case INVALID_COMMAND:          dprintf(fd, "invalid command");          break;
+        case DEVICE_TYPE_MISMATCH:     dprintf(fd, "device type mismatch");     break;
+        case DEVICE_NOT_FOUND:         dprintf(fd, "device not found");         break;
 
-        case MISSING_ID_ARGUMENT:   dprintf(fd, "missing ID argument");       break;
-        case CODE_FORMAT_ERROR:     dprintf(fd, "code format error");         break;
-        case REQUEST_FORMAT_ERROR:  dprintf(fd, "command format error");      break;
-        case RESPONSE_FORMAT_ERROR: dprintf(fd, "response forma error");      break;
-        case BUFFER_TOO_SHORT:      dprintf(fd, "buffer too short");          break;
+        case MISSING_ID_ARGUMENT:      dprintf(fd, "missing ID argument");      break;
+        case CODE_FORMAT_ERROR:        dprintf(fd, "code format error");        break;
+        case REQUEST_FORMAT_ERROR:     dprintf(fd, "request format error");     break;
+        case RESPONSE_FORMAT_ERROR:    dprintf(fd, "response forma error");     break;
+        case BUFFER_TOO_SHORT:         dprintf(fd, "buffer too short");         break;
+        case INVALID_REQUEST_ARGUMENT: dprintf(fd, "invalid request argument"); break;
 
-        case UNABLE_TO_OPEN_PIPE:   dprintf(fd, "unable to open pipe");       break;
-        case UNABLE_TO_CREATE_PIPE: dprintf(fd, "unable to create pipe");     break;
-        case UNABLE_TO_CLOSE_PIPE:  dprintf(fd, "unable to close pipe");      break;
-        case UNABLE_TO_REMOVE_PIPE: dprintf(fd, "unable to remove pipe");     break;
+        case UNABLE_TO_OPEN_PIPE:      dprintf(fd, "unable to open pipe");      break;
+        case UNABLE_TO_CREATE_PIPE:    dprintf(fd, "unable to create pipe");    break;
+        case UNABLE_TO_CLOSE_PIPE:     dprintf(fd, "unable to close pipe");     break;
+        case UNABLE_TO_REMOVE_PIPE:    dprintf(fd, "unable to remove pipe");    break;
+        case UNABLE_TO_READ_PIPE:      dprintf(fd, "unable to read pipe");      break;
+        case UNABLE_TO_WRITE_PIPE:     dprintf(fd, "unable to write pipe");     break;
 
-        default:                    dprintf(fd, "no additional information");
+        default:                       dprintf(fd, "no additional information");
     }
     if(error_code >= PROCESS_ERROR) {
         dprintf(fd, ", errno: %d", errno);

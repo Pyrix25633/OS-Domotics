@@ -55,13 +55,8 @@ void handle_shutdown();
  * Sets the state and updates auxiliary variables
  * 
  * @param new_state The new state
- * 
- * If the mutex cannot be unlocked the function exits as it's a fatal non-solvable error
- * 
- * @returns `UNABLE_TO_LOCK_MUTEX` the mutex could not be locked,
- * `OK` otherwise
  */
-error_code_t set_state(leaf_device_state_t new_state);
+void set_state(leaf_device_state_t new_state);
 
 /**
  * Calculates the current total number of seconds the fridge was left open
