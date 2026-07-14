@@ -19,7 +19,7 @@
 #define MAX_WINDOW_ARGUMENTS    2
 
 //TODO values to substitute, just placeholders for now
-#define DESTINATION_ID_MISMATCH   0x11
+#define UNEXPECTED_COMMAND 0x11
 
 /**
  * Main function of the Window Program
@@ -52,5 +52,10 @@ void execute_command();
  * TODO
  */
 void info_response();
+
+/**
+ * TODO
+ */
+void link_response(command_code_t code);
 
 #endif

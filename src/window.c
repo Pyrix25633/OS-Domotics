@@ -77,8 +77,6 @@ void execute_command(){
     //default values for the response, to be changed if needed
 
     command_code_t code = NULL_COMMAND;
-    u_int16_t arguments[MAX_RESPONSE_ARGUMENTS] = NULL;
-    size_t arguments_size = 0;
 
     //TODO for every case I put the correct value and only at the end i create the response with the right parameters
 
@@ -91,16 +89,16 @@ void execute_command(){
     }
     else{
         //no errors occurred while parsing the request and the destination is correct
+        code = request.command_code;
+        response.command_code = code; //! response command code
 
-        code = request.command_code; //! response command code
         //TODO
         if(IS_INFO(code)){info_response();}
         else if(IS_LINK(code)){}
         else if((IS_SWITCH(code))){}
         else if((IS_REGISTRY(code))){}
         else if((IS_DELETE(code))){}
-
-
+        else{} //TODO unexpected command
     }
 }
 
@@ -114,5 +112,20 @@ void info_response(){
     response.arguments[STATE_ARGUMENT] = state;
     response.arguments[OPEN_HOURS_ARGUMENT] = seconds_open;
     response.arguments_size = MAX_WINDOW_ARGUMENTS;
-    response.response_code = OK; //* ? response error code
+    response.response_code = OK; //* ? response error code for all
+
+    //? this should be fine
 }
+
+void link_response(command_code_t code){
+    if(LINK_SUBCOMMAND(code)==LINK_CHANGE_PARENT){
+        //TODO change_snd_responses_pipe
+    }
+    else{
+        response.response_code = UNEXPECTED_COMMAND;
+        //TODO check if i need to add something
+    }
+
+
+}
+
