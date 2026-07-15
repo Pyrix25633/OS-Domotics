@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
                     response.arguments[TEMPERATURE_ARGUMENT] = calculate_current_temperature();
                 } else if(IS_LINK(request.command_code) && LINK_SUBCOMMAND(request.command_code) == LINK_CHANGE_PARENT) {
                     response.arguments_size = 1;
-                    response.arguments[0] = request.argument;
+                    response.arguments[REQUEST_ARGUMENT] = request.argument;
                     if(request.argument != parent_id) {
                         parent_id = request.argument;
                         response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
@@ -101,7 +101,7 @@ int main(int argc, char *argv[]) {
                     force_exit = true;
                 } else if(IS_REGISTRY(request.command_code)) {
                     response.arguments_size = 1;
-                    response.arguments[0] = request.argument;
+                    response.arguments[REQUEST_ARGUMENT] = request.argument;
                     if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_DELAY) {
                         autoclose_delay = request.argument;
                     } else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_THERMOSTAT) {

@@ -40,7 +40,7 @@ error_code_t parse_request(request_t *request, char *buffer, size_t size) {
     request->command_code = command_code;
 
     // Parse command argument if present
-    if(HAS_COMMAND_ARGUMENT(command_code)) {
+    if(HAS_REQUEST_ARGUMENT(command_code)) {
         token = strtok_r(NULL, " ", &last);
         if(token == NULL) {
             return REQUEST_FORMAT_ERROR;
@@ -57,7 +57,7 @@ error_code_t parse_request(request_t *request, char *buffer, size_t size) {
 
 error_code_t format_request(request_t *request, char *buffer, size_t size) {
     int length;
-    if(HAS_COMMAND_ARGUMENT(request->command_code)) {
+    if(HAS_REQUEST_ARGUMENT(request->command_code)) {
         length = snprintf(buffer, size, "%u %u %u", request->destination, request->command_code, request->argument);
     } else {
         length = snprintf(buffer, size, "%u %u", request->destination, request->command_code);

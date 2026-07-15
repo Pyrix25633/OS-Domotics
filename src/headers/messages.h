@@ -44,7 +44,7 @@ typedef struct response_t {
 
 // Command codes (`0b` prefix indicates binary, it's an extension)
 
-#define COMMAND_ARGUMENT_FLAG   0b0100000
+#define REQUEST_ARGUMENT_FLAG   0b0100000 // Responses to requests that have an argument should also contain that same argument
 #define RESPONSE_ARGUMENTS_FLAG 0b1000000
 #define POSITION_MASK           0b0000001
 #define POSITION_OFF            0b0000000
@@ -82,12 +82,13 @@ typedef struct response_t {
 #define IS_REGISTRY(c)            (c & COMMAND_MASK) == REGISTRY
 #define REGISTRY_SUBCOMMAND(c)    (c & REGISTRY_MASK)
 #define IS_DELETE(c)              (c & COMMAND_MASK) == DELETE
-#define HAS_COMMAND_ARGUMENT(c)   (c & COMMAND_ARGUMENT_FLAG) == COMMAND_ARGUMENT_FLAG
+#define HAS_REQUEST_ARGUMENT(c)   (c & REQUEST_ARGUMENT_FLAG) == REQUEST_ARGUMENT_FLAG
 #define HAS_RESPONSE_ARGUMENTS(c) (c & RESPONSE_ARGUMENTS_FLAG) == RESPONSE_ARGUMENTS_FLAG
 
 // Response argument positions
 
 #define STATE_ARGUMENT           0
+#define REQUEST_ARGUMENT         0
 #define OPEN_HOURS_ARGUMENT      1
 #define ON_HOURS_ARGUMENT        1
 #define AUTOCLOSE_DELAY_ARGUMENT 2
