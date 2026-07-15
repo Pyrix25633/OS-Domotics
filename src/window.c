@@ -2,8 +2,17 @@
 
 #include "window.h"
 
-//start - make FILE="window"
+//start - make FILE="window" (ARGS="id" only to test, then it's given by the controller)
 //print_error only if i can't send an error response
+
+//response: id command_code response_code arguments
+
+//! switch iff
+//make: *** [Makefile:25: default] Segmentation fault (core dumped)
+
+//! info on
+//Request: 1 72
+//Response: 1 72 0 0 0
 
 // - Explicit device data -
 
@@ -43,7 +52,9 @@ int main(int argc, char *argv[]) {
     action_handler.sa_handler = handle_shutdown; //set the function to be called when the signal occurs
     sigaction(SIGTERM, &action_handler, NULL);
 
-    //the main thread is blocked waiting for requests in a loop (while the exit is not forced)
+    srand(time(NULL)); //set random seed with the current time so it's always different
+
+    //the main thread is blocked waiting for requests in a loop (while the exit is not forced by the delete command)
     //when a request is received it is executed, one by one in order of arrival
     while(!force_exit) {
         execute_command();
@@ -66,7 +77,7 @@ void handle_shutdown() {
 
 error_code_t read_pipe(){
     int8_t error = read(rcv_requests_fd, buffer_read, MAX_REQUEST_SIZE);
-    if(error < 0){
+    if(error <= 0){
         return UNABLE_TO_READ_PIPE;
     }
     else{
@@ -84,7 +95,7 @@ void write_pipe(){
     if(error != OK){
         print_error(STDERR_FILENO, error, id, "while formatting response");
     }
-    else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE)<0){
+    else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE) < 0){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
     }
 }
@@ -98,7 +109,7 @@ void execute_command(){
     if(error != OK){
         response.response_code = error;
     }
-    else if (request.destination != id){
+    else if(request.destination != id) {
         response.response_code = DESTINATION_ID_MISMATCH;
     }
     else{
@@ -108,7 +119,7 @@ void execute_command(){
         response.response_code = OK; //! response error code
         response.arguments_size = 0;
 
-        if(IS_INFO(code)){info_response();}
+        if(IS_INFO(code)) { info_response(); }
         else if(IS_LINK(code)){link_response(code);}
         else if((IS_SWITCH(code))){switch_response(code);}
         else if((IS_DELETE(code))){force_exit=true;} //then the response is sent, the while loop finishes and it shutdowns
@@ -117,14 +128,14 @@ void execute_command(){
         }
 
         int random_processing_time = rand() % (MAX_WAITING - MIN_WAITING +1) + MIN_WAITING;
-        sleep(random_processing_time);
+        sleep(random_processing_time); //TODO change with the function that Mattia will do
         write_pipe();
     }
 }
 
 void info_response(){
     response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[OPEN_HOURS_ARGUMENT] = (state==STATE_CLOSED ? seconds_open : SECONDS_OPEN)/60; //TODO change with OPEN_MINUTES_ARGUMENT
+    response.arguments[OPEN_HOURS_ARGUMENT] = (state==STATE_CLOSED ? LAST_SECONDS_OPEN : CURRENT_SECONDS_OPEN)/60; //TODO change with OPEN_SECONDS_ARGUMENT
     response.arguments_size = MAX_WINDOW_ARGUMENTS;
 }
 
@@ -158,19 +169,9 @@ void switch_response(command_code_t code){
         if(HAS_STATE_CHANGED(SWITCH_CLOSE)){
             state = STATE_CLOSED;
             time(&last_closed);
-            seconds_open = last_closed - last_opened; //! if it's closed then this is the time that it has remained open
         }
     }
     else if((!(NO_ACTION_SWITCH_CLOSE)) && (!(NO_ACTION_SWITCH_OPEN))){
         response.response_code = UNEXPECTED_COMMAND;
     }
 }
-
-//response: id command_code response_code arguments
-
-//! switch iff
-//make: *** [Makefile:25: default] Segmentation fault (core dumped)
-
-//! info on
-//Request: 1 72
-//Response: 1 72 0 0 0

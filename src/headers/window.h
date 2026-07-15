@@ -26,7 +26,8 @@
 #define HAS_PARENT_CHANGED(new_parent) parent_id!=new_parent //Checks if the parent has changed
 
 //current seconds open
-#define SECONDS_OPEN time(NULL) - last_opened
+#define CURRENT_SECONDS_OPEN    time(NULL) - last_opened
+#define LAST_SECONDS_OPEN       last_closed - last_opened
 
 //no action switch command
 #define NO_ACTION_SWITCH_OPEN SWITCH_LABEL(code)==SWITCH_OPEN && SWITCH_POSITION(code)==POSITION_OFF
@@ -55,6 +56,7 @@ void handle_shutdown();
 
 /**
  * Reads the pipe and identifies the command
+ * @returns the error code to handle for the response
  */
 error_code_t read_pipe();
 
@@ -73,18 +75,21 @@ void execute_command();
  */
 void info_response();
 
-/**
+/** 
  * Sets the attributes for the link response and performs actions if needed
+ * @param code the command code to check
  */
 void link_response(command_code_t code);
 
 /**
  * Sets the attributes for the switch response and performs actions if needed
+ * @param code the command code to check
  */
 void switch_response(command_code_t code);
 
 /**
  * Sets the attributes for the delete response and performs actions if needed
+ * @param code the command code to check
  */
 void delete_response(command_code_t code);
 
