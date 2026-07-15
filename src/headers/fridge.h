@@ -18,7 +18,7 @@ typedef bool temperature_direction_t;
 
 // Default values
 
-#define DEFAULT_AUTOCLOSE_DELAY       2 // Number of seconds after which the fridge automatically closes // ! change
+#define DEFAULT_AUTOCLOSE_DELAY       10 // Number of seconds after which the fridge automatically closes // ! change
 #define DEFAULT_FILL_PERCENTAGE       0
 #define DEFAULT_THERMOSTAT            4 // Target temperature in degrees (Celsius)
 #define INITIAL_SECONDS_OPEN          0
@@ -55,21 +55,16 @@ void handle_shutdown();
  * Sets the state and updates auxiliary variables
  * 
  * @param new_state The new state
+ * @param automatic If the action is automatic, the automatic action does not cancel itself
+ * 
+ * @returns `UNABLE_TO_CREATE_THREAD` if the autoclose thread could not be created,
+ * `UNABLE_TO_CANCEL_THREAD` if the previous autoclose thread could not be cancelled,
+ * `OK` otherwise
  */
-void set_state(leaf_device_state_t new_state);
+error_code_t set_state(leaf_device_state_t new_state, bool automatic);
 
 /**
- * Creates a thread that closes the fridge
- * 
- * It's a signal handler, which interrupts the main thread, which might have locked the mutex,
- * so to avoid a deadlock another thread is created to perform the task
- * 
- * The thread is detached, meaning it does not need to be joined for its resources to be freed
- */
-void handle_autoclose();
-
-/**
- * It's the function executed by the autoclose thread created by the signal handler
+ * It's the function executed by the autoclose thread created
  * 
  * If any error occurs, it is printed on the stderr and the routine terminates, as it's a critical non-solvable error
  * 
@@ -79,16 +74,7 @@ void handle_autoclose();
  * 
  * @param arg Not used
  */
-void autoclose_routine(void *arg);
-
-/**
- * Calculates the current total number of seconds the fridge was left open
- * 
- * Used both for info and while changing state to closed
- * 
- * @returns The number of seconds the fridge was left open
- */
-u_int32_t calculate_seconds_open();
+void* autoclose_routine(void *arg);
 
 /**
  * Calculates the current temperature based on the fridge state and the last temperature

@@ -35,6 +35,7 @@ void print_error(int fd, int error_code, int device_id, char *message) {
         case UNEXPECTED_COMMAND:       dprintf(fd, "unexpected command");       break;
 
         case UNABLE_TO_CREATE_THREAD:  dprintf(fd, "unable to create thread");  break;
+        case UNABLE_TO_CANCEL_THREAD:  dprintf(fd, "unable to cancel thread");  break;
         case UNABLE_TO_LOCK_MUTEX:     dprintf(fd, "unable to lock mutex");     break;
         case UNABLE_TO_UNLOCK_MUTEX:   dprintf(fd, "unable to unlock mutex");   break;
 

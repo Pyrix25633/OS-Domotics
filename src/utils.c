@@ -114,3 +114,8 @@ error_code_t change_snd_responses_pipe(device_id_t parent_id, int *snd_responses
     }
     return OK;
 }
+
+void simulate_processing_time() {
+    unsigned time = rand() % (MAX_PROCESSING_TIME - MIN_PROCESSING_TIME + 1) + MIN_PROCESSING_TIME;
+    sleep(time);
+}

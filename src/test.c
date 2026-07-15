@@ -16,6 +16,31 @@
 
 #define INPUT_SIZE 64
 
+int up;
+int down;
+device_id_t id;
+
+void* read_thread(void *arg) {
+    char response_buffer[MAX_RESPONSE_SIZE];
+    response_t response;
+    bool loop = true;
+    while(loop) {
+        if(read(up, response_buffer, MAX_RESPONSE_SIZE) > 0) {
+            printf("Response: %s\n", response_buffer);
+            parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
+            if(response.response_code != OK) {
+                print_error(STDERR_FILENO, response.response_code, id, "in response");
+            }
+            if(IS_DELETE(response.command_code)) {
+                loop = false;
+            }
+        } else {
+            print_error(STDERR_FILENO, UNABLE_TO_READ_PIPE, id, "in test");
+        }
+    }
+    pthread_exit(NULL);
+}
+
 /**
  * Implements commands:
  * - switch <power/open/close> <on/off>
@@ -25,20 +50,20 @@
  * - set <begin/end/delay/thermostat/percentage> <value>
  */
 int main(int argc, char *argv[]) {
-    device_id_t id = get_id_from_arguments(argc, argv);
+    id = get_id_from_arguments(argc, argv);
     char name_buffer[INPUT_SIZE];
     create_fifo_name(id, DIRECTION_DOWN, name_buffer, INPUT_SIZE);
-    int down = open(name_buffer, O_WRONLY);
-    int up = open("./ipc/0_up.fifo", O_RDONLY);
+    down = open(name_buffer, O_WRONLY);
+    up = open("./ipc/0_up.fifo", O_RDONLY);
     bool loop = true;
     char *input_buffer = NULL;
     size_t size;
     char *token, *last;
     char request_buffer[MAX_REQUEST_SIZE];
-    char response_buffer[MAX_RESPONSE_SIZE];
     request_t request;
     request.destination = id;
-    response_t response;
+    pthread_t tid;
+    pthread_create(&tid, NULL, read_thread, NULL);
     while(loop) {
         getline(&input_buffer, &size, stdin);
         input_buffer[strlen(input_buffer) - 1] = '\0'; // Remove '\n'
@@ -100,14 +125,6 @@ int main(int argc, char *argv[]) {
             close(up);
             create_fifo_name(request.argument, DIRECTION_UP, name_buffer, INPUT_SIZE);
             up = open(name_buffer, O_RDONLY);
-        }
-
-        // Read response
-        read(up, response_buffer, MAX_RESPONSE_SIZE);
-        printf("Response: %s\n", response_buffer);
-        parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
-        if(response.response_code != OK) {
-            print_error(STDERR_FILENO, response.response_code, id, "in response");
         }
     }
 

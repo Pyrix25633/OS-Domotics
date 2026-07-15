@@ -20,6 +20,9 @@ typedef bool pipe_direction_t;
 #define DIRECTION_UP   0
 #define DIRECTION_DOWN 1
 
+#define MIN_PROCESSING_TIME 1
+#define MAX_PROCESSING_TIME 3
+
 /**
  * Measures the length of a possibly not NULL-terminated string
  * @param string The string to measure
@@ -112,5 +115,10 @@ error_code_t end_device_fifos(device_id_t device_id, int rcv_requests_fd, int sn
  * `OK` otherwise
  */
 error_code_t change_snd_responses_pipe(device_id_t parent_id, int *snd_responses_fd);
+
+/**
+ * Functions that sleeps a random amount of time to simulate processing time
+ */
+void simulate_processing_time();
 
 #endif

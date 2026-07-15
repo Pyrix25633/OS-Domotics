@@ -20,18 +20,19 @@ leaf_device_state_t state = STATE_CLOSED; // Modified by switch commands
 u_int8_t autoclose_delay = DEFAULT_AUTOCLOSE_DELAY; // Can be modified
 u_int8_t fill_percentage = DEFAULT_FILL_PERCENTAGE; // Can be modified only manually
 u_int8_t thermostat = DEFAULT_THERMOSTAT; // Can be modified only manually
-u_int32_t seconds_open = INITIAL_SECONDS_OPEN; // Updated automatically, converted into minutes for info
-u_int8_t last_temperature = INITIAL_TEMPERATURE; // Updated automatically
 
 // - Auxiliary device data -
 
 device_id_t parent_id = CONTROLLER_ID;
 time_t last_opened; // Timestamp needed to calculate the open time and current temperature
+time_t last_closed; // Timestamp needed to calculate the open time and current temperature
 temperature_direction_t temperature_direction = INITIAL_TEMPERATURE_DIRECTION; // Temperature direction needed to calculate current temperature
+u_int8_t last_temperature = INITIAL_TEMPERATURE; // Used to calculate the current temperature
 
 // - Concurrency management data -
 
 pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely
+pthread_t autoclose_thread;
 
 // - IPC data -
 
@@ -54,8 +55,7 @@ int main(int argc, char *argv[]) {
     action_handler.sa_handler = handle_shutdown;
     sigaction(SIGTERM, &action_handler, NULL);
 
-    action_handler.sa_handler = handle_autoclose; // ! not working
-    sigaction(SIGALRM, &action_handler, NULL);
+    srand(time(NULL));
 
     // TODO: check what happens when the parent closes the pipe because the device is moved around
     // TODO: it probably exits from the while, it must be solved somehow
@@ -67,7 +67,7 @@ int main(int argc, char *argv[]) {
     error_code_t error_code;
     while(!force_exit) {
         response.arguments_size = 0;
-        if(read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE) < 0) {
+        if(read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE) <= 0) {
             response.command_code = NULL_COMMAND; // Could not be parsed
             response.response_code = UNABLE_TO_READ_PIPE;
         }
@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
                 } else if(IS_INFO(request.command_code)) {
                     response.arguments_size = 6;
                     response.arguments[STATE_ARGUMENT] = state;
-                    response.arguments[OPEN_HOURS_ARGUMENT] = calculate_seconds_open() / 60;
+                    response.arguments[OPEN_SECONDS_ARGUMENT] = (state == STATE_OPEN) ? (time(NULL) - last_opened) : (last_closed - last_opened);
                     response.arguments[AUTOCLOSE_DELAY_ARGUMENT] = autoclose_delay;
                     response.arguments[FILL_PERCENTAGE_ARGUMENT] = fill_percentage;
                     response.arguments[THERMOSTAT_ARGUMENT] = thermostat;
@@ -125,13 +125,11 @@ int main(int argc, char *argv[]) {
                 } else if(IS_SWITCH(request.command_code)) {
                     if(SWITCH_LABEL(request.command_code) == SWITCH_OPEN) {
                         if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
-                            set_state(STATE_OPEN);
-                            alarm(autoclose_delay); // Schedule autoclose
+                            response.response_code = set_state(STATE_OPEN, false);
                         }
                     } else if(SWITCH_LABEL(request.command_code) == SWITCH_CLOSE) {
                         if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
-                            set_state(STATE_CLOSED);
-                            alarm(0); // Clear previously scheduled autoclose
+                            response.response_code = set_state(STATE_CLOSED, false);
                         }
                     } else {
                         response.response_code = UNEXPECTED_COMMAND;
@@ -141,10 +139,13 @@ int main(int argc, char *argv[]) {
                 }
                 if(pthread_mutex_unlock(&data_mutex) < 0) {
                     print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing request");
+                    force_exit = true;
                 }
             }
         }
-        // TODO: wait a random time
+
+        simulate_processing_time();
+
         error_code = format_response(&response, response_buffer, MAX_RESPONSE_SIZE);
         if(error_code != OK) {
             print_error(STDERR_FILENO, error_code, id, "while formatting response");
@@ -161,46 +162,49 @@ void handle_shutdown() {
     if(error_code != OK) {
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
-    alarm(0); // Remove scheduled alarms
+    if(pthread_cancel(autoclose_thread) != 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_CANCEL_THREAD, id, "in shutdown");
+    }
     // TODO: add here things to do on deletion
     exit(error_code);
 }
 
-void set_state(leaf_device_state_t new_state) {
+error_code_t set_state(leaf_device_state_t new_state, bool automatic) {
     if(new_state != state) {
         state = new_state;
         if(state == STATE_OPEN) {
             last_opened = time(NULL);
+            pthread_attr_t attributes;
+            if(pthread_attr_init(&attributes) != 0
+                || pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_JOINABLE) != 0
+                || pthread_create(&autoclose_thread, &attributes, autoclose_routine, NULL) != 0) {
+                return UNABLE_TO_CREATE_THREAD;
+            }
         } else {
-            seconds_open = calculate_seconds_open();
+            last_closed = time(NULL);
+            if(!automatic && pthread_cancel(autoclose_thread) < 0) {
+                return UNABLE_TO_CANCEL_THREAD;
+            }
         }
         last_temperature = calculate_current_temperature();
     }
+    return OK;
 }
 
-void handle_autoclose() {
-    pthread_attr_t attributes;
-    pthread_t tid;
-    if(pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED) < 0
-        || pthread_create(&tid, &attributes, &autoclose_routine, NULL) < 0) {
-        print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "in autoclose handler");
-    }
-}
+void* autoclose_routine(void *arg) {
+    sleep(autoclose_delay);
 
-void autoclose_routine(void *arg) {
-    printf("Autoclosing\n"); // ! remove
     if(pthread_mutex_lock(&data_mutex) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "in autoclose thread");
         pthread_exit(NULL);
     }
 
-    set_state(STATE_CLOSED);
+    set_state(STATE_CLOSED, true);
 
     if(pthread_mutex_unlock(&data_mutex) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "in autoclose thread");
         handle_shutdown();
     }
-    printf("Autoclosed\n"); // ! remove
 
     char response_buffer[MAX_RESPONSE_SIZE];
     response_t response;
@@ -216,13 +220,6 @@ void autoclose_routine(void *arg) {
     }
 
     pthread_exit(NULL);
-}
-
-u_int32_t calculate_seconds_open() {
-    if(state == STATE_OPEN) {
-        return seconds_open + (time(NULL) - last_opened);
-    }
-    return seconds_open;
 }
 
 u_int8_t calculate_current_temperature() {
