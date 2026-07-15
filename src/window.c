@@ -116,9 +116,8 @@ void execute_command(){
             response.response_code = UNEXPECTED_COMMAND;
         }
 
-        int random_processing_time = rand() % (MAX_WAITING - MIN_WAITING +1) - MIN_WAITING;
-        //TODO sleep random 
-        sleep(1);
+        int random_processing_time = rand() % (MAX_WAITING - MIN_WAITING +1) + MIN_WAITING;
+        sleep(random_processing_time);
         write_pipe();
     }
 }
@@ -175,8 +174,3 @@ void switch_response(command_code_t code){
 //! info on
 //Request: 1 72
 //Response: 1 72 0 0 0
-
-//! link 2
-//Request: 1 105 2
-//Response: 1
-//IPC related error: 0x56 unable to write pipe, errno: 9, source: device 1, while sending response
