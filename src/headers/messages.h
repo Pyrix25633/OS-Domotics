@@ -89,8 +89,8 @@ typedef struct response_t {
 
 #define STATE_ARGUMENT           0
 #define REQUEST_ARGUMENT         0
-#define OPEN_HOURS_ARGUMENT      1
-#define ON_HOURS_ARGUMENT        1
+#define OPEN_SECONDS_ARGUMENT    1
+#define ON_SECONDS_ARGUMENT      1
 #define AUTOCLOSE_DELAY_ARGUMENT 2
 #define BEGIN_ARGUMENT           2
 #define FILL_PERCENTAGE_ARGUMENT 3

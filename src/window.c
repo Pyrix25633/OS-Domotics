@@ -135,7 +135,7 @@ void execute_command(){
 
 void info_response(){
     response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[OPEN_HOURS_ARGUMENT] = (state==STATE_CLOSED ? LAST_SECONDS_OPEN : CURRENT_SECONDS_OPEN)/60; //TODO change with OPEN_SECONDS_ARGUMENT
+    response.arguments[OPEN_SECONDS_ARGUMENT] = (state==STATE_CLOSED ? LAST_SECONDS_OPEN : CURRENT_SECONDS_OPEN); //TODO change with OPEN_SECONDS_ARGUMENT
     response.arguments_size = MAX_WINDOW_ARGUMENTS;
 }
 

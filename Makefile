@@ -2,6 +2,7 @@
 CC = gcc
 # TODO: add extra flags for specific libraries
 CFLAGS = -Isrc/headers -Wall -Wextra
+LFLAGS = -lpthread
 # Name of the file to be compiled and run
 EXEC_NAME = bin/$(FILE)
 # All devices source files for complete compilation
@@ -26,7 +27,7 @@ default: bin/ ipc/ $(EXEC_NAME)
 
 # Linking step, need all object files
 bin/%: bin/%.o $(GENERIC_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(LFLAGS) -o $@ $^
 
 # Compilation step, need C file, not done if already compiled
 bin/%.o : src/%.c
