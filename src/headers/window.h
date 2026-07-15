@@ -16,7 +16,6 @@
 
 // Default values
 
-#define INITIAL_SECONDS_OPEN    0
 #define MAX_WINDOW_ARGUMENTS    2
 
 // Macros - can be used instead of doing very small functions
@@ -30,22 +29,18 @@
 #define LAST_SECONDS_OPEN       last_closed - last_opened
 
 //no action switch command
-#define NO_ACTION_SWITCH_OPEN SWITCH_LABEL(code)==SWITCH_OPEN && SWITCH_POSITION(code)==POSITION_OFF
-#define NO_ACTION_SWITCH_CLOSE SWITCH_LABEL(code)==SWITCH_CLOSE && SWITCH_POSITION(code)==POSITION_OFF
-
-//TODO values to substitute, just placeholders for now
-#define MAX_WAITING 3
-#define MIN_WAITING 1
+#define NO_ACTION_SWITCH_OPEN SWITCH_LABEL(request.command_code)==SWITCH_OPEN && SWITCH_POSITION(request.command_code)==POSITION_OFF
+#define NO_ACTION_SWITCH_CLOSE SWITCH_LABEL(request.command_code)==SWITCH_CLOSE && SWITCH_POSITION(request.command_code)==POSITION_OFF
 
 /**
  * Main function of the Window Program
  * @param argc Number of arguments received
  * @param argv Argument vector of length `argc`, each string is terminated by `'\0'`
  * 
- * TODO: Determine all other possible exit values, add them every time you find out another error that requires complete
- * termination of the process can occur
- * 
- * @returns `OK`
+ * @returns `MISSING_ID_ARGUMENT` if the ID command-line argument is missing,
+ * `UNABLE_TO_OPEN_PIPE` if the IPC pipes could not be opened,
+ * `UNABLE_TO_CLOSE_PIPE` if the IPC pipes could not be closed,
+ * `OK` otherwise
  */
 int main(int argc, char *argv[]);
 
@@ -73,24 +68,16 @@ void execute_command();
 /**
  * Sets the attributes for the info response
  */
-void info_response();
+void create_info_response();
 
 /** 
  * Sets the attributes for the link response and performs actions if needed
- * @param code the command code to check
  */
-void link_response(command_code_t code);
+void create_link_response();
 
 /**
  * Sets the attributes for the switch response and performs actions if needed
- * @param code the command code to check
  */
-void switch_response(command_code_t code);
-
-/**
- * Sets the attributes for the delete response and performs actions if needed
- * @param code the command code to check
- */
-void delete_response(command_code_t code);
+void create_switch_response();
 
 #endif

@@ -18,14 +18,10 @@
 
 device_id_t id;
 leaf_device_state_t state = STATE_CLOSED;
-u_int32_t seconds_open = INITIAL_SECONDS_OPEN;
 
 // - Auxiliary device data -
 
 device_id_t parent_id = CONTROLLER_ID;
-
-// - Timestamps - needed to calculate the open time
-
 time_t last_opened; //returns the time in seconds
 time_t last_closed;
 
@@ -46,7 +42,7 @@ struct sigaction action_handler; //to set what to do when a signal occurs
 // the controller starts a window process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec
-    response.source = id; //! response source
+    response.source = id;
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, NULL);
 
     action_handler.sa_handler = handle_shutdown; //set the function to be called when the signal occurs
@@ -58,7 +54,6 @@ int main(int argc, char *argv[]) {
     //when a request is received it is executed, one by one in order of arrival
     while(!force_exit) {
         execute_command();
-        //TODO: need to add more things?
     }
     handle_shutdown();
 }
@@ -71,29 +66,27 @@ void handle_shutdown() {
         //prints the error on standard error, best practice to do
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
-    //TODO: add here things to do on deletion
     exit(error_code);
 }
 
 error_code_t read_pipe(){
-    int8_t error = read(rcv_requests_fd, buffer_read, MAX_REQUEST_SIZE);
-    if(error <= 0){
+    ssize_t size = read(rcv_requests_fd, buffer_read, MAX_REQUEST_SIZE);
+
+    if(size < 0){
         return UNABLE_TO_READ_PIPE;
     }
-    else{
-        error_code_t parse_error = parse_request(&request, buffer_read, MAX_REQUEST_SIZE);
-        if(parse_error != OK){
-            return parse_error;
-        }
+    else if(size == 0){
+        force_exit = true;
+        return UNEXPECTED_END_OF_FILE;
     }
-    return OK;
+    return parse_request(&request, buffer_read, MAX_REQUEST_SIZE);
 }
 
 void write_pipe(){
-    error_code_t error = format_response(&response, buffer_write, MAX_RESPONSE_SIZE);
+    error_code_t error_code = format_response(&response, buffer_write, MAX_RESPONSE_SIZE);
 
-    if(error != OK){
-        print_error(STDERR_FILENO, error, id, "while formatting response");
+    if(error_code != OK){
+        print_error(STDERR_FILENO, error_code, id, "while formatting response");
     }
     else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE) < 0){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
@@ -101,13 +94,13 @@ void write_pipe(){
 }
 
 void execute_command(){
-    command_code_t code = request.command_code;
+    command_code_t code;
+    response.arguments_size = 0;
 
-    response.command_code = NULL_COMMAND; //! response command code
-
-    error_code_t error = read_pipe();
-    if(error != OK){
-        response.response_code = error;
+    error_code_t error_code = read_pipe();
+    if(error_code != OK){
+        response.command_code = NULL_COMMAND;
+        response.response_code = error_code;
     }
     else if(request.destination != id) {
         response.response_code = DESTINATION_ID_MISMATCH;
@@ -115,57 +108,55 @@ void execute_command(){
     else{
         //no errors occurred while parsing the request and the destination is correct
         code = request.command_code;
-        response.command_code = code; //! response command code
-        response.response_code = OK; //! response error code
-        response.arguments_size = 0;
+        response.command_code = code;
+        response.response_code = OK;
 
-        if(IS_INFO(code)) { info_response(); }
-        else if(IS_LINK(code)){link_response(code);}
-        else if((IS_SWITCH(code))){switch_response(code);}
-        else if((IS_DELETE(code))){force_exit=true;} //then the response is sent, the while loop finishes and it shutdowns
+        if(IS_INFO(code)) { create_info_response(); }
+        else if(IS_LINK(code)) { create_link_response(code); }
+        else if((IS_SWITCH(code))) { create_switch_response(code); }
+        else if((IS_DELETE(code))) { force_exit=true; } //then the response is sent, the while loop finishes and it shutdowns
         else{
             response.response_code = UNEXPECTED_COMMAND;
         }
 
-        int random_processing_time = rand() % (MAX_WAITING - MIN_WAITING +1) + MIN_WAITING;
-        sleep(random_processing_time); //TODO change with the function that Mattia will do
+        simulate_processing_time();
         write_pipe();
     }
 }
 
-void info_response(){
+void create_info_response(){
     response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[OPEN_SECONDS_ARGUMENT] = (state==STATE_CLOSED ? LAST_SECONDS_OPEN : CURRENT_SECONDS_OPEN); //TODO change with OPEN_SECONDS_ARGUMENT
+    response.arguments[OPEN_SECONDS_ARGUMENT] = (state==STATE_CLOSED ? LAST_SECONDS_OPEN : CURRENT_SECONDS_OPEN);
     response.arguments_size = MAX_WINDOW_ARGUMENTS;
 }
 
-void link_response(command_code_t code){
-    if(LINK_SUBCOMMAND(code)==LINK_CHANGE_PARENT){
-        //the request argument is the parent id
-        error_code_t error = change_snd_responses_pipe(request.argument,&snd_responses_fd);
-        response.arguments[REQUEST_ARGUMENT] = request.argument; //to give always a feedback
+void create_link_response(){
+    if(LINK_SUBCOMMAND(request.command_code)==LINK_CHANGE_PARENT){
+        //the request argument is the new parent id
+        u_int16_t new_parent_id = request.argument;
+        response.arguments[REQUEST_ARGUMENT] = new_parent_id; //to give always a feedback
         response.arguments_size = 1;
 
-        if(error==OK){
-            if(HAS_PARENT_CHANGED(request.argument)){
-                parent_id = request.argument;
+        if(parent_id!=new_parent_id){
+            response.response_code = change_snd_responses_pipe(new_parent_id,&snd_responses_fd);
+            if(response.response_code == OK){
+                parent_id = new_parent_id;
             }
         }
-        else{response.response_code = error;}
     }
     else{response.response_code = UNEXPECTED_COMMAND;}
 }
 
 //i have 2 switch (open,close -> on/off)
 //there are 2 combinations that are useless 
-void switch_response(command_code_t code){
-    if(SWITCH_LABEL(code)==SWITCH_OPEN && SWITCH_POSITION(code)==POSITION_ON){
+void create_switch_response(){
+    if(SWITCH_LABEL(request.command_code)==SWITCH_OPEN && SWITCH_POSITION(request.command_code)==POSITION_ON){
         if(HAS_STATE_CHANGED(SWITCH_OPEN)){
             state = STATE_OPEN;
             time(&last_opened);
         }
     }
-    else if(SWITCH_LABEL(code)==SWITCH_CLOSE && SWITCH_POSITION(code)==POSITION_ON){
+    else if(SWITCH_LABEL(request.command_code)==SWITCH_CLOSE && SWITCH_POSITION(request.command_code)==POSITION_ON){
         if(HAS_STATE_CHANGED(SWITCH_CLOSE)){
             state = STATE_CLOSED;
             time(&last_closed);
