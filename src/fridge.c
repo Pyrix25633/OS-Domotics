@@ -39,122 +39,164 @@ pthread_t autoclose_thread;
 int rcv_requests_fd;
 int snd_responses_fd;
 bool force_exit = false;
+char request_buffer[MAX_REQUEST_SIZE];
+char response_buffer[MAX_RESPONSE_SIZE];
+request_t request;
+response_t response;
 
-// - Signal handler variables -
+// - Signal handler -
 
 struct sigaction action_handler;
 
-// TODO: implement autoclose
-// TODO: organize code consistently
-
 int main(int argc, char *argv[]) {
     id = get_id_from_arguments(argc, argv);
-
+    response.source = id;
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, NULL);
 
     action_handler.sa_handler = handle_shutdown;
     sigaction(SIGTERM, &action_handler, NULL);
 
-    srand(time(NULL));
+    srand(time(NULL)); // Seed random generator with current time, always different
 
-    // TODO: check what happens when the parent closes the pipe because the device is moved around
-    // TODO: it probably exits from the while, it must be solved somehow
-    char request_buffer[MAX_REQUEST_SIZE];
-    char response_buffer[MAX_RESPONSE_SIZE];
-    request_t request;
-    response_t response;
-    response.source = id;
-    error_code_t error_code;
     while(!force_exit) {
-        response.arguments_size = 0;
-        if(read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE) <= 0) {
-            response.command_code = NULL_COMMAND; // Could not be parsed
-            response.response_code = UNABLE_TO_READ_PIPE;
-        }
-        else if((error_code = parse_request(&request, request_buffer, MAX_REQUEST_SIZE)) != OK) {
-            response.command_code = NULL_COMMAND; // Could not be parsed
-            response.response_code = error_code;
-        }
-        else {
-            response.command_code = request.command_code;
-            response.response_code = OK;
-            response.arguments_size = 0;
-            if(pthread_mutex_lock(&data_mutex) < 0) {
-                response.response_code = UNABLE_TO_LOCK_MUTEX;
-            } else {
-                if(request.destination != id) {
-                    response.response_code = DESTINATION_ID_MISMATCH;
-                } else if(IS_INFO(request.command_code)) {
-                    response.arguments_size = 6;
-                    response.arguments[STATE_ARGUMENT] = state;
-                    response.arguments[OPEN_SECONDS_ARGUMENT] = (state == STATE_OPEN) ? (time(NULL) - last_opened) : (last_closed - last_opened);
-                    response.arguments[AUTOCLOSE_DELAY_ARGUMENT] = autoclose_delay;
-                    response.arguments[FILL_PERCENTAGE_ARGUMENT] = fill_percentage;
-                    response.arguments[THERMOSTAT_ARGUMENT] = thermostat;
-                    response.arguments[TEMPERATURE_ARGUMENT] = calculate_current_temperature();
-                } else if(IS_LINK(request.command_code) && LINK_SUBCOMMAND(request.command_code) == LINK_CHANGE_PARENT) {
-                    response.arguments_size = 1;
-                    response.arguments[REQUEST_ARGUMENT] = request.argument;
-                    if(request.argument != parent_id) {
-                        response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
-                        if(response.response_code == OK) {
-                            parent_id = request.argument;
-                        }
-                    }
-                } else if(IS_DELETE(request.command_code)) {
-                    // TODO: check if there are other things to do
-                    force_exit = true;
-                } else if(IS_REGISTRY(request.command_code)) {
-                    response.arguments_size = 1;
-                    response.arguments[REQUEST_ARGUMENT] = request.argument;
-                    if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_DELAY) {
-                        autoclose_delay = request.argument;
-                    } else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_THERMOSTAT) {
-                        // TODO: validate thermostat
-                        thermostat = request.argument;
-                    } else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_PERCENTAGE) {
-                        if(request.argument <= 100) {
-                            fill_percentage = request.argument;
-                        } else {
-                            response.response_code = INVALID_REQUEST_ARGUMENT;
-                        }
-                    } else {
-                        response.arguments_size = 0;
-                        response.response_code = UNEXPECTED_COMMAND;
-                    }
-                } else if(IS_SWITCH(request.command_code)) {
-                    if(SWITCH_LABEL(request.command_code) == SWITCH_OPEN) {
-                        if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
-                            response.response_code = set_state(STATE_OPEN, false);
-                        }
-                    } else if(SWITCH_LABEL(request.command_code) == SWITCH_CLOSE) {
-                        if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
-                            response.response_code = set_state(STATE_CLOSED, false);
-                        }
-                    } else {
-                        response.response_code = UNEXPECTED_COMMAND;
-                    }
-                } else {
-                    response.response_code = UNEXPECTED_COMMAND;
-                }
-                if(pthread_mutex_unlock(&data_mutex) < 0) {
-                    print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing request");
-                    force_exit = true;
-                }
-            }
-        }
-
-        simulate_processing_time();
-
-        error_code = format_response(&response, response_buffer, MAX_RESPONSE_SIZE);
-        if(error_code != OK) {
-            print_error(STDERR_FILENO, error_code, id, "while formatting response");
-        } else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
-            print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
-        }
+        execute_command();
     }
 
     handle_shutdown();
+}
+
+void execute_command() {
+    command_code_t code;
+
+    response.arguments_size = 0;
+    
+    error_code_t error_code = read_pipe();
+    if(error_code != OK) {
+        response.command_code = NULL_COMMAND;
+        response.response_code = error_code;
+    }
+    else if(request.destination != id) {
+        response.response_code = DESTINATION_ID_MISMATCH;
+    }
+    else {
+        code = request.command_code;
+        response.command_code = request.command_code;
+        response.response_code = OK;
+
+        if(pthread_mutex_lock(&data_mutex) < 0) {
+            response.response_code = UNABLE_TO_LOCK_MUTEX;
+        } else {
+            if(IS_INFO(request.command_code)) { create_info_response(); }
+            else if(IS_LINK(request.command_code)) { create_link_response(); }
+            else if(IS_DELETE(request.command_code)) { force_exit = true; }
+            else if(IS_REGISTRY(request.command_code)) { create_registry_response(); }
+            else if(IS_SWITCH(request.command_code)) { create_switch_response(); }
+            else {
+                response.response_code = UNEXPECTED_COMMAND;
+            }
+            if(pthread_mutex_unlock(&data_mutex) < 0) {
+                print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing request");
+                force_exit = true; // Nothing to do, do not try to lock again
+            }
+        }
+    }
+
+    simulate_processing_time();
+
+    write_pipe();
+}
+
+error_code_t read_pipe() {
+    ssize_t size = read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE);
+    if(size < 0) {
+        return UNABLE_TO_READ_PIPE;
+    }
+    if(size == 0) {
+        force_exit = true;
+        return UNEXPECTED_END_OF_FILE;
+    }
+    return parse_request(&request, request_buffer, MAX_REQUEST_SIZE);
+}
+
+void create_info_response() {
+    response.arguments_size = 6;
+    response.arguments[STATE_ARGUMENT] = state;
+    response.arguments[OPEN_SECONDS_ARGUMENT] = (state == STATE_OPEN) ? (time(NULL) - last_opened) : (last_closed - last_opened);
+    response.arguments[AUTOCLOSE_DELAY_ARGUMENT] = autoclose_delay;
+    response.arguments[FILL_PERCENTAGE_ARGUMENT] = fill_percentage;
+    response.arguments[THERMOSTAT_ARGUMENT] = thermostat;
+    response.arguments[TEMPERATURE_ARGUMENT] = calculate_current_temperature();
+}
+
+void create_link_response() {
+    if(LINK_SUBCOMMAND(request.command_code) == LINK_CHANGE_PARENT) {
+        response.arguments_size = 1;
+        response.arguments[REQUEST_ARGUMENT] = request.argument;
+        if(request.argument != parent_id) {
+            response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
+            if(response.response_code == OK) {
+                parent_id = request.argument;
+            }
+        }
+    }
+    else {
+        response.response_code = UNEXPECTED_COMMAND;
+    }
+}
+
+void create_registry_response() {
+    response.arguments_size = 1;
+    response.arguments[REQUEST_ARGUMENT] = request.argument;
+    if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_DELAY) {
+        autoclose_delay = request.argument;
+    }
+    else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_THERMOSTAT) {
+        if(request.argument <= MAX_THERMOSTAT) {
+            thermostat = request.argument;
+        }
+        else {
+            response.response_code = INVALID_REQUEST_ARGUMENT;
+        }
+    }
+    else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_PERCENTAGE) {
+        if(request.argument <= MAX_FILL_PERCENTAGE) {
+            fill_percentage = request.argument;
+        }
+        else {
+            response.response_code = INVALID_REQUEST_ARGUMENT;
+        }
+    }
+    else {
+        response.arguments_size = 0;
+        response.response_code = UNEXPECTED_COMMAND;
+    }
+}
+
+void create_switch_response() {
+    if(SWITCH_LABEL(request.command_code) == SWITCH_OPEN) {
+        if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
+            response.response_code = set_state(STATE_OPEN, false);
+        }
+    }
+    else if(SWITCH_LABEL(request.command_code) == SWITCH_CLOSE) {
+        if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
+            response.response_code = set_state(STATE_CLOSED, false);
+        }
+    }
+    else {
+        response.response_code = UNEXPECTED_COMMAND;
+    }
+}
+
+void write_pipe() {
+    error_code_t error_code = format_response(&response, response_buffer, MAX_RESPONSE_SIZE);
+    
+    if(error_code != OK) {
+        print_error(STDERR_FILENO, error_code, id, "while formatting response");
+    }
+    else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
+    }
 }
 
 void handle_shutdown() {
@@ -162,10 +204,10 @@ void handle_shutdown() {
     if(error_code != OK) {
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
-    if(pthread_cancel(autoclose_thread) != 0) {
-        print_error(STDERR_FILENO, UNABLE_TO_CANCEL_THREAD, id, "in shutdown");
+    if(state == STATE_OPEN && pthread_cancel(autoclose_thread) != 0) {
+        error_code = UNABLE_TO_CANCEL_THREAD;
+        print_error(STDERR_FILENO, error_code, id, "in shutdown");
     }
-    // TODO: add here things to do on deletion
     exit(error_code);
 }
 

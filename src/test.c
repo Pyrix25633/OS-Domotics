@@ -38,6 +38,7 @@ void* read_thread(void *arg) {
             print_error(STDERR_FILENO, UNABLE_TO_READ_PIPE, id, "in test");
         }
     }
+    close(up);
     pthread_exit(NULL);
 }
 
@@ -128,6 +129,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    close(up);
+    pthread_join(tid, NULL);
     close(down);
 }

@@ -18,10 +18,9 @@ typedef bool temperature_direction_t;
 
 // Default values
 
-#define DEFAULT_AUTOCLOSE_DELAY       10 // Number of seconds after which the fridge automatically closes // ! change
+#define DEFAULT_AUTOCLOSE_DELAY       30 // Number of seconds after which the fridge automatically closes // ! change
 #define DEFAULT_FILL_PERCENTAGE       0
 #define DEFAULT_THERMOSTAT            4 // Target temperature in degrees (Celsius)
-#define INITIAL_SECONDS_OPEN          0
 #define INITIAL_TEMPERATURE           DEFAULT_THERMOSTAT
 #define INITIAL_TEMPERATURE_DIRECTION TEMPERATURE_RISING
 
@@ -42,12 +41,61 @@ typedef bool temperature_direction_t;
  * TODO: Determine all other possible exit values, add them every time you find out another error that requires complete
  * termination of the process can occur
  * 
- * @returns `OK`
+ * @returns `MISSING_ID_ARGUMENT` if the ID command-line argument is missing,
+ * `UNABLE_TO_OPEN_PIPE` if the IPC pipes could not be opened,
+ * `UNABLE_TO_CLOSE_PIPE` if the IPC pipes could not be closed,
+ * `UNABLE_TO_CANCEL_THREAD` if the autoclose thread could not be cancelled,
+ * `OK` otherwise
  */
 int main(int argc, char *argv[]);
 
 /**
- * Handles the shutdown also cleaning up IPC files
+ * Reads requests from the pipe, executes the commands and sends responses
+ */
+void execute_command();
+
+/**
+ * Reads the pipe and parses the request
+ */
+error_code_t read_pipe();
+
+/**
+ * Handles an info command and creates a response
+ */
+void create_info_response();
+
+/**
+ * Handles a link command and creates a response
+ * 
+ * If the parent does not change the pipes are not closed and reopened
+ * 
+ * The new parent ID is always provided as argument in the response
+ * 
+ * The parent ID is not updated if the pipe switch fails
+ */
+void create_link_response();
+
+/**
+ * Handles a registry command and creates a response
+ */
+void create_registry_response();
+
+/**
+ * Handles a switch command and creates a response
+ * 
+ * Sets the state, scheduling or cancelling the autoclose action
+ */
+void create_switch_response();
+
+/**
+ * Formats the response and writes it in the pipe
+ * 
+ * If it encounters errors, they are printed in `stderr` because they cannot be sent to the parent
+ */
+void write_pipe();
+
+/**
+ * Handles the shutdown
  */
 void handle_shutdown();
 
@@ -73,6 +121,8 @@ error_code_t set_state(leaf_device_state_t new_state, bool automatic);
  * If it succeeds a notification is sent to the parent
  * 
  * @param arg Not used
+ * 
+ * @returns `NULL`
  */
 void* autoclose_routine(void *arg);
 

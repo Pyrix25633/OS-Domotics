@@ -59,8 +59,8 @@ void start_device_fifos(device_id_t device_id, int *rcv_requests_fd, int *snd_re
     char name[PIPE_NAME_MAX_LENGTH];
     if(create_fifo_name(device_id, true, name, PIPE_NAME_MAX_LENGTH) != OK
         || (*rcv_requests_fd = open(name, O_RDONLY)) < 0) {
-        print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, device_id, "opening the device pipe to receive commands");
-        exit(UNABLE_TO_CREATE_PIPE);
+        print_error(STDERR_FILENO, UNABLE_TO_OPEN_PIPE, device_id, "opening the device pipe to receive commands");
+        exit(UNABLE_TO_OPEN_PIPE);
     }
     if(create_fifo_name(CONTROLLER_ID, false, name, PIPE_NAME_MAX_LENGTH) != OK
         || (*snd_responses_fd = open(name, O_WRONLY)) < 0) {

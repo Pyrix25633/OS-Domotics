@@ -62,6 +62,7 @@ typedef u_int8_t error_code_t;
 #define UNABLE_TO_REMOVE_PIPE    0x54
 #define UNABLE_TO_READ_PIPE      0x55
 #define UNABLE_TO_WRITE_PIPE     0x56
+#define UNEXPECTED_END_OF_FILE   0x57
 
 // Macros for error checking
 
