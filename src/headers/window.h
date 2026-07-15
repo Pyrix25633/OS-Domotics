@@ -22,9 +22,15 @@
 // Macros - can be used instead of doing very small functions
 
 //checks if values has changed
-
 #define HAS_STATE_CHANGED(new_state) state!=new_state //Checks if the state has changed
 #define HAS_PARENT_CHANGED(new_parent) parent_id!=new_parent //Checks if the parent has changed
+
+//current seconds open
+#define SECONDS_OPEN time(NULL) - last_opened
+
+//no action switch command
+#define NO_ACTION_SWITCH_OPEN SWITCH_LABEL(code)==SWITCH_OPEN && SWITCH_POSITION(code)==POSITION_OFF
+#define NO_ACTION_SWITCH_CLOSE SWITCH_LABEL(code)==SWITCH_CLOSE && SWITCH_POSITION(code)==POSITION_OFF
 
 //TODO values to substitute, just placeholders for now
 #define MAX_WAITING 3
@@ -51,6 +57,11 @@ void handle_shutdown();
  * Reads the pipe and identifies the command
  */
 error_code_t read_pipe();
+
+/**
+ * Writes to the pipe
+ */
+void write_pipe();
 
 /**
  * Executes the command received from the pipe

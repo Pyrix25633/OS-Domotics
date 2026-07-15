@@ -28,6 +28,7 @@ bool force_exit = false;
 request_t request; //destination, command_code, argument
 response_t response;
 char buffer_read[MAX_REQUEST_SIZE]; //buffer to read the request from the pipe
+char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send it to the pipe
 
 // - Signal handler -
 
@@ -77,6 +78,17 @@ error_code_t read_pipe(){
     return OK;
 }
 
+void write_pipe(){
+    error_code_t error = format_response(&response, buffer_write, MAX_RESPONSE_SIZE);
+
+    if(error != OK){
+        print_error(STDERR_FILENO, error, id, "while formatting response");
+    }
+    else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE)<0){
+        print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
+    }
+}
+
 void execute_command(){
     command_code_t code = request.command_code;
 
@@ -94,6 +106,7 @@ void execute_command(){
         code = request.command_code;
         response.command_code = code; //! response command code
         response.response_code = OK; //! response error code
+        response.arguments_size = 0;
 
         if(IS_INFO(code)){info_response();}
         else if(IS_LINK(code)){link_response(code);}
@@ -104,14 +117,15 @@ void execute_command(){
         }
 
         int random_processing_time = rand() % (MAX_WAITING - MIN_WAITING +1) - MIN_WAITING;
-        sleep(random_processing_time);
-        format_response(&response, &snd_responses_fd, MAX_RESPONSE_SIZE);
+        //TODO sleep random 
+        sleep(1);
+        write_pipe();
     }
 }
 
 void info_response(){
     response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[OPEN_HOURS_ARGUMENT] = seconds_open/60; //TODO change with OPEN_MINUTES_ARGUMENT
+    response.arguments[OPEN_HOURS_ARGUMENT] = (state==STATE_CLOSED ? seconds_open : SECONDS_OPEN)/60; //TODO change with OPEN_MINUTES_ARGUMENT
     response.arguments_size = MAX_WINDOW_ARGUMENTS;
 }
 
@@ -137,18 +151,32 @@ void link_response(command_code_t code){
 void switch_response(command_code_t code){
     if(SWITCH_LABEL(code)==SWITCH_OPEN && SWITCH_POSITION(code)==POSITION_ON){
         if(HAS_STATE_CHANGED(SWITCH_OPEN)){
-            state = SWITCH_OPEN;
+            state = STATE_OPEN;
             time(&last_opened);
         }
     }
     else if(SWITCH_LABEL(code)==SWITCH_CLOSE && SWITCH_POSITION(code)==POSITION_ON){
         if(HAS_STATE_CHANGED(SWITCH_CLOSE)){
-            state = SWITCH_CLOSE;
-            time(&last_closed); //! it's the total time open from the last close
-            seconds_open = last_closed - last_opened;
+            state = STATE_CLOSED;
+            time(&last_closed);
+            seconds_open = last_closed - last_opened; //! if it's closed then this is the time that it has remained open
         }
     }
-    else if(SWITCH_LABEL(code)==SWITCH_POWER){
+    else if((!(NO_ACTION_SWITCH_CLOSE)) && (!(NO_ACTION_SWITCH_OPEN))){
         response.response_code = UNEXPECTED_COMMAND;
     }
 }
+
+//response: id command_code response_code arguments
+
+//! switch iff
+//make: *** [Makefile:25: default] Segmentation fault (core dumped)
+
+//! info on
+//Request: 1 72
+//Response: 1 72 0 0 0
+
+//! link 2
+//Request: 1 105 2
+//Response: 1
+//IPC related error: 0x56 unable to write pipe, errno: 9, source: device 1, while sending response
