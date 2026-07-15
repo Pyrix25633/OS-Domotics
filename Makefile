@@ -21,7 +21,7 @@ GENERIC_OBJS = $(GENERIC_SRCS:src/%.c=bin/%.o)
 .SECONDARY: $(GENERIC_OBJS) $(DEVICES_OBJS)
 
 # Compile, link and run a specific main file
-default: $(EXEC_NAME)
+default: bin/ ipc/ $(EXEC_NAME)
 	./$< $(ARGS)
 
 # Linking step, need all object files
@@ -33,7 +33,13 @@ bin/%.o : src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Build all executables
-build: $(DEVICES_EXEC_NAMES)
+build: bin/ ipc/ $(DEVICES_EXEC_NAMES)
+
+bin/:
+	mkdir bin/
+
+ipc/:
+	mkdir ipc/
 
 # Remove all compiled files, executables and IPC related files
 clean:

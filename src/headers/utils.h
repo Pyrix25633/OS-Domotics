@@ -102,6 +102,8 @@ error_code_t end_device_fifos(device_id_t device_id, int rcv_requests_fd, int sn
 /**
  * Closes the current pipe used to send requests to the parent and replaces it with the new one
  * 
+ * If it fails to open the new pipe, the old one is left open
+ * 
  * @param parent_id New parent device ID
  * @param snd_responses_fd Pointer where to get the old file descriptor and put the new file descriptor
  * 

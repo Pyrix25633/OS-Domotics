@@ -103,13 +103,14 @@ error_code_t end_device_fifos(device_id_t device_id, int rcv_requests_fd, int sn
 }
 
 error_code_t change_snd_responses_pipe(device_id_t parent_id, int *snd_responses_fd) {
-    if(close(*snd_responses_fd) < 0) {
-        return UNABLE_TO_CLOSE_PIPE;
-    }
+    int old_fd = *snd_responses_fd;
     char name[PIPE_NAME_MAX_LENGTH];
     if(create_fifo_name(parent_id, false, name, PIPE_NAME_MAX_LENGTH) != OK
         || (*snd_responses_fd = open(name, O_WRONLY)) < 0) {
         return UNABLE_TO_OPEN_PIPE;
+    }
+    if(close(old_fd) < 0) {
+        return UNABLE_TO_CLOSE_PIPE;
     }
     return OK;
 }
