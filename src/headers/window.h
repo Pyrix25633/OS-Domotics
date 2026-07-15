@@ -23,11 +23,12 @@
 
 //checks if values has changed
 
-#define IS_STATE_CHANGED(new_state) state!=new_state //Checks if the state has changed
-#define IS_PARENT_CHANGED(new_parent) parent_id!=new_parent //Checks if the parent has changed
+#define HAS_STATE_CHANGED(new_state) state!=new_state //Checks if the state has changed
+#define HAS_PARENT_CHANGED(new_parent) parent_id!=new_parent //Checks if the parent has changed
 
 //TODO values to substitute, just placeholders for now
-//none for now, before there were some
+#define MAX_WAITING 3
+#define MIN_WAITING 1
 
 /**
  * Main function of the Window Program
@@ -70,5 +71,10 @@ void link_response(command_code_t code);
  * Sets the attributes for the switch response and performs actions if needed
  */
 void switch_response(command_code_t code);
+
+/**
+ * Sets the attributes for the delete response and performs actions if needed
+ */
+void delete_response(command_code_t code);
 
 #endif
