@@ -11,6 +11,16 @@ device_id_t id;
 leaf_device_state_t state = STATE_CLOSED;
 u_int32_t seconds_open = INITIAL_SECONDS_OPEN;
 
+// - Auxiliary device data -
+
+device_id_t parent_id = CONTROLLER_ID;
+
+// Timestamps needed to calculate the open time
+
+time_t last_opened; //returns the time in seconds
+time_t last_closed;
+
+
 //TODO comment
 
 request_t request; //destination, command_code, argument
@@ -71,7 +81,6 @@ error_code_t read_pipe(){
 }
 
 void execute_command(){
-
     error_code_t error_code;
 
     //default values for the response, to be changed if needed
@@ -91,16 +100,19 @@ void execute_command(){
         //no errors occurred while parsing the request and the destination is correct
         code = request.command_code;
         response.command_code = code; //! response command code
+        response.response_code = OK; //! response error code
 
         //TODO
         if(IS_INFO(code)){info_response();}
-        else if(IS_LINK(code)){}
-        else if((IS_SWITCH(code))){}
+        else if(IS_LINK(code)){link_response(code);}
+        else if((IS_SWITCH(code))){switch_response(code);}
         else if((IS_REGISTRY(code))){}
         else if((IS_DELETE(code))){}
         else{} //TODO unexpected command
     }
 }
+
+//TODO wait a random time before responding
 
 //TODO verify if the response error code is always ok or not, if it is then I set it with
 //TODO the response command code
@@ -108,24 +120,47 @@ void execute_command(){
 //! I need to track what i have written and what not for the response
 
 void info_response(){
-
     response.arguments[STATE_ARGUMENT] = state;
     response.arguments[OPEN_HOURS_ARGUMENT] = seconds_open;
     response.arguments_size = MAX_WINDOW_ARGUMENTS;
-    response.response_code = OK; //* ? response error code for all
-
-    //? this should be fine
 }
 
 void link_response(command_code_t code){
     if(LINK_SUBCOMMAND(code)==LINK_CHANGE_PARENT){
-        //TODO change_snd_responses_pipe
+        change_snd_responses_pipe(request.argument,&snd_responses_fd); //the argument is the new parent id
+        if(IS_PARENT_CHANGED(request.argument)){
+            parent_id = request.argument;
+            response.arguments[REQUEST_ARGUMENT] = parent_id;
+            response.arguments_size = 1;
+        }
     }
     else{
         response.response_code = UNEXPECTED_COMMAND;
-        //TODO check if i need to add something
     }
-
-
 }
+
+//i have 2 switch (open,close -> on/off)
+void switch_response(command_code_t code){
+    if(SWITCH_LABEL(code)==SWITCH_OPEN && SWITCH_POSITION(code)==POSITION_ON){
+        if(IS_STATE_CHANGED(SWITCH_OPEN)){
+            state = SWITCH_OPEN;
+            time(&last_opened); 
+        }
+    }
+    else if(SWITCH_LABEL(code)==SWITCH_CLOSE && SWITCH_POSITION(code)==POSITION_ON){
+        if(IS_STATE_CHANGED(SWITCH_CLOSE)){
+            state = SWITCH_CLOSE;
+            time(&last_closed); //TODO verify is it's from the last or in total
+            seconds_open = last_closed - last_opened;
+        }
+    }
+    else if(SWITCH_LABEL(code)==SWITCH_POWER){
+        response.response_code = UNEXPECTED_COMMAND;
+    }
+}
+
+
+
+
+
 

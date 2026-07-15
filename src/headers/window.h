@@ -12,14 +12,22 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
+#include <time.h>
 
 // Default values
 
 #define INITIAL_SECONDS_OPEN    0
 #define MAX_WINDOW_ARGUMENTS    2
 
+// Macros - can be used instead of doing very small functions
+
+//checks if values has changed
+
+#define IS_STATE_CHANGED(new_state) state!=new_state //Checks if the state has changed
+#define IS_PARENT_CHANGED(new_parent) parent_id!=new_parent //Checks if the parent has changed
+
 //TODO values to substitute, just placeholders for now
-#define UNEXPECTED_COMMAND 0x11
+//none for now, before there were some
 
 /**
  * Main function of the Window Program
@@ -49,13 +57,18 @@ error_code_t read_pipe();
 void execute_command();
 
 /**
- * TODO
+ * Sets the attributes for the info response
  */
 void info_response();
 
 /**
- * TODO
+ * Sets the attributes for the link response and performs actions if needed
  */
 void link_response(command_code_t code);
+
+/**
+ * Sets the attributes for the switch response and performs actions if needed
+ */
+void switch_response(command_code_t code);
 
 #endif
