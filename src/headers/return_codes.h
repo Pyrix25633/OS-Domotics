@@ -38,7 +38,8 @@ typedef u_int8_t error_code_t;
 #define RESPONSE_FORMAT_ERROR    0x24
 #define BUFFER_TOO_SHORT         0x25
 #define DESTINATION_ID_MISMATCH  0x26
-#define INVALID_REQUEST_ARGUMENT 0x27      
+#define INVALID_REQUEST_ARGUMENT 0x27
+#define UNEXPECTED_COMMAND       0x28
 
 // - CAUSE RELATED TO PROCESSES -
 

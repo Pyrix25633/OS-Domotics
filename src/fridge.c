@@ -25,6 +25,7 @@ u_int8_t last_temperature = INITIAL_TEMPERATURE; // Updated automatically
 
 // - Auxiliary device data -
 
+device_id_t parent_id = CONTROLLER_ID;
 time_t last_opened; // Timestamp needed to calculate the open time and current temperature
 temperature_direction_t temperature_direction = INITIAL_TEMPERATURE_DIRECTION; // Temperature direction needed to calculate current temperature
 
@@ -63,7 +64,7 @@ int main(int argc, char *argv[]) {
     error_code_t error_code;
     while(!force_exit) {
         response.arguments_size = 0;
-        if(read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE) < 0 || printf("Read: %s\n", request_buffer) < 0) {
+        if(read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE) < 0 || printf("Read: %s\n", request_buffer) < 0) { // ! remove print
             response.command_code = NULL_COMMAND; // Could not be parsed
             response.response_code = UNABLE_TO_READ_PIPE;
         }
@@ -89,7 +90,10 @@ int main(int argc, char *argv[]) {
                     response.arguments[THERMOSTAT_ARGUMENT] = thermostat;
                     response.arguments[TEMPERATURE_ARGUMENT] = calculate_current_temperature();
                 } else if(IS_LINK(request.command_code) && LINK_SUBCOMMAND(request.command_code) == LINK_CHANGE_PARENT) {
-                    response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
+                    if(request.argument != parent_id) {
+                        parent_id = request.argument;
+                        response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
+                    }
                 } else if(IS_DELETE(request.command_code)) {
                     // TODO: check if there are other things to do
                     force_exit = true;
@@ -119,7 +123,7 @@ int main(int argc, char *argv[]) {
                         response.response_code = INVALID_COMMAND;
                     }
                 } else {
-                    response.response_code = INVALID_COMMAND;
+                    response.response_code = UNEXPECTED_COMMAND;
                 }
                 if(pthread_mutex_unlock(&data_mutex) < 0) {
                     print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing request");

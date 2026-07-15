@@ -30,7 +30,9 @@ void print_error(int fd, int error_code, int device_id, char *message) {
         case REQUEST_FORMAT_ERROR:     dprintf(fd, "request format error");     break;
         case RESPONSE_FORMAT_ERROR:    dprintf(fd, "response forma error");     break;
         case BUFFER_TOO_SHORT:         dprintf(fd, "buffer too short");         break;
+        case DESTINATION_ID_MISMATCH:  dprintf(fd, "destination ID mismatch");  break;
         case INVALID_REQUEST_ARGUMENT: dprintf(fd, "invalid request argument"); break;
+        case UNEXPECTED_COMMAND:       dprintf(fd, "unexpected command");       break;
 
         case UNABLE_TO_OPEN_PIPE:      dprintf(fd, "unable to open pipe");      break;
         case UNABLE_TO_CREATE_PIPE:    dprintf(fd, "unable to create pipe");    break;
