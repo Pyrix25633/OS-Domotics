@@ -20,7 +20,7 @@ leaf_device_state_t state = STATE_CLOSED; // Modified by switch commands
 u_int8_t autoclose_delay = DEFAULT_AUTOCLOSE_DELAY; // Can be modified
 u_int8_t fill_percentage = DEFAULT_FILL_PERCENTAGE; // Can be modified only manually
 u_int8_t thermostat = DEFAULT_THERMOSTAT; // Can be modified only manually
-u_int32_t seconds_open = INITIAL_SECONDS_OPEN; // Updated automatically, converted into hours for info request
+u_int32_t seconds_open = INITIAL_SECONDS_OPEN; // Updated automatically, converted into minutes for info
 u_int8_t last_temperature = INITIAL_TEMPERATURE; // Updated automatically
 
 // - Auxiliary device data -
@@ -64,7 +64,7 @@ int main(int argc, char *argv[]) {
     error_code_t error_code;
     while(!force_exit) {
         response.arguments_size = 0;
-        if(read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE) < 0 || printf("Read: %s\n", request_buffer) < 0) { // ! remove print
+        if(read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE) < 0) {
             response.command_code = NULL_COMMAND; // Could not be parsed
             response.response_code = UNABLE_TO_READ_PIPE;
         }
@@ -84,12 +84,14 @@ int main(int argc, char *argv[]) {
                 } else if(IS_INFO(request.command_code)) {
                     response.arguments_size = 6;
                     response.arguments[STATE_ARGUMENT] = state;
-                    response.arguments[OPEN_HOURS_ARGUMENT] = calculate_seconds_open() / (60*60);
+                    response.arguments[OPEN_HOURS_ARGUMENT] = calculate_seconds_open() / 60;
                     response.arguments[AUTOCLOSE_DELAY_ARGUMENT] = autoclose_delay;
                     response.arguments[FILL_PERCENTAGE_ARGUMENT] = fill_percentage;
                     response.arguments[THERMOSTAT_ARGUMENT] = thermostat;
                     response.arguments[TEMPERATURE_ARGUMENT] = calculate_current_temperature();
                 } else if(IS_LINK(request.command_code) && LINK_SUBCOMMAND(request.command_code) == LINK_CHANGE_PARENT) {
+                    response.arguments_size = 1;
+                    response.arguments[0] = request.argument;
                     if(request.argument != parent_id) {
                         parent_id = request.argument;
                         response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
@@ -98,6 +100,8 @@ int main(int argc, char *argv[]) {
                     // TODO: check if there are other things to do
                     force_exit = true;
                 } else if(IS_REGISTRY(request.command_code)) {
+                    response.arguments_size = 1;
+                    response.arguments[0] = request.argument;
                     if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_DELAY) {
                         autoclose_delay = request.argument;
                     } else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_THERMOSTAT) {
@@ -109,6 +113,9 @@ int main(int argc, char *argv[]) {
                         } else {
                             response.response_code = INVALID_REQUEST_ARGUMENT;
                         }
+                    } else {
+                        response.arguments_size = 0;
+                        response.response_code = UNEXPECTED_COMMAND;
                     }
                 } else if(IS_SWITCH(request.command_code)) {
                     if(SWITCH_LABEL(request.command_code) == SWITCH_OPEN) {
@@ -120,7 +127,7 @@ int main(int argc, char *argv[]) {
                             set_state(STATE_CLOSED);
                         }
                     } else {
-                        response.response_code = INVALID_COMMAND;
+                        response.response_code = UNEXPECTED_COMMAND;
                     }
                 } else {
                     response.response_code = UNEXPECTED_COMMAND;

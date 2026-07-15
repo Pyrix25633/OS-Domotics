@@ -18,7 +18,7 @@ typedef bool temperature_direction_t;
 
 // Default values
 
-#define DEFAULT_AUTOCLOSE_DELAY       5 // Number of seconds after which the fridge automatically closes
+#define DEFAULT_AUTOCLOSE_DELAY       30 // Number of seconds after which the fridge automatically closes
 #define DEFAULT_FILL_PERCENTAGE       0
 #define DEFAULT_THERMOSTAT            4 // Target temperature in degrees (Celsius)
 #define INITIAL_SECONDS_OPEN          0

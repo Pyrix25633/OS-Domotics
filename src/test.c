@@ -16,25 +16,15 @@
 
 #define INPUT_SIZE 64
 
+/**
+ * Implements commands:
+ * - switch <power/open/close> <on/off>
+ * - link <parent_id>
+ * - info
+ * - del
+ * - set <begin/end/delay/thermostat/percentage> <value>
+ */
 int main(int argc, char *argv[]) {
-    /*
-    
-    sprintf(request_buffer, "1 72");
-    write(down, request_buffer, REQUEST_SIZE);
-    sprintf(request_buffer, "1 21");
-    write(down, request_buffer, REQUEST_SIZE);
-    sprintf(request_buffer, "1 72");
-    write(down, request_buffer, REQUEST_SIZE);
-    sprintf(request_buffer, "1 24");
-    write(down, request_buffer, REQUEST_SIZE);
-    read(up, request_buffer, RESPONSE_SIZE);
-    printf("Received %s\n", request_buffer);
-    read(up, request_buffer, RESPONSE_SIZE);
-    printf("Received %s\n", request_buffer);
-    read(up, request_buffer, RESPONSE_SIZE);
-    printf("Received %s\n", request_buffer);
-    read(up, request_buffer, RESPONSE_SIZE);
-    printf("Received %s\n", request_buffer);*/
     device_id_t id = get_id_from_arguments(argc, argv);
     char name_buffer[INPUT_SIZE];
     create_fifo_name(id, DIRECTION_DOWN, name_buffer, INPUT_SIZE);
@@ -51,7 +41,8 @@ int main(int argc, char *argv[]) {
     response_t response;
     while(loop) {
         getline(&input_buffer, &size, stdin);
-        input_buffer[strlen(input_buffer) - 1] = '\0';
+        input_buffer[strlen(input_buffer) - 1] = '\0'; // Remove '\n'
+
         token = strtok_r(input_buffer, " ", &last);
         if(token != NULL) {
             if(strcmp(token, "switch") == 0) {
@@ -71,24 +62,47 @@ int main(int argc, char *argv[]) {
                     request.command_code |= POSITION_OFF;
                 }
             } else if(strcmp(token, "link") == 0) {
-                request.command_code = LINK;
+                request.command_code = LINK | LINK_CHANGE_PARENT;
                 token = strtok_r(NULL, " ", &last);
                 request.argument = string_to_unsigned(token);
             } else if(strcmp(token, "info") == 0) {
                 request.command_code = INFO;
             } else if(strcmp(token, "del") == 0) {
                 request.command_code = DELETE;
+                loop = false;
             } else if(strcmp(token, "set") == 0) {
                 request.command_code = REGISTRY;
-                // TODO
-            } else if(strcmp(token, "exit") == 0) {
-                break;
+                token = strtok_r(NULL, " ", &last);
+                if(strcmp(token, "begin") == 0) {
+                    request.command_code |= REGISTRY_BEGIN;
+                } else if(strcmp(token, "end") == 0) {
+                    request.command_code |= REGISTRY_END;
+                } else if(strcmp(token, "delay") == 0) {
+                    request.command_code |= REGISTRY_DELAY;
+                } else if(strcmp(token, "thermostat") == 0) {
+                    request.command_code |= REGISTRY_THERMOSTAT;
+                } else if(strcmp(token, "percentage") == 0) {
+                    request.command_code |= REGISTRY_PERCENTAGE;
+                }
+                token = strtok_r(NULL, " ", &last);
+                request.argument = string_to_unsigned(token);
             }
         }
-        free(input_buffer); // ! some error here sometimes
+
+        free(input_buffer);
+        input_buffer = NULL;
+
+        // Send request
         format_request(&request, request_buffer, MAX_REQUEST_SIZE);
         printf("Request: %s\n", request_buffer);
         write(down, request_buffer, MAX_REQUEST_SIZE);
+        if(IS_LINK(request.command_code)) {
+            close(up);
+            create_fifo_name(request.argument, DIRECTION_UP, name_buffer, INPUT_SIZE);
+            up = open(name_buffer, O_RDONLY);
+        }
+
+        // Read response
         read(up, response_buffer, MAX_RESPONSE_SIZE);
         printf("Response: %s\n", response_buffer);
         parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
@@ -96,4 +110,7 @@ int main(int argc, char *argv[]) {
             print_error(STDERR_FILENO, response.response_code, id, "in response");
         }
     }
+
+    close(up);
+    close(down);
 }
