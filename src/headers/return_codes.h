@@ -48,8 +48,9 @@ typedef u_int8_t error_code_t;
 // - CAUSE RELATED TO THREADS -
 
 #define THREAD_ERROR             0x40
-#define UNABLE_TO_LOCK_MUTEX     0x41
-#define UNABLE_TO_UNLOCK_MUTEX   0x42
+#define UNABLE_TO_CREATE_THREAD  0x41
+#define UNABLE_TO_LOCK_MUTEX     0x42
+#define UNABLE_TO_UNLOCK_MUTEX   0x43
 
 // - CAUSE RELATED TO IPC -
 

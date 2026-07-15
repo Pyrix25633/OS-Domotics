@@ -22,7 +22,7 @@ GENERIC_OBJS = $(GENERIC_SRCS:src/%.c=bin/%.o)
 
 # Compile, link and run a specific main file
 default: bin/ ipc/ $(EXEC_NAME)
-	./$< $(ARGS)
+	./$(EXEC_NAME) $(ARGS)
 
 # Linking step, need all object files
 bin/%: bin/%.o $(GENERIC_OBJS)

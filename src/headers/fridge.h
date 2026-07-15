@@ -18,7 +18,7 @@ typedef bool temperature_direction_t;
 
 // Default values
 
-#define DEFAULT_AUTOCLOSE_DELAY       30 // Number of seconds after which the fridge automatically closes
+#define DEFAULT_AUTOCLOSE_DELAY       2 // Number of seconds after which the fridge automatically closes // ! change
 #define DEFAULT_FILL_PERCENTAGE       0
 #define DEFAULT_THERMOSTAT            4 // Target temperature in degrees (Celsius)
 #define INITIAL_SECONDS_OPEN          0
@@ -57,6 +57,29 @@ void handle_shutdown();
  * @param new_state The new state
  */
 void set_state(leaf_device_state_t new_state);
+
+/**
+ * Creates a thread that closes the fridge
+ * 
+ * It's a signal handler, which interrupts the main thread, which might have locked the mutex,
+ * so to avoid a deadlock another thread is created to perform the task
+ * 
+ * The thread is detached, meaning it does not need to be joined for its resources to be freed
+ */
+void handle_autoclose();
+
+/**
+ * It's the function executed by the autoclose thread created by the signal handler
+ * 
+ * If any error occurs, it is printed on the stderr and the routine terminates, as it's a critical non-solvable error
+ * 
+ * If it fails releasing the lock the handle_shutdown function is closed and the device is terminated
+ * 
+ * If it succeeds a notification is sent to the parent
+ * 
+ * @param arg Not used
+ */
+void autoclose_routine(void *arg);
 
 /**
  * Calculates the current total number of seconds the fridge was left open

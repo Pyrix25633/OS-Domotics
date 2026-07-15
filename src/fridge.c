@@ -54,6 +54,9 @@ int main(int argc, char *argv[]) {
     action_handler.sa_handler = handle_shutdown;
     sigaction(SIGTERM, &action_handler, NULL);
 
+    action_handler.sa_handler = handle_autoclose; // ! not working
+    sigaction(SIGALRM, &action_handler, NULL);
+
     // TODO: check what happens when the parent closes the pipe because the device is moved around
     // TODO: it probably exits from the while, it must be solved somehow
     char request_buffer[MAX_REQUEST_SIZE];
@@ -93,8 +96,10 @@ int main(int argc, char *argv[]) {
                     response.arguments_size = 1;
                     response.arguments[REQUEST_ARGUMENT] = request.argument;
                     if(request.argument != parent_id) {
-                        parent_id = request.argument;
                         response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
+                        if(response.response_code == OK) {
+                            parent_id = request.argument;
+                        }
                     }
                 } else if(IS_DELETE(request.command_code)) {
                     // TODO: check if there are other things to do
@@ -121,10 +126,12 @@ int main(int argc, char *argv[]) {
                     if(SWITCH_LABEL(request.command_code) == SWITCH_OPEN) {
                         if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
                             set_state(STATE_OPEN);
+                            alarm(autoclose_delay); // Schedule autoclose
                         }
                     } else if(SWITCH_LABEL(request.command_code) == SWITCH_CLOSE) {
                         if(SWITCH_POSITION(request.command_code) == POSITION_ON) {
                             set_state(STATE_CLOSED);
+                            alarm(0); // Clear previously scheduled autoclose
                         }
                     } else {
                         response.response_code = UNEXPECTED_COMMAND;
@@ -154,6 +161,7 @@ void handle_shutdown() {
     if(error_code != OK) {
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
+    alarm(0); // Remove scheduled alarms
     // TODO: add here things to do on deletion
     exit(error_code);
 }
@@ -168,6 +176,46 @@ void set_state(leaf_device_state_t new_state) {
         }
         last_temperature = calculate_current_temperature();
     }
+}
+
+void handle_autoclose() {
+    pthread_attr_t attributes;
+    pthread_t tid;
+    if(pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED) < 0
+        || pthread_create(&tid, &attributes, &autoclose_routine, NULL) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "in autoclose handler");
+    }
+}
+
+void autoclose_routine(void *arg) {
+    printf("Autoclosing\n"); // ! remove
+    if(pthread_mutex_lock(&data_mutex) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "in autoclose thread");
+        pthread_exit(NULL);
+    }
+
+    set_state(STATE_CLOSED);
+
+    if(pthread_mutex_unlock(&data_mutex) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "in autoclose thread");
+        handle_shutdown();
+    }
+    printf("Autoclosed\n"); // ! remove
+
+    char response_buffer[MAX_RESPONSE_SIZE];
+    response_t response;
+    response.source = id;
+    response.command_code = SWITCH | SWITCH_CLOSE | POSITION_ON;
+    response.response_code = OK;
+    response.arguments_size = 0;
+    error_code_t error_code = format_response(&response, response_buffer, MAX_RESPONSE_SIZE);
+    if(error_code != OK) {
+        print_error(STDERR_FILENO, error_code, id, "in autoclose thread");
+    } else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "in autoclose thread");
+    }
+
+    pthread_exit(NULL);
 }
 
 u_int32_t calculate_seconds_open() {
