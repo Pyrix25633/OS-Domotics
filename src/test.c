@@ -13,12 +13,16 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <string.h>
+#include <ncurses.h>
 
 #define INPUT_SIZE 64
 
 int up;
 int down;
 device_id_t id;
+WINDOW *responses_win;
+WINDOW *commands_win;
+int height, width;
 
 void* read_thread(void *arg) {
     (void)arg; // Unused parameter
@@ -27,16 +31,20 @@ void* read_thread(void *arg) {
     bool loop = true;
     while(loop) {
         if(read(up, response_buffer, MAX_RESPONSE_SIZE) > 0) {
-            printf("Response: %s\n", response_buffer);
+            wscrl(responses_win, 1);
+            wmove(responses_win, height/2 -2, 1);
+            wprintw(responses_win, response_buffer);
+            wrefresh(responses_win);
+            
             parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
             if(response.response_code != OK) {
-                print_error(STDERR_FILENO, response.response_code, id, "in response");
+                //print_error(STDERR_FILENO, response.response_code, id, "in response");
             }
             if(IS_DELETE(response.command_code)) {
                 loop = false;
             }
         } else {
-            print_error(STDERR_FILENO, UNABLE_TO_READ_PIPE, id, "in test");
+            //print_error(STDERR_FILENO, UNABLE_TO_READ_PIPE, id, "in test");
         }
     }
     close(up);
@@ -55,11 +63,30 @@ int main(int argc, char *argv[]) {
     id = get_id_from_arguments(argc, argv);
     char name_buffer[INPUT_SIZE];
     create_fifo_name(id, DIRECTION_DOWN, name_buffer, INPUT_SIZE);
+
+    initscr();
+    cbreak();
+
+    height, width;
+    getmaxyx(stdscr, height, width);
+
+    responses_win = newwin(height/2, width, 0, 0);
+    //box(responses_win, 0, 0);
+    commands_win = newwin(height/2, width, height/2, 0);
+    //box(commands_win, 0, 0);
+    wmove(commands_win, height/2 -2, 1);
+    scrollok(commands_win, true);
+    scrollok(responses_win, true);
+    refresh();
+    wrefresh(responses_win);
+    wrefresh(commands_win);
+
     down = open(name_buffer, O_WRONLY);
     up = open("./ipc/0_up.fifo", O_RDONLY);
     bool loop = true;
-    char *input_buffer = NULL;
-    size_t size;
+    //char *input_buffer = NULL;
+    char input_buffer[64];
+    size_t size = 64;
     char *token, *last;
     char request_buffer[MAX_REQUEST_SIZE];
     request_t request;
@@ -67,9 +94,11 @@ int main(int argc, char *argv[]) {
     pthread_t tid;
     pthread_create(&tid, NULL, read_thread, NULL);
     while(loop) {
-        getline(&input_buffer, &size, stdin);
-        input_buffer[strlen(input_buffer) - 1] = '\0'; // Remove '\n'
-
+        wgetnstr(commands_win, input_buffer, size);
+        //input_buffer[strlen(input_buffer) - 1] = '\0'; // Remove '\n'
+        wscrl(commands_win, 1);
+        wmove(commands_win, height/2 -2, 1);
+        wrefresh(commands_win);
         token = strtok_r(input_buffer, " ", &last);
         if(token != NULL) {
             if(strcmp(token, "switch") == 0) {
@@ -116,12 +145,12 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        free(input_buffer);
-        input_buffer = NULL;
+        //free(input_buffer);
+        //input_buffer = NULL;
 
         // Send request
         format_request(&request, request_buffer, MAX_REQUEST_SIZE);
-        printf("Request: %s\n", request_buffer);
+        //printf("Request: %s\n", request_buffer);
         write(down, request_buffer, MAX_REQUEST_SIZE);
         if(IS_LINK(request.command_code)) {
             close(up);
@@ -132,4 +161,5 @@ int main(int argc, char *argv[]) {
 
     pthread_join(tid, NULL);
     close(down);
+    endwin();
 }

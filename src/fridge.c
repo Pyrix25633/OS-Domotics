@@ -27,7 +27,6 @@ device_id_t parent_id = CONTROLLER_ID;
 time_t last_opened; // Timestamp needed to calculate the open time and current temperature
 time_t last_closed; // Timestamp needed to calculate the open time and current temperature
 time_t last_thermostat_set; // Timestamp needed to calculate the current temperature
-temperature_direction_t temperature_direction = INITIAL_TEMPERATURE_DIRECTION; // Temperature direction needed to calculate current temperature
 u_int8_t last_temperature = INITIAL_TEMPERATURE; // Used to calculate the current temperature
 
 // - Concurrency management data -
