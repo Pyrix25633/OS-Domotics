@@ -27,7 +27,7 @@ device_id_t parent_id = CONTROLLER_ID;
 time_t last_opened; // Timestamp needed to calculate the open time and current temperature
 time_t last_closed; // Timestamp needed to calculate the open time and current temperature
 time_t last_thermostat_set; // Timestamp needed to calculate the current temperature
-u_int8_t last_temperature = INITIAL_TEMPERATURE; // Used to calculate the current temperature
+float last_temperature = INITIAL_TEMPERATURE; // Used to calculate the current temperature
 
 // - Concurrency management data -
 
@@ -124,7 +124,7 @@ void create_info_response() {
     response.arguments[AUTOCLOSE_DELAY_ARGUMENT] = autoclose_delay;
     response.arguments[FILL_PERCENTAGE_ARGUMENT] = fill_percentage;
     response.arguments[THERMOSTAT_ARGUMENT] = thermostat;
-    response.arguments[TEMPERATURE_ARGUMENT] = calculate_current_temperature();
+    response.arguments[TEMPERATURE_ARGUMENT] = calculate_current_temperature() * 10;
 }
 
 void create_link_response() {
@@ -267,7 +267,7 @@ void* autoclose_routine(void *arg) {
     pthread_exit(NULL);
 }
 
-u_int8_t calculate_current_temperature() {
+float calculate_current_temperature() {
     float current_temperature;
     time_t elapsed_time;
     if(state == STATE_OPEN) {

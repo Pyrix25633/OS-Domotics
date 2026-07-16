@@ -1,7 +1,7 @@
 # Compiler
 CC = gcc
 # TODO: add extra flags for specific libraries
-CFLAGS = -Isrc/headers -Wall -Wextra
+CFLAGS = -MMD -MP -Isrc/headers -Wall -Wextra
 LFLAGS = -lpthread -lncurses
 # Name of the file to be compiled and run
 EXEC_NAME = bin/$(FILE)
@@ -17,6 +17,10 @@ GENERIC_FILES = return_codes.c messages.c utils.c
 GENERIC_SRCS = $(addprefix src/, $(GENERIC_FILES))
 # Their compiled file
 GENERIC_OBJS = $(GENERIC_SRCS:src/%.c=bin/%.o)
+# All source files
+ALL_SRCS = $(wildcard src/*.c)
+# And their dependency files
+ALL_DEPS = $(ALL_SRCS:src/%.c=bin/%.d)
 
 # Tells "make" to not remove .o files, keeping them could reduce compile time if the .c has not changed
 .SECONDARY: $(GENERIC_OBJS) $(DEVICES_OBJS)
@@ -29,8 +33,10 @@ default: bin/ ipc/ $(EXEC_NAME)
 bin/%: bin/%.o $(GENERIC_OBJS)
 	$(CC) -o $@ $^ $(LFLAGS)
 
+# Tells "make" to watch for dependency files, used to recompile if an used .h has changed, even if the .c has not
+-include $(ALL_DEPS)
 # Compilation step, need C file, not done if already compiled
-bin/%.o : src/%.c
+bin/%.o: src/%.c Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Build all executables

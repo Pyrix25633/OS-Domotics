@@ -23,12 +23,12 @@
 #define MIN_TEMPERATURE(t)            (t - TEMPERATURE_THRESHOLD) // Lower histheresys bound
 #define MAX_TEMPERATURE(t)            (t + TEMPERATURE_THRESHOLD) // Upper histheresys bound
 #define AMBIENT_TEMPERATURE           26 // Ambient temperature
-#define CLOSED_INCREASE_TIME          55*60 // Number of seconds the temperature takes to go from `thermostat - TEMPERATURE_THRESHOLD` to `thermostat + TEMPERATURE_THRESHOLD`
-#define CLOSED_DECREASE_TIME          5*60 // Number of seconds the temperature takes to go from `thermostat + TEMPERATURE_THRESHOLD` to `thermostat - TEMPERATURE_THRESHOLD`
+#define CLOSED_INCREASE_TIME          (55*60) // Number of seconds the temperature takes to go from `thermostat - TEMPERATURE_THRESHOLD` to `thermostat + TEMPERATURE_THRESHOLD`
+#define CLOSED_DECREASE_TIME          (5*60) // Number of seconds the temperature takes to go from `thermostat + TEMPERATURE_THRESHOLD` to `thermostat - TEMPERATURE_THRESHOLD`
 #define TOTAL_CLOSED_CYCLE_TIME       CLOSED_INCREASE_TIME + CLOSED_DECREASE_TIME // Total time of an histheresys cycle
 #define CLOSED_INCREASE_SLOPE         (float)(2 * TEMPERATURE_THRESHOLD)/CLOSED_INCREASE_TIME // How fast the temperature increases when the fridge is closed
 #define CLOSED_DECREASE_SLOPE         -(float)(2 * TEMPERATURE_THRESHOLD)/CLOSED_DECREASE_TIME // How fast the temperature decreases when the fridge is closed and cooling
-#define OPEN_INCREASE_TIME            20*60 // Number of seconds the temperature takes to go from `thermostat` to `AMBIENT_TEMPERATURE`
+#define OPEN_INCREASE_TIME            (10*60) // Number of seconds the temperature takes to go from `thermostat` to `AMBIENT_TEMPERATURE`
 #define OPEN_INCREASE_SLOPE           (float)(AMBIENT_TEMPERATURE - 0)/OPEN_INCREASE_TIME // How fast the temperature increases when the fridge is open
 
 /**
@@ -131,6 +131,6 @@ void* autoclose_routine(void *arg);
  * 
  * @returns The current temperature in degrees (Celsius)
  */
-u_int8_t calculate_current_temperature();
+float calculate_current_temperature();
 
 #endif
