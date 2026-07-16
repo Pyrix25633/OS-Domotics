@@ -6,28 +6,19 @@
 #include "messages.h"
 #include "utils.h"
 
+#include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <time.h>
+#include <pthread.h>
 
 int main(int argc, char *argv[]) {
-    /*char buffer[15] = "17 49 121";
-    request_t command;
-    printf("%u\n", parse_request(&command, buffer, 15));
-    printf("destination: %u, command_code: %u, argument: %u\n", command.destination, command.command_code, command.argument);
-    printf("%u\n", format_command(&command, buffer, 15));
-    printf("%s", buffer);*/
-
-    /*char buffer[20];
-    response_t response;
-    response.source = 15;
-    response.command_code = INFO;
-    response.response_code = OK;
-    response.arguments[0] = 18;
-    response.arguments[1] = 5;
-    response.arguments_size = 2;
-    printf("%u\n", format_response(&response, buffer, 14));
-    printf("%s\n", buffer);
-    char test[20] = "15 72 0";
-    printf("%u\n", parse_response(&response, buffer, 20));*/
+    print_error(STDERR_FILENO, UNEXPECTED_END_OF_FILE, CONTROLLER_ID, NULL);
+    print_error(STDERR_FILENO, UNABLE_TO_CANCEL_THREAD, CONTROLLER_ID, "with test message");
+    print_error(STDERR_FILENO, INVALID_COMMAND, 15, "with test message");
+    print_error(STDERR_FILENO, REQUEST_FORMAT_ERROR, NO_ID, NULL);
 
     return OK;
 }

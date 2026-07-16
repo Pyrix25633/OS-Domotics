@@ -26,6 +26,7 @@ u_int8_t thermostat = DEFAULT_THERMOSTAT; // Can be modified only manually
 device_id_t parent_id = CONTROLLER_ID;
 time_t last_opened; // Timestamp needed to calculate the open time and current temperature
 time_t last_closed; // Timestamp needed to calculate the open time and current temperature
+time_t last_thermostat_set; // Timestamp needed to calculate the current temperature
 temperature_direction_t temperature_direction = INITIAL_TEMPERATURE_DIRECTION; // Temperature direction needed to calculate current temperature
 u_int8_t last_temperature = INITIAL_TEMPERATURE; // Used to calculate the current temperature
 
@@ -56,7 +57,9 @@ int main(int argc, char *argv[]) {
     action_handler.sa_handler = handle_shutdown;
     sigaction(SIGTERM, &action_handler, NULL);
 
-    srand(time(NULL)); // Seed random generator with current time, always different
+    last_closed = last_opened = last_thermostat_set = time(NULL);
+
+    srand(last_closed); // Seed random generator with current time, always different
 
     while(!force_exit) {
         execute_command();
@@ -66,8 +69,6 @@ int main(int argc, char *argv[]) {
 }
 
 void execute_command() {
-    command_code_t code;
-
     response.arguments_size = 0;
     
     error_code_t error_code = read_pipe();
@@ -79,7 +80,6 @@ void execute_command() {
         response.response_code = DESTINATION_ID_MISMATCH;
     }
     else {
-        code = request.command_code;
         response.command_code = request.command_code;
         response.response_code = OK;
 
@@ -151,7 +151,9 @@ void create_registry_response() {
         autoclose_delay = request.argument;
     }
     else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_THERMOSTAT) {
-        if(request.argument <= MAX_THERMOSTAT) {
+        if(request.argument >= MIN_THERMOSTAT && request.argument <= MAX_THERMOSTAT) {
+            last_temperature = calculate_current_temperature();
+            last_thermostat_set = time(NULL);
             thermostat = request.argument;
         }
         else {
@@ -213,8 +215,7 @@ void handle_shutdown() {
 
 error_code_t set_state(leaf_device_state_t new_state, bool automatic) {
     if(new_state != state) {
-        state = new_state;
-        if(state == STATE_OPEN) {
+        if(new_state == STATE_OPEN) {
             last_opened = time(NULL);
             pthread_attr_t attributes;
             if(pthread_attr_init(&attributes) != 0
@@ -222,18 +223,21 @@ error_code_t set_state(leaf_device_state_t new_state, bool automatic) {
                 || pthread_create(&autoclose_thread, &attributes, autoclose_routine, NULL) != 0) {
                 return UNABLE_TO_CREATE_THREAD;
             }
-        } else {
+        }
+        else {
             last_closed = time(NULL);
-            if(!automatic && pthread_cancel(autoclose_thread) < 0) {
+            if(!automatic && pthread_cancel(autoclose_thread) < 0) { // The thread does not cancel itself
                 return UNABLE_TO_CANCEL_THREAD;
             }
         }
         last_temperature = calculate_current_temperature();
+        state = new_state;
     }
     return OK;
 }
 
 void* autoclose_routine(void *arg) {
+    (void)arg; // Unused parameter
     sleep(autoclose_delay);
 
     if(pthread_mutex_lock(&data_mutex) < 0) {
@@ -265,6 +269,42 @@ void* autoclose_routine(void *arg) {
 }
 
 u_int8_t calculate_current_temperature() {
-    // TODO: actually implement the function
-    return last_temperature;
+    float current_temperature;
+    time_t elapsed_time;
+    if(state == STATE_OPEN) {
+        elapsed_time = time(NULL) - (last_opened > last_thermostat_set ? last_opened : last_thermostat_set);
+        current_temperature = last_temperature + (elapsed_time * OPEN_INCREASE_SLOPE);
+        return current_temperature > AMBIENT_TEMPERATURE ? AMBIENT_TEMPERATURE : current_temperature;
+    }
+    else {
+        elapsed_time = time(NULL) - (last_closed > last_thermostat_set ? last_closed : last_thermostat_set);
+        /*
+         For simplicity, if the fridge is closed, the cycle starts after the fridge is cooled to the minimum temperature
+         The same is if the thermostat is changed
+        */
+        time_t to_range_time = 0;
+        current_temperature = last_temperature;
+        if(last_temperature > MIN_TEMPERATURE(thermostat)) {
+            to_range_time = (last_temperature - MIN_TEMPERATURE(thermostat))/(-CLOSED_DECREASE_SLOPE);
+            current_temperature = last_temperature + (elapsed_time * CLOSED_DECREASE_SLOPE);
+            current_temperature = current_temperature < MIN_TEMPERATURE(thermostat) ? MIN_TEMPERATURE(thermostat) : current_temperature;
+        }
+        else {
+            to_range_time = (MIN_TEMPERATURE(thermostat) - last_temperature)/(CLOSED_INCREASE_SLOPE);
+            current_temperature = last_temperature + (elapsed_time * CLOSED_INCREASE_SLOPE);
+            current_temperature = current_temperature > MIN_TEMPERATURE(thermostat) ? MIN_TEMPERATURE(thermostat) : current_temperature;
+        }
+        if(elapsed_time > to_range_time) {
+            elapsed_time -= to_range_time;
+            elapsed_time %= TOTAL_CLOSED_CYCLE_TIME;
+            if(elapsed_time < CLOSED_INCREASE_TIME) {
+                current_temperature = MIN_TEMPERATURE(thermostat) + (elapsed_time * CLOSED_INCREASE_SLOPE);
+            }
+            else {
+                elapsed_time -= CLOSED_INCREASE_TIME;
+                current_temperature = MAX_TEMPERATURE(thermostat) + (elapsed_time * CLOSED_DECREASE_SLOPE);
+            }
+        }
+        return current_temperature;
+    }
 }

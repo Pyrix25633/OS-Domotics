@@ -7,7 +7,7 @@
 #include <string.h>
 
 void print_error(int fd, int error_code, int device_id, char *message) {
-    char* type[24];
+    char type[24];
     if(IS_USER_ERROR(error_code)) {
         strcpy(type, "User");
     } else if(IS_APPLICATION_ERROR(error_code)) {

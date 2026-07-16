@@ -9,16 +9,9 @@
 
 #include <sys/types.h>
 
-// Data types
-
-typedef bool temperature_direction_t;
-
-#define TEMPERATURE_RISING            false
-#define TEMPERATURE_DROPPING          true
-
 // Default values
 
-#define DEFAULT_AUTOCLOSE_DELAY       30 // Number of seconds after which the fridge automatically closes // ! change
+#define DEFAULT_AUTOCLOSE_DELAY       30 // Number of seconds after which the fridge automatically closes
 #define DEFAULT_FILL_PERCENTAGE       0
 #define DEFAULT_THERMOSTAT            4 // Target temperature in degrees (Celsius)
 #define INITIAL_TEMPERATURE           DEFAULT_THERMOSTAT
@@ -27,19 +20,22 @@ typedef bool temperature_direction_t;
 // Temperature related constants
 
 #define TEMPERATURE_THRESHOLD         2 // Number of degrees from the thermostat after which the fridge starts cooling
-#define CLOSED_TEMPERATURE_INCREASE   1 // How fast the temperature increases when the fridge is closed
-#define CLOSED_TEMPERATURE_DECREASE   3 // How fast the temperature increases when the fridge is closed and cooling
-#define OPEN_TEMPERATURE_INCREASE     3 // How fast the temperature increases when the fridge is open
-#define AMBIENT_TEMPERATURE           26
+#define MIN_TEMPERATURE(t)            (t - TEMPERATURE_THRESHOLD) // Lower histheresys bound
+#define MAX_TEMPERATURE(t)            (t + TEMPERATURE_THRESHOLD) // Upper histheresys bound
+#define AMBIENT_TEMPERATURE           26 // Ambient temperature
+#define CLOSED_INCREASE_TIME          55*60 // Number of seconds the temperature takes to go from `thermostat - TEMPERATURE_THRESHOLD` to `thermostat + TEMPERATURE_THRESHOLD`
+#define CLOSED_DECREASE_TIME          5*60 // Number of seconds the temperature takes to go from `thermostat + TEMPERATURE_THRESHOLD` to `thermostat - TEMPERATURE_THRESHOLD`
+#define TOTAL_CLOSED_CYCLE_TIME       CLOSED_INCREASE_TIME + CLOSED_DECREASE_TIME // Total time of an histheresys cycle
+#define CLOSED_INCREASE_SLOPE         (float)(2 * TEMPERATURE_THRESHOLD)/CLOSED_INCREASE_TIME // How fast the temperature increases when the fridge is closed
+#define CLOSED_DECREASE_SLOPE         -(float)(2 * TEMPERATURE_THRESHOLD)/CLOSED_DECREASE_TIME // How fast the temperature decreases when the fridge is closed and cooling
+#define OPEN_INCREASE_TIME            20*60 // Number of seconds the temperature takes to go from `thermostat` to `AMBIENT_TEMPERATURE`
+#define OPEN_INCREASE_SLOPE           (float)(AMBIENT_TEMPERATURE - 0)/OPEN_INCREASE_TIME // How fast the temperature increases when the fridge is open
 
 /**
  * Main function of the Fridge Program
  * 
  * @param argc Number of arguments received
  * @param argv Argument vector of length `argc`, each string is terminated by `'\0'`
- * 
- * TODO: Determine all other possible exit values, add them every time you find out another error that requires complete
- * termination of the process can occur
  * 
  * @returns `MISSING_ID_ARGUMENT` if the ID command-line argument is missing,
  * `UNABLE_TO_OPEN_PIPE` if the IPC pipes could not be opened,
@@ -130,6 +126,8 @@ void* autoclose_routine(void *arg);
  * Calculates the current temperature based on the fridge state and the last temperature
  * 
  * Used both for info and while changing state
+ * 
+ * It approximates linearly the temperature trend of the fridge
  * 
  * @returns The current temperature in degrees (Celsius)
  */

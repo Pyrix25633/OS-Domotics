@@ -55,6 +55,7 @@ typedef unsigned char control_device_state_t;
 #define STATE_ON              1
 #define STATE_MANUAL_OVERRIDE 2
 
+#define MIN_THERMOSTAT        2
 #define MAX_THERMOSTAT        6
 #define MAX_FILL_PERCENTAGE   100
 

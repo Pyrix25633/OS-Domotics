@@ -62,7 +62,7 @@ error_code_t format_request(request_t *request, char *buffer, size_t size) {
     } else {
         length = snprintf(buffer, size, "%u %u", request->destination, request->command_code);
     }
-    if(length >= size) {
+    if(length >= (int)size) {
         return BUFFER_TOO_SHORT;
     }
     if(length < 0) {
@@ -139,7 +139,7 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
 error_code_t format_response(response_t *response, char *buffer, size_t size) {
     // Format first 3 fields
     int length = snprintf(buffer, size, "%u %u %u", response->source, response->command_code, response->response_code);
-    if(length >= size) {
+    if(length >= (int)size) {
         return BUFFER_TOO_SHORT;
     }
     if(length < 0) {

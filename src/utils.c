@@ -49,7 +49,7 @@ error_code_t create_fifo_name(device_id_t device_id, pipe_direction_t direction,
     if(length < 0) {
         return CODE_FORMAT_ERROR;
     }
-    if(length >= size) {
+    if(length >= (int)size) {
         return BUFFER_TOO_SHORT;
     }
     return OK;

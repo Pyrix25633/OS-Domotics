@@ -21,6 +21,7 @@ int down;
 device_id_t id;
 
 void* read_thread(void *arg) {
+    (void)arg; // Unused parameter
     char response_buffer[MAX_RESPONSE_SIZE];
     response_t response;
     bool loop = true;
