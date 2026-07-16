@@ -83,6 +83,8 @@ typedef u_int8_t error_code_t;
  * 
  * Fatal errors can be printed by the device itself
  * 
+ * A single `dprintf` call is used, so it should be atomic and error messages should not interleave each other
+ * 
  * @param fd File descriptor to which the error should be printed
  * @param error_code Positive error code
  * @param device_id Id of the device that detected the error, `MANUAL_INTERACTION_ID`
