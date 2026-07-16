@@ -22,7 +22,6 @@
 
 //checks if values has changed
 #define HAS_STATE_CHANGED(new_state) state!=new_state //Checks if the state has changed
-#define HAS_PARENT_CHANGED(new_parent) parent_id!=new_parent //Checks if the parent has changed
 
 //current seconds open
 #define CURRENT_SECONDS_OPEN    time(NULL) - last_opened

@@ -50,7 +50,8 @@ int main(int argc, char *argv[]) {
     action_handler.sa_handler = handle_shutdown; //set the function to be called when the signal occurs
     sigaction(SIGTERM, &action_handler, NULL);
 
-    srand(time(NULL)); //set random seed with the current time so it's always different
+    last_closed = last_opened = time(NULL);
+    srand(last_closed); //set random seed with the current time so it's always different
 
     //the main thread is blocked waiting for requests in a loop (while the exit is not forced by the delete command)
     //when a request is received it is executed, one by one in order of arrival
@@ -79,7 +80,7 @@ error_code_t read_pipe(){
     }
     else if(size == 0){
         force_exit = true;
-        return UNEXPECTED_END_OF_FILE;
+        return UNEXPECTED_END_OF_FILE; //EOF only if it doesn not have a parent anymore
     }
     return parse_request(&request, buffer_read, MAX_REQUEST_SIZE);
 }
@@ -120,10 +121,9 @@ void execute_command(){
         else{
             response.response_code = UNEXPECTED_COMMAND;
         }
-
-        simulate_processing_time();
-        write_pipe();
     }
+    simulate_processing_time();
+    write_pipe();
 }
 
 void create_info_response(){
@@ -154,14 +154,12 @@ void create_link_response(){
 //i have 2 switch (open,close -> on/off)
 //there are 2 combinations that are useless 
 void create_switch_response(){
-    if(SWITCH_LABEL(request.command_code)==SWITCH_OPEN && SWITCH_POSITION(request.command_code)==POSITION_ON){
-        if(HAS_STATE_CHANGED(SWITCH_OPEN)){
+    if(SWITCH_POSITION(request.command_code)==POSITION_ON){
+        if(SWITCH_LABEL(request.command_code)==SWITCH_OPEN && state != SWITCH_OPEN){
             state = STATE_OPEN;
             time(&last_opened);
         }
-    }
-    else if(SWITCH_LABEL(request.command_code)==SWITCH_CLOSE && SWITCH_POSITION(request.command_code)==POSITION_ON){
-        if(HAS_STATE_CHANGED(SWITCH_CLOSE)){
+        else if(SWITCH_LABEL(request.command_code)==SWITCH_CLOSE && state != SWITCH_CLOSE){
             state = STATE_CLOSED;
             time(&last_closed);
         }
