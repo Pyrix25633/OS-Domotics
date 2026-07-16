@@ -144,16 +144,18 @@ void create_link_response(){
 
 //the bulb has a single switch (power -> on/off), both positions cause an action
 void create_switch_response(){
-    if(SWITCH_LABEL(request.command_code)==SWITCH_POWER && SWITCH_POSITION(request.command_code)==POSITION_ON){
-        if(state != STATE_ON){
-            state = STATE_ON;
-            time(&last_turned_on);
+    if(SWITCH_LABEL(request.command_code)==SWITCH_POWER){
+        if(SWITCH_POSITION(request.command_code)==POSITION_ON){
+            if(state != STATE_ON){
+                state = STATE_ON;
+                time(&last_turned_on);
+            }
         }
-    }
-    else if(SWITCH_LABEL(request.command_code)==SWITCH_POWER && SWITCH_POSITION(request.command_code)==POSITION_OFF){
-        if(state != STATE_OFF){
-            state = STATE_OFF;
-            time(&last_turned_off);
+        else if(SWITCH_POSITION(request.command_code)==POSITION_OFF){
+            if(state != STATE_OFF){
+                state = STATE_OFF;
+                time(&last_turned_off);
+            }
         }
     }
     else{
