@@ -18,20 +18,23 @@ int snd_responses_parent_fd; //write is non blocking  - pipe to send responses t
 
 //maybe the first write is blocking until one wants to read
 
-int rcv_requests_children_fd; // all the children write on a same pipe 
+int rcv_responses_children_fd; // all the children write on a same pipe 
 
 //TODO
 // but there is a pipe for every children
 
-bool force_exit = false;
+bool force_exit = false; //! only the main thread can modify this
+bool eof = false; //! only the other thread can modify this
 request_t request;
 response_t response;
-char buffer_read[MAX_REQUEST_SIZE];
-char buffer_write[MAX_RESPONSE_SIZE];
+
 
 // - Signal handler -
 
 struct sigaction action_handler;
+
+// - Thread -
+pthread_t children_execution_context;
 
 //TODO when I have an end of file while reading i need to close the pipe and open another one
 //because reading continuously EOF cause some problems
@@ -42,14 +45,87 @@ int main(int argc, char *argv[]) {
 
     id = get_id_from_arguments(argc, argv);
     response.source = id;
-    start_device_fifos(id,&rcv_requests_parent_fd, &snd_responses_parent_fd, rcv_requests_children_fd);
+    start_device_fifos(id,&rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
     action_handler.sa_handler = handle_shutdown;
     sigaction(SIGTERM, &action_handler, NULL);
 
-    while(!force_exit){
-        //TODO
-    } 
+    //pthread_create(&children_communication_handler, NULL,  , NULL);
+
+    //TODO after the thread creation i put the parent_communication_handler()
+    //so the main thread will execute it
 }
+
+//TODO be careful about the global variables because i need a mutex or to make them local (inside a function)
+
+//! the variables that i read only can be used by both threads without using a mutex
+
+void children_communication_handler(){
+    //can be used to read the responses from the children and to write 
+    //the responses up towards the parent of the hub
+    char response_buffer[MAX_REQUEST_SIZE];
+
+    bool isParent = false;
+    //TODO create a function when the code it's the same
+    while(!force_exit){
+        while(!eof){
+            //-- similar code
+            command_code_t code;
+            response.arguments_size = 0;
+            error_code_t error_code = read_pipe(isParent, rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE);
+            //--
+        }
+        if(force_exit){
+            //TODO close and open pipes
+        }
+    }
+    //TODO pthread exit
+
+}
+
+void parent_communication_handler(){
+    //can be used to read the requests from the parent of the hub and to write
+    //the requests to the children
+    char request_buffer[MAX_REQUEST_SIZE];
+    //can be used to write the response to the parent of the hub
+    char response_buffer[MAX_RESPONSE_SIZE];
+
+    bool isParent = true;
+    
+    while(!force_exit){
+        //-- similar code
+        command_code_t code;
+        response.arguments_size = 0;
+        //TODO check if the function it's ok
+        error_code_t error_code = read_pipe(isParent, rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE);
+        //--
+    }
+
+}
+
+//TODO put here the similar code, so it will be like the device
+void execute_command(){
+
+}
+
+//EOF read --> no one can write anymore --> all the child have been linked to other partents
+error_code_t read_pipe(bool isParent, int fd, char* buffer, int buffer_size){
+    ssize_t size = read(fd, buffer, buffer_size);
+    if(size < 0){
+        return UNABLE_TO_READ_PIPE;
+    }
+    if(size == 0){
+        if(isParent){
+            force_exit = true;
+            return UNEXPECTED_END_OF_FILE;
+        }
+        else{
+            //TODO
+            //eof
+        }
+    }
+}
+
+//TODO a boolean in the functions to identify if it's the parent or the child
 
 error_code_t close_fifos(bool is_children_EOF){
     error_code_t error_code = (is_children_EOF ? END_CHILDREN_FIFO : END_ALL_FIFOS); //TODO change this with if not macro
@@ -64,3 +140,5 @@ error_code_t close_fifos(bool is_children_EOF){
 void handle_shutdown(){
     exit(close_fifos(false));
 }
+
+//TODO only 2 threads in total, the main has to do the communication to/from the parent and the other to/from a child

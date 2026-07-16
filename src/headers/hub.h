@@ -12,11 +12,15 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
+#include <pthread.h>
 
 // - Macros -
 
-#define END_ALL_FIFOS end_device_fifos(id, rcv_requests_parent_fd, snd_responses_parent_fd, rcv_requests_children_fd)
-#define END_CHILDREN_FIFO end_device_fifos(id, NO_FILE_DESCRIPTOR, NO_FILE_DESCRIPTOR, rcv_requests_children_fd)
+#define END_ALL_FIFOS end_device_fifos(id, rcv_requests_parent_fd, snd_responses_parent_fd, rcv_responses_children_fd)
+#define END_CHILDREN_FIFO end_device_fifos(id, NO_FILE_DESCRIPTOR, NO_FILE_DESCRIPTOR, rcv_responses_children_fd)
+
+#define PARENT_READ_ARGUMENTS(request_buffer)   rcv_requests_parent_fd,request_buffer, MAX_REQUEST_SIZE
+#define CHILD_READ_ARGUMENTS(request_buffer)    rcv_responses_children_fd,request_buffer, MAX_REQUEST_SIZE
 
 /**
  * Main function of the Hub Program
@@ -40,5 +44,7 @@ error_code_t close_fifos(bool is_children_EOF);
  * Handles the shutdown also cleaning up IPC files, best practice to do
  */
 void handle_shutdown();
+
+
 
 #endif
