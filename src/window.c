@@ -155,11 +155,11 @@ void create_link_response(){
 //there are 2 combinations that are useless 
 void create_switch_response(){
     if(SWITCH_POSITION(request.command_code)==POSITION_ON){
-        if(SWITCH_LABEL(request.command_code)==SWITCH_OPEN && state != SWITCH_OPEN){
+        if(SWITCH_LABEL(request.command_code)==SWITCH_OPEN && state != STATE_OPEN){
             state = STATE_OPEN;
             time(&last_opened);
         }
-        else if(SWITCH_LABEL(request.command_code)==SWITCH_CLOSE && state != SWITCH_CLOSE){
+        else if(SWITCH_LABEL(request.command_code)==SWITCH_CLOSE && state != STATE_CLOSED){
             state = STATE_CLOSED;
             time(&last_closed);
         }

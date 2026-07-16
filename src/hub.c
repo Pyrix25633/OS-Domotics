@@ -25,9 +25,6 @@ int rcv_responses_children_fd; // all the children write on a same pipe
 
 bool force_exit = false; //! only the main thread can modify this
 bool eof = false; //! only the other thread can modify this
-request_t request;
-response_t response;
-
 
 // - Signal handler -
 
@@ -40,11 +37,9 @@ pthread_t children_execution_context;
 //because reading continuously EOF cause some problems
 
 int main(int argc, char *argv[]) {
-
-    bool is_children_EOF = false;
-
     id = get_id_from_arguments(argc, argv);
-    response.source = id;
+    //TODO set the response.source in both parent and child
+    //response.source = id;
     start_device_fifos(id,&rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
     action_handler.sa_handler = handle_shutdown;
     sigaction(SIGTERM, &action_handler, NULL);
@@ -63,16 +58,27 @@ void children_communication_handler(){
     //can be used to read the responses from the children and to write 
     //the responses up towards the parent of the hub
     char response_buffer[MAX_REQUEST_SIZE];
+    response_t response;
+    response.source = id;
+    response.arguments_size = 0;
 
     bool isParent = false;
     //TODO create a function when the code it's the same
     while(!force_exit){
         while(!eof){
-            //-- similar code
+            //TODO execute_command
             command_code_t code;
-            response.arguments_size = 0;
             error_code_t error_code = read_pipe(isParent, rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE);
-            //--
+            if(error_code == OK){
+                error_code = parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
+            }
+            if(error_code!=OK){
+                response.command_code = NULL_COMMAND;
+                response.response_code = error_code;
+                simulate_processing_time();
+                write_pipe_response(&response, response_buffer);
+        }
+
         }
         if(force_exit){
             //TODO close and open pipes
@@ -88,23 +94,36 @@ void parent_communication_handler(){
     char request_buffer[MAX_REQUEST_SIZE];
     //can be used to write the response to the parent of the hub
     char response_buffer[MAX_RESPONSE_SIZE];
+    request_t request;
+    response_t response;
 
     bool isParent = true;
     
     while(!force_exit){
-        //-- similar code
+
+        //? execute_command
+        //! I need to send a request to the children based on the request done by the parent
         command_code_t code;
-        response.arguments_size = 0;
-        //TODO check if the function it's ok
         error_code_t error_code = read_pipe(isParent, rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE);
-        //--
+        if(error_code == OK){
+            error_code = parse_request(&request, request_buffer, MAX_REQUEST_SIZE);
+        }
+        //! errors while parsing the request --> I need to send a response to the parent of the hub
+        if(error_code!=OK){
+            response.source = id;
+            response.command_code = NULL_COMMAND;
+            response.response_code = error_code;
+            response.arguments_size = 0;
+            simulate_processing_time();
+            write_pipe_response(&response, response_buffer);
+        }
+        //TODO finish it
     }
 
 }
 
 //TODO put here the similar code, so it will be like the device
 void execute_command(){
-
 }
 
 //EOF read --> no one can write anymore --> all the child have been linked to other partents
@@ -114,14 +133,24 @@ error_code_t read_pipe(bool isParent, int fd, char* buffer, int buffer_size){
         return UNABLE_TO_READ_PIPE;
     }
     if(size == 0){
-        if(isParent){
+        if (isParent){
             force_exit = true;
-            return UNEXPECTED_END_OF_FILE;
         }
         else{
-            //TODO
-            //eof
+            eof = true;
         }
+        return UNEXPECTED_END_OF_FILE;
+    }
+    return OK;
+}
+
+void write_pipe_response(response_t* response, char* buffer_write){
+    error_code_t error_code = format_response(response, buffer_write, MAX_RESPONSE_SIZE);
+    if(error_code != OK){
+        print_error(STDERR_FILENO, error_code, id, "while formatting response");
+    }
+    else if(write(snd_responses_parent_fd, buffer_write, MAX_REQUEST_SIZE) < 0){
+        print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
     }
 }
 
