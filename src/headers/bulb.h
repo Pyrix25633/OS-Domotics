@@ -13,16 +13,12 @@
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
-
+    
 // Default values
 
 #define MAX_BULB_ARGUMENTS      2
 
 // Macros - can be used instead of doing very small functions
-
-//checks if values has changed
-#define HAS_STATE_CHANGED(new_state) state!=new_state //Checks if the state has changed
-#define HAS_PARENT_CHANGED(new_parent) parent_id!=new_parent //Checks if the parent has changed
 
 //current seconds on / duration of the last time it was on
 #define CURRENT_SECONDS_ON      time(NULL) - last_turned_on
