@@ -22,7 +22,8 @@ int down;
 device_id_t id;
 WINDOW *responses_win;
 WINDOW *commands_win;
-int height, width;
+int responses_height, commands_height, width;
+int responses_bottom, commands_bottom;
 
 void* read_thread(void *arg) {
     (void)arg; // Unused parameter
@@ -32,9 +33,12 @@ void* read_thread(void *arg) {
     while(loop) {
         if(read(up, response_buffer, MAX_RESPONSE_SIZE) > 0) {
             wscrl(responses_win, 1);
-            wmove(responses_win, height/2 -2, 1);
-            wprintw(responses_win, response_buffer);
+            wmove(responses_win, responses_bottom, 0);
+            wprintw(responses_win, "%s", response_buffer);
+            //wmove(commands_win, height/2 -2, 1);
+            
             wrefresh(responses_win);
+            wrefresh(commands_win);
             
             parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
             if(response.response_code != OK) {
@@ -67,14 +71,23 @@ int main(int argc, char *argv[]) {
     initscr();
     cbreak();
 
-    height, width;
+    int height, width;
     getmaxyx(stdscr, height, width);
+    height -= 2; // 2 lines for the window titles
+    responses_height = height / 2;
+    commands_height = height - responses_height;
+    responses_bottom = responses_height - 1;
+    commands_bottom = commands_height - 1;
 
-    responses_win = newwin(height/2, width, 0, 0);
-    //box(responses_win, 0, 0);
-    commands_win = newwin(height/2, width, height/2, 0);
-    //box(commands_win, 0, 0);
-    wmove(commands_win, height/2 -2, 1);
+    mvwhline(stdscr, 0, 0, 0, width);
+    mvwhline(stdscr, responses_height + 1, 0, 0, width);
+    mvwprintw(stdscr, 0, 2, "Responses");
+    mvwprintw(stdscr, responses_height + 1, 2, "Commands");
+
+    responses_win = newwin(responses_height, width, 1, 0);
+    commands_win = newwin(commands_height, width, responses_height + 2, 0);
+    
+    wmove(commands_win, commands_bottom, 0);
     scrollok(commands_win, true);
     scrollok(responses_win, true);
     refresh();
@@ -95,9 +108,7 @@ int main(int argc, char *argv[]) {
     pthread_create(&tid, NULL, read_thread, NULL);
     while(loop) {
         wgetnstr(commands_win, input_buffer, size);
-        //input_buffer[strlen(input_buffer) - 1] = '\0'; // Remove '\n'
-        wscrl(commands_win, 1);
-        wmove(commands_win, height/2 -2, 1);
+        wmove(commands_win, commands_bottom, 0);
         wrefresh(commands_win);
         token = strtok_r(input_buffer, " ", &last);
         if(token != NULL) {
@@ -145,12 +156,8 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        //free(input_buffer);
-        //input_buffer = NULL;
-
         // Send request
         format_request(&request, request_buffer, MAX_REQUEST_SIZE);
-        //printf("Request: %s\n", request_buffer);
         write(down, request_buffer, MAX_REQUEST_SIZE);
         if(IS_LINK(request.command_code)) {
             close(up);
