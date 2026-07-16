@@ -14,6 +14,8 @@
 //Request: 1 72
 //Response: 1 72 0 0 0
 
+//! The comments need to be fixed, now they are just for me, apart the one that are good
+
 // - Explicit device data -
 
 device_id_t id;
@@ -112,8 +114,8 @@ void execute_command(){
         response.response_code = OK;
 
         if(IS_INFO(code)) { create_info_response(); }
-        else if(IS_LINK(code)) { create_link_response(code); }
-        else if((IS_SWITCH(code))) { create_switch_response(code); }
+        else if(IS_LINK(code)) { create_link_response(); }
+        else if((IS_SWITCH(code))) { create_switch_response(); }
         else if((IS_DELETE(code))) { force_exit=true; } //then the response is sent, the while loop finishes and it shutdowns
         else{
             response.response_code = UNEXPECTED_COMMAND;
@@ -144,7 +146,9 @@ void create_link_response(){
             }
         }
     }
-    else{response.response_code = UNEXPECTED_COMMAND;}
+    else{
+        response.response_code = UNEXPECTED_COMMAND;
+    }
 }
 
 //i have 2 switch (open,close -> on/off)
