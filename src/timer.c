@@ -159,7 +159,7 @@ void create_info_response(){
 void create_link_response(){
     if(LINK_SUBCOMMAND(request.command_code)==LINK_CHANGE_PARENT){
         //the request argument is the new parent id
-        device_id_t new_parent_id = request.argument;
+        device_id_t new_parent_id = request.arguments[PARENT_ID_ARGUMENT];
         response.arguments[REQUEST_ARGUMENT] = new_parent_id; //to give always a feedback
         response.arguments_size = 1;
 
@@ -170,28 +170,28 @@ void create_link_response(){
             }
         }
     }
-    else if(LINK_SUBCOMMAND(request.command_code)==LINK_NEW_CHILD){
-        //the request argument is the new child id
-        response.arguments[REQUEST_ARGUMENT] = request.argument; //to give always a feedback
+    else if(LINK_SUBCOMMAND(request.command_code)==LINK_ADD_CHILD){
+        //the request arguments are the new child id and its type
+        response.arguments[REQUEST_ARGUMENT] = request.arguments[CHILD_ID_ARGUMENT]; //to give always a feedback
         response.arguments_size = 1;
         //the timer controls a single device, so a second child is refused
         if(has_child){
             response.response_code = INVALID_COMMAND;
         }
         else{
-            response.response_code = open_child_requests_pipe(request.argument, &snd_requests_child_fd);
+            response.response_code = open_child_requests_pipe(request.arguments[CHILD_ID_ARGUMENT], &snd_requests_child_fd);
             if(response.response_code == OK){
-                child_id = request.argument;
+                child_id = request.arguments[CHILD_ID_ARGUMENT];
+                child_type = request.arguments[CHILD_TYPE_ARGUMENT]; //needed to know which switch label to send it
                 has_child = true;
-                //TODO store child_type, it must arrive in the request (Mattia is adding multiple arguments)
             }
         }
     }
-    else if(LINK_SUBCOMMAND(request.command_code)==LINK_DELETE_CHILD){
+    else if(LINK_SUBCOMMAND(request.command_code)==LINK_REMOVE_CHILD){
         //the request argument is the child id to remove
-        response.arguments[REQUEST_ARGUMENT] = request.argument; //to give always a feedback
+        response.arguments[REQUEST_ARGUMENT] = request.arguments[CHILD_ID_ARGUMENT]; //to give always a feedback
         response.arguments_size = 1;
-        if(has_child && request.argument == child_id){
+        if(has_child && request.arguments[CHILD_ID_ARGUMENT] == child_id){
             if(close(snd_requests_child_fd) < 0){
                 response.response_code = UNABLE_TO_CLOSE_PIPE;
             }
@@ -209,20 +209,20 @@ void create_link_response(){
 //begin and end are minutes from midnight, the professor said that there are no timers across midnight
 //so the only invalid case is begin > end (as stated in the spec, section 2.2.8), so begin == end is allowed
 void create_registry_response(){
-    response.arguments[REQUEST_ARGUMENT] = request.argument; //to give always a feedback
+    response.arguments[REQUEST_ARGUMENT] = request.arguments[REGISTRY_ARGUMENT]; //to give always a feedback
     response.arguments_size = 1;
 
     if(REGISTRY_SUBCOMMAND(request.command_code)==REGISTRY_BEGIN){
-        if(request.argument <= end){ //end is always smaller than MINUTES_IN_A_DAY, so begin is too
-            begin = request.argument;
+        if(request.arguments[REGISTRY_ARGUMENT] <= end){ //end is always smaller than MINUTES_IN_A_DAY, so begin is too
+            begin = request.arguments[REGISTRY_ARGUMENT];
         }
         else{
             response.response_code = INVALID_REQUEST_ARGUMENT;
         }
     }
     else if(REGISTRY_SUBCOMMAND(request.command_code)==REGISTRY_END){
-        if(request.argument >= begin && request.argument < MINUTES_IN_A_DAY){
-            end = request.argument;
+        if(request.arguments[REGISTRY_ARGUMENT] >= begin && request.arguments[REGISTRY_ARGUMENT] < MINUTES_IN_A_DAY){
+            end = request.arguments[REGISTRY_ARGUMENT];
         }
         else{
             response.response_code = INVALID_REQUEST_ARGUMENT;

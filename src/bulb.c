@@ -126,7 +126,7 @@ void create_info_response(){
 void create_link_response(){
     if(LINK_SUBCOMMAND(request.command_code)==LINK_CHANGE_PARENT){
         //the request argument is the new parent id
-        device_id_t new_parent_id = request.argument;
+        device_id_t new_parent_id = request.arguments[PARENT_ID_ARGUMENT];
         response.arguments[REQUEST_ARGUMENT] = new_parent_id; //to give always a feedback
         response.arguments_size = 1;
 
