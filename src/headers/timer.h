@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
+#include <fcntl.h>
 
 // Default values
 
@@ -73,5 +74,17 @@ void create_registry_response();
  * Sets the attributes for the switch response and performs actions if needed
  */
 void create_switch_response();
+
+/**
+ * Opens in writing the down pipe of the child (the child itself created it), so the timer can send requests to it
+ *
+ * It is the down-going twin of `change_snd_responses_pipe`, could be moved to `utils` to be shared with the Hub
+ *
+ * @param child_id The id of the child
+ * @param snd_requests_child_fd Pointer where the function will put the file descriptor to send requests to the child
+ *
+ * @returns `UNABLE_TO_OPEN_PIPE` if the pipe could not be opened, `OK` otherwise
+ */
+error_code_t open_child_requests_pipe(device_id_t child_id, int *snd_requests_child_fd);
 
 #endif

@@ -62,6 +62,10 @@ int main(int argc, char *argv[]) {
 }
 
 void handle_shutdown() {
+    //the child down pipe is only opened for writing, the child owns it, so it is just closed and not deleted
+    if(has_child && close(snd_requests_child_fd) < 0){
+        print_error(STDERR_FILENO, UNABLE_TO_CLOSE_PIPE, id, "while closing the child requests pipe");
+    }
     //control device: the last argument is the child pipe and not NO_FILE_DESCRIPTOR, so it is closed and deleted too
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, rcv_responses_child_fd);
     if(error_code != OK){
@@ -107,9 +111,19 @@ void execute_command(){
     }
     else if(request.destination != id) {
         //the request is not for the timer, so it is for the child or for something under it
-        //TODO forward the request down to the child, the response is sent by the destination and not by the timer
-        //TODO if there is no child the timer has to answer with an error, nobody else can
-        return;
+        if(has_child){
+            //buffer_read has been modified by parse_request, so the request is rebuilt from the struct
+            error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
+            if(forward_code == OK && write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) >= 0){
+                return; //forwarded: the response is sent by the destination and not by the timer
+            }
+            //the forwarding failed, so the destination will not answer: the timer answers with an error itself
+            response.response_code = UNABLE_TO_WRITE_PIPE;
+        }
+        else{
+            //no child: nobody below can handle it, only the timer can answer
+            response.response_code = DEVICE_NOT_FOUND;
+        }
     }
     else{
         //no errors occurred while parsing the request and the destination is correct
@@ -156,20 +170,50 @@ void create_link_response(){
             }
         }
     }
-    //TODO LINK_NEW_CHILD and LINK_DELETE_CHILD, the timer accepts a single child and needs to know its type
+    else if(LINK_SUBCOMMAND(request.command_code)==LINK_NEW_CHILD){
+        //the request argument is the new child id
+        response.arguments[REQUEST_ARGUMENT] = request.argument; //to give always a feedback
+        response.arguments_size = 1;
+        //the timer controls a single device, so a second child is refused
+        if(has_child){
+            response.response_code = INVALID_COMMAND;
+        }
+        else{
+            response.response_code = open_child_requests_pipe(request.argument, &snd_requests_child_fd);
+            if(response.response_code == OK){
+                child_id = request.argument;
+                has_child = true;
+                //TODO store child_type, it must arrive in the request (Mattia is adding multiple arguments)
+            }
+        }
+    }
+    else if(LINK_SUBCOMMAND(request.command_code)==LINK_DELETE_CHILD){
+        //the request argument is the child id to remove
+        response.arguments[REQUEST_ARGUMENT] = request.argument; //to give always a feedback
+        response.arguments_size = 1;
+        if(has_child && request.argument == child_id){
+            if(close(snd_requests_child_fd) < 0){
+                response.response_code = UNABLE_TO_CLOSE_PIPE;
+            }
+            has_child = false;
+        }
+        else{
+            response.response_code = DEVICE_NOT_FOUND;
+        }
+    }
     else{
         response.response_code = UNEXPECTED_COMMAND;
     }
 }
 
 //begin and end are minutes from midnight, the professor said that there are no timers across midnight
-//so it is enough to check that begin comes before end
+//so the only invalid case is begin > end (as stated in the spec, section 2.2.8), so begin == end is allowed
 void create_registry_response(){
     response.arguments[REQUEST_ARGUMENT] = request.argument; //to give always a feedback
     response.arguments_size = 1;
 
     if(REGISTRY_SUBCOMMAND(request.command_code)==REGISTRY_BEGIN){
-        if(request.argument < end){ //end is always smaller than MINUTES_IN_A_DAY, so begin is too
+        if(request.argument <= end){ //end is always smaller than MINUTES_IN_A_DAY, so begin is too
             begin = request.argument;
         }
         else{
@@ -177,7 +221,7 @@ void create_registry_response(){
         }
     }
     else if(REGISTRY_SUBCOMMAND(request.command_code)==REGISTRY_END){
-        if(request.argument > begin && request.argument < MINUTES_IN_A_DAY){
+        if(request.argument >= begin && request.argument < MINUTES_IN_A_DAY){
             end = request.argument;
         }
         else{
@@ -196,4 +240,14 @@ void create_switch_response(){
     //TODO propagate the switch to the child, the label depends on its type
     //(power for a bulb, open/close for a window or a fridge), so has_child and child_type are needed
     response.response_code = UNEXPECTED_COMMAND; //temporary, until the child is handled
+}
+
+//opening in writing does not block because the child already opened its down pipe in reading at startup
+error_code_t open_child_requests_pipe(device_id_t child_id, int *snd_requests_child_fd){
+    char name[PIPE_NAME_MAX_LENGTH];
+    if(create_fifo_name(child_id, DIRECTION_DOWN, name, PIPE_NAME_MAX_LENGTH) != OK
+        || (*snd_requests_child_fd = open(name, O_WRONLY)) < 0){
+        return UNABLE_TO_OPEN_PIPE;
+    }
+    return OK;
 }
