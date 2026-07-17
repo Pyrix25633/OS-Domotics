@@ -1,17 +1,6 @@
 #define _XOPEN_SOURCE 700
 
 #include "fridge.h"
-#include "utils.h"
-#include "return_codes.h"
-#include "messages.h"
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <signal.h>
-#include <time.h>
-#include <pthread.h>
 
 // - Explicit device data -
 

@@ -35,6 +35,9 @@ void print_error(int fd, int error_code, int device_id, char *message) {
         case DESTINATION_ID_MISMATCH:  strcpy(info, "destination ID mismatch");  break;
         case INVALID_REQUEST_ARGUMENT: strcpy(info, "invalid request argument"); break;
         case UNEXPECTED_COMMAND:       strcpy(info, "unexpected command");       break;
+        case ROUTE_NOT_FOUND:          strcpy(info, "route not found");          break;
+
+        case UNABLE_TO_ALLOCATE_HEAP:  strcpy(info, "unable to allocate heap");  break;
 
         case UNABLE_TO_CREATE_THREAD:  strcpy(info, "unable to create thread");  break;
         case UNABLE_TO_CANCEL_THREAD:  strcpy(info, "unable to cancel thread");  break;

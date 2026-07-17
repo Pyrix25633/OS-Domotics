@@ -40,10 +40,12 @@ typedef u_int8_t error_code_t;
 #define DESTINATION_ID_MISMATCH  0x26
 #define INVALID_REQUEST_ARGUMENT 0x27
 #define UNEXPECTED_COMMAND       0x28
+#define ROUTE_NOT_FOUND          0x29
 
 // - CAUSE RELATED TO PROCESSES -
 
 #define PROCESS_ERROR            0x30
+#define UNABLE_TO_ALLOCATE_HEAP  0x31
 
 // - CAUSE RELATED TO THREADS -
 

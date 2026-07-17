@@ -6,7 +6,16 @@
 #define DOMOTICS_FRIDGE_H
 
 #include "return_codes.h"
+#include "utils.h"
+#include "messages.h"
 
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <time.h>
+#include <pthread.h>
 #include <sys/types.h>
 
 // Default values

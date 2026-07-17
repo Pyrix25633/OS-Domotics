@@ -13,7 +13,7 @@ DEVICES_OBJS = $(DEVICES_SRCS:src/%.c=bin/%.o)
 # All devices executables
 DEVICES_EXEC_NAMES = $(DEVICES_SRCS:src/%.c=bin/%)
 # Generic files needed by any other main file
-GENERIC_FILES = return_codes.c messages.c utils.c
+GENERIC_FILES = return_codes.c messages.c utils.c routing.c
 GENERIC_SRCS = $(addprefix src/, $(GENERIC_FILES))
 # Their compiled file
 GENERIC_OBJS = $(GENERIC_SRCS:src/%.c=bin/%.o)

@@ -5,6 +5,20 @@
 #ifndef DOMOTICS_CONTROLLER_H
 #define DOMOTICS_CONTROLLER_H
 
+#include "devices.h"
+#include "return_codes.h"
+#include "messages.h"
+#include "utils.h"
+#include "routing.h"
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <time.h>
+#include <pthread.h>
+
 /**
  * Main function of the Controller Program
  * @param argc Number of arguments received
