@@ -14,16 +14,26 @@
 #include <fcntl.h>
 #include <string.h>
 #include <ncurses.h>
+#include <errno.h>
 
 #define INPUT_SIZE 64
 
 int up;
 int down;
+int err_fd;
 device_id_t id;
 WINDOW *responses_win;
 WINDOW *commands_win;
 int responses_height, commands_height, width;
 int responses_bottom, commands_bottom;
+
+void print_response(char *message) {
+    wprintw(responses_win, "\n%s", message);
+    //wmove(commands_win, height/2 -2, 1);
+            
+    wrefresh(responses_win);
+    wrefresh(commands_win);
+}
 
 void* read_thread(void *arg) {
     (void)arg; // Unused parameter
@@ -32,17 +42,11 @@ void* read_thread(void *arg) {
     bool loop = true;
     while(loop) {
         if(read(up, response_buffer, MAX_RESPONSE_SIZE) > 0) {
-            wscrl(responses_win, 1);
-            wmove(responses_win, responses_bottom, 0);
-            wprintw(responses_win, "%s", response_buffer);
-            //wmove(commands_win, height/2 -2, 1);
-            
-            wrefresh(responses_win);
-            wrefresh(commands_win);
+            print_response(response_buffer);
             
             parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
             if(response.response_code != OK) {
-                //print_error(STDERR_FILENO, response.response_code, id, "in response");
+                print_error(STDERR_FILENO, response.response_code, id, "in response");
             }
             if(IS_DELETE(response.command_code)) {
                 loop = false;
@@ -52,6 +56,29 @@ void* read_thread(void *arg) {
         }
     }
     close(up);
+    pthread_exit(NULL);
+}
+
+void* stderr_thread(void *arg) {
+    (void)arg;
+    char buffer[256];
+    char tmp;
+    int i = 0;
+    int err;
+    while((err = read(err_fd, &tmp, 1)) > 0) {
+        if(tmp == '\n' || tmp == '\0') {
+            buffer[i] = '\0';
+            print_response(buffer);
+            i = 0;
+        }
+        else {
+            buffer[i] = tmp;
+            i++;
+        }
+    }
+    sprintf(buffer, "Error: %d %d", err, errno);
+    print_response(buffer);
+    
     pthread_exit(NULL);
 }
 
@@ -70,6 +97,11 @@ int main(int argc, char *argv[]) {
 
     initscr();
     cbreak();
+    mkfifo("ipc/stderr.fifo", 0660);
+    err_fd = open("ipc/stderr.fifo", O_RDONLY | O_NONBLOCK);
+    int wr_fr = open("ipc/stderr.fifo", O_WRONLY);
+    fcntl(err_fd, F_SETFL, fcntl(err_fd, F_GETFL) & ~O_NONBLOCK);
+    dup2(wr_fr, STDERR_FILENO);
 
     int height, width;
     getmaxyx(stdscr, height, width);
@@ -88,6 +120,7 @@ int main(int argc, char *argv[]) {
     commands_win = newwin(commands_height, width, responses_height + 2, 0);
     
     wmove(commands_win, commands_bottom, 0);
+    wmove(responses_win, responses_bottom, 0);
     scrollok(commands_win, true);
     scrollok(responses_win, true);
     refresh();
@@ -104,8 +137,10 @@ int main(int argc, char *argv[]) {
     char request_buffer[MAX_REQUEST_SIZE];
     request_t request;
     request.destination = id;
-    pthread_t tid;
-    pthread_create(&tid, NULL, read_thread, NULL);
+    pthread_t pipe_thread;
+    pthread_create(&pipe_thread, NULL, read_thread, NULL);
+    pthread_t err_thread;
+    pthread_create(&err_thread, NULL, stderr_thread, NULL);
     while(loop) {
         wgetnstr(commands_win, input_buffer, size);
         wmove(commands_win, commands_bottom, 0);
@@ -166,7 +201,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    pthread_join(tid, NULL);
+    pthread_join(pipe_thread, NULL);
+    close(up);
+    close(err_fd);
+    pthread_cancel(err_thread);
     close(down);
     endwin();
 }
