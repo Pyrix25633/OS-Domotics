@@ -118,12 +118,13 @@ void create_info_response() {
 
 void create_link_response() {
     if(LINK_SUBCOMMAND(request.command_code) == LINK_CHANGE_PARENT) {
+        device_id_t new_parent_id = request.arguments[PARENT_ID_ARGUMENT];
         response.arguments_size = 1;
-        response.arguments[REQUEST_ARGUMENT] = request.argument;
-        if(request.argument != parent_id) {
-            response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
+        response.arguments[REQUEST_ARGUMENT] = new_parent_id;
+        if(new_parent_id != parent_id) {
+            response.response_code = change_snd_responses_pipe(new_parent_id, &snd_responses_fd);
             if(response.response_code == OK) {
-                parent_id = request.argument;
+                parent_id = new_parent_id;
             }
         }
     }
@@ -133,24 +134,25 @@ void create_link_response() {
 }
 
 void create_registry_response() {
+    u_int16_t registry = request.arguments[REGISTRY_ARGUMENT];
     response.arguments_size = 1;
-    response.arguments[REQUEST_ARGUMENT] = request.argument;
+    response.arguments[REQUEST_ARGUMENT] = registry;
     if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_DELAY) {
-        autoclose_delay = request.argument;
+        autoclose_delay = registry;
     }
     else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_THERMOSTAT) {
-        if(request.argument >= MIN_THERMOSTAT && request.argument <= MAX_THERMOSTAT) {
+        if(registry >= MIN_THERMOSTAT && registry <= MAX_THERMOSTAT) {
             last_temperature = calculate_current_temperature();
             last_thermostat_set = time(NULL);
-            thermostat = request.argument;
+            thermostat = registry;
         }
         else {
             response.response_code = INVALID_REQUEST_ARGUMENT;
         }
     }
     else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_PERCENTAGE) {
-        if(request.argument <= MAX_FILL_PERCENTAGE) {
-            fill_percentage = request.argument;
+        if(registry <= MAX_FILL_PERCENTAGE) {
+            fill_percentage = registry;
         }
         else {
             response.response_code = INVALID_REQUEST_ARGUMENT;

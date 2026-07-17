@@ -39,35 +39,60 @@ error_code_t parse_request(request_t *request, char *buffer, size_t size) {
     request->destination = destination;
     request->command_code = command_code;
 
-    // Parse command argument if present
-    if(HAS_REQUEST_ARGUMENT(command_code)) {
+    // Parse command arguments if present
+    if(HAS_REQUEST_ARGUMENTS(command_code)) {
+        unsigned i = 0;
+        int parsed;
         token = strtok_r(NULL, " ", &last);
         if(token == NULL) {
             return REQUEST_FORMAT_ERROR;
         }
-        int argument = string_to_unsigned(token);
-        if(IS_RETURN_ERROR(argument)) {
-            return REQUEST_FORMAT_ERROR;
-        }
-        request->argument = argument;
+        do {
+            parsed = string_to_unsigned(token);
+            if(IS_RETURN_ERROR(parsed)) {
+                return REQUEST_FORMAT_ERROR;
+            }
+            request->arguments[i] = parsed;
+            i++;
+            token = strtok_r(NULL, " ", &last);
+        } while(token != NULL && i < MAX_REQUEST_ARGUMENTS);
+        request->arguments_size = i;
     }
 
     return OK;
 }
 
 error_code_t format_request(request_t *request, char *buffer, size_t size) {
-    int length;
-    if(HAS_REQUEST_ARGUMENT(request->command_code)) {
-        length = snprintf(buffer, size, "%u %u %u", request->destination, request->command_code, request->argument);
-    } else {
-        length = snprintf(buffer, size, "%u %u", request->destination, request->command_code);
-    }
+    // Format first 2 fields
+    int length = snprintf(buffer, size, "%u %u", request->destination, request->command_code);
     if(length >= (int)size) {
         return BUFFER_TOO_SHORT;
     }
     if(length < 0) {
         return REQUEST_FORMAT_ERROR;
     }
+
+    // Format request arguments
+    int remaining = size - length;
+    int position = length;
+    for(unsigned i = 0; i < request->arguments_size; i++) {
+        length = snprintf(&buffer[position], remaining, " %u", request->arguments[i]);
+        if(length < 0) {
+            return REQUEST_FORMAT_ERROR;
+        }
+        remaining -= length;
+        if(remaining <= 0) {
+            return BUFFER_TOO_SHORT;
+        }
+        position += length;
+    }
+
+    // Terminate the string
+    if(remaining < 1) {
+        return BUFFER_TOO_SHORT;
+    }
+    buffer[position] = '\0';
+
     return OK;
 }
 

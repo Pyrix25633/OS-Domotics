@@ -10,7 +10,7 @@
 
 // Data types
 
-typedef u_int32_t device_id_t;
+typedef u_int16_t device_id_t;  // Limitation based on how arguments are formatted on messages
 typedef u_int8_t device_type_t;
 
 // Fixed IDS

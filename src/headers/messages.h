@@ -11,17 +11,20 @@
 
 typedef u_int8_t command_code_t;
 
+#define MAX_REQUEST_ARGUMENTS 2 // Max is from an add child
+
 // The id is 32 bits, it can be at maximum 4294967295, so 10 digits
 // The command code is 8 bits, it can be at maximum 255, so 3 digits
-// The argument is 16 bits, it can be at maximum 65535, so 5 digits
-// There are 2 spaces and the terminator char
-// So maximum size is 10 + 3 + 5 + 2 + 1 = 21, round to 24 just to be sure
-#define MAX_REQUEST_SIZE 24
+// Each argument is 16 bits, it can be at maximum 65535, so 5 digits
+// There are maximum 2 arguments, 1 + 2 = 3 spaces and the terminator char
+// So maximum size is 10 + 3 + 5*2 + 3 = 26, round to 32 just to be sure
+#define MAX_REQUEST_SIZE 32
 
 typedef struct request_t {
     device_id_t destination;
     command_code_t command_code;
-    u_int16_t argument;
+    u_int16_t arguments[MAX_REQUEST_ARGUMENTS];
+    size_t arguments_size; // Not present in the formatted request, set before formatting
 } request_t;
 
 #define MAX_RESPONSE_ARGUMENTS 6 // Maximum is from a fridge info
@@ -44,7 +47,7 @@ typedef struct response_t {
 
 // Command codes (`0b` prefix indicates binary, it's an extension)
 
-#define REQUEST_ARGUMENT_FLAG   0b0100000 // Responses to requests that have an argument should also contain that same argument
+#define REQUEST_ARGUMENTS_FLAG  0b0100000 // Responses to requests that have an argument should also contain that same argument
 #define RESPONSE_ARGUMENTS_FLAG 0b1000000
 #define POSITION_MASK           0b0000001
 #define POSITION_OFF            0b0000000
@@ -55,8 +58,8 @@ typedef struct response_t {
 #define SWITCH_CLOSE            0b0000110
 #define LINK_MASK               0b0000011
 #define LINK_CHANGE_PARENT      0b0000001
-#define LINK_NEW_CHILD          0b0000010
-#define LINK_DELETE_CHILD       0b0000011
+#define LINK_ADD_CHILD          0b0000010
+#define LINK_REMOVE_CHILD       0b0000011
 #define REGISTRY_MASK           0b0000111
 #define REGISTRY_BEGIN          0b0000001
 #define REGISTRY_END            0b0000010
@@ -82,8 +85,15 @@ typedef struct response_t {
 #define IS_REGISTRY(c)            (c & COMMAND_MASK) == REGISTRY
 #define REGISTRY_SUBCOMMAND(c)    (c & REGISTRY_MASK)
 #define IS_DELETE(c)              (c & COMMAND_MASK) == DELETE
-#define HAS_REQUEST_ARGUMENT(c)   (c & REQUEST_ARGUMENT_FLAG) == REQUEST_ARGUMENT_FLAG
+#define HAS_REQUEST_ARGUMENTS(c)   (c & REQUEST_ARGUMENTS_FLAG) == REQUEST_ARGUMENTS_FLAG
 #define HAS_RESPONSE_ARGUMENTS(c) (c & RESPONSE_ARGUMENTS_FLAG) == RESPONSE_ARGUMENTS_FLAG
+
+// Request argument positions
+
+#define PARENT_ID_ARGUMENT  0
+#define CHILD_ID_ARGUMENT   0
+#define REGISTRY_ARGUMENT   0
+#define CHILD_TYPE_ARGUMENT 1
 
 // Response argument positions
 
@@ -104,6 +114,9 @@ typedef struct response_t {
  * @param request Pointer to the data structure in which to put the parsed request
  * @param buffer Pointer to the string request to be parsed
  * @param size Size of the buffer
+ * 
+ * `arguments_size` is guaranteed to be at least `1` in commands that provide arguments,
+ * so the first argument is always present in these cases
  * 
  * @returns `BUFFER_TOO_SHORT` if the string is not NULL-terminated and so the reading buffer was too short,
  * `REQUEST_FORMAT_ERROR` if there was an error in the format,

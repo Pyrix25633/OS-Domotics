@@ -84,7 +84,7 @@ routing_data_t* find_routing_data(routing_table_t table, device_id_t id);
  * 
  * @param table Routing table where to search
  * @param parent_id Parent ID of the searched direct child
- * @param last Pointer to the last returned childe, where to start the search, if `NULL` the search starts from the beginning
+ * @param last Pointer to the last returned child, where to start the search, if `NULL` the search starts from the beginning
  * 
  * @returns Each time it returns a pointer to the routing information of the next child, `NULL` if there are no more
  * direct children
