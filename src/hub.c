@@ -6,6 +6,7 @@
 
 device_id_t id;
 control_device_state_t state; //to be determined, based on the children type (that has to be the same)
+device_type_t leaf_devices_type; //to be determined at first add //TODO
 
 // - Auxiliary device data -
 
@@ -31,6 +32,7 @@ bool eof = false; //! only the other thread can modify this
 struct sigaction action_handler;
 
 // - Thread -
+
 pthread_t children_execution_context;
 
 //TODO when I have an end of file while reading i need to close the pipe and open another one
@@ -38,11 +40,10 @@ pthread_t children_execution_context;
 
 int main(int argc, char *argv[]) {
     id = get_id_from_arguments(argc, argv);
-    //TODO set the response.source in both parent and child
-    //response.source = id;
     start_device_fifos(id,&rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
     action_handler.sa_handler = handle_shutdown;
     sigaction(SIGTERM, &action_handler, NULL);
+    srand(time(NULL));
 
     //pthread_create(&children_communication_handler, NULL,  , NULL);
 
@@ -62,16 +63,13 @@ void children_communication_handler(){
     response.source = id;
     response.arguments_size = 0;
 
-    bool isParent = false;
+    bool is_parent = false;
     //TODO create a function when the code it's the same
     while(!force_exit){
         while(!eof){
             //TODO execute_command
             command_code_t code;
-            error_code_t error_code = read_pipe(isParent, rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE);
-            if(error_code == OK){
-                error_code = parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
-            }
+            error_code_t error_code = read_pipe(is_parent, rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE, NULL, &response);
             if(error_code!=OK){
                 response.command_code = NULL_COMMAND;
                 response.response_code = error_code;
@@ -97,43 +95,46 @@ void parent_communication_handler(){
     request_t request;
     response_t response;
 
-    bool isParent = true;
-    
-    while(!force_exit){
+    command_code_t code;
+    response.source = id;
+    bool is_parent = true;
 
+    while(!force_exit){
         //? execute_command
-        //! I need to send a request to the children based on the request done by the parent
-        command_code_t code;
-        error_code_t error_code = read_pipe(isParent, rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE);
-        if(error_code == OK){
-            error_code = parse_request(&request, request_buffer, MAX_REQUEST_SIZE);
-        }
+        //! I need to send a request to the children based on the request done by the parent of the hub
+        error_code_t error_code = read_pipe(is_parent, rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE, &request, NULL);
         //! errors while parsing the request --> I need to send a response to the parent of the hub
         if(error_code!=OK){
-            response.source = id;
             response.command_code = NULL_COMMAND;
             response.response_code = error_code;
             response.arguments_size = 0;
             simulate_processing_time();
             write_pipe_response(&response, response_buffer);
         }
+        else{//no errors occured
+            if(request.destination == id){ //the destination is the parent
+                code = request.command_code;
+                if(IS_INFO(code)) { create_info_response();}
+            }
+        }
         //TODO finish it
     }
 
 }
 
-//TODO put here the similar code, so it will be like the device
-void execute_command(){
+void create_info_response(){
+    
 }
 
 //EOF read --> no one can write anymore --> all the child have been linked to other partents
-error_code_t read_pipe(bool isParent, int fd, char* buffer, int buffer_size){
+//if isRequest then response will be NULL
+error_code_t read_pipe(bool is_parent, int fd, char* buffer, size_t buffer_size, request_t* request, response_t* response){
     ssize_t size = read(fd, buffer, buffer_size);
     if(size < 0){
         return UNABLE_TO_READ_PIPE;
     }
     if(size == 0){
-        if (isParent){
+        if (is_parent){
             force_exit = true;
         }
         else{
@@ -141,7 +142,7 @@ error_code_t read_pipe(bool isParent, int fd, char* buffer, int buffer_size){
         }
         return UNEXPECTED_END_OF_FILE;
     }
-    return OK;
+    return (request==NULL ? parse_request(request, buffer, buffer_size) : parse_response(response, buffer, buffer_size));
 }
 
 void write_pipe_response(response_t* response, char* buffer_write){
