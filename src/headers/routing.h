@@ -78,6 +78,20 @@ error_code_t insert_indirect_routing_data(routing_table_t table, device_id_t id,
 routing_data_t* find_routing_data(routing_table_t table, device_id_t id);
 
 /**
+ * Finds, if present, routing information about the next direct child
+ * 
+ * It has to be called multiple times until it returns `NULL`
+ * 
+ * @param table Routing table where to search
+ * @param parent_id Parent ID of the searched direct child
+ * @param last Pointer to the last returned childe, where to start the search, if `NULL` the search starts from the beginning
+ * 
+ * @returns Each time it returns a pointer to the routing information of the next child, `NULL` if there are no more
+ * direct children
+ */
+routing_data_t* find_direct_routing_data(routing_table_t table, device_id_t parent_id, routing_data_t *last);
+
+/**
  * Removes, if present, the routing data, also about children of the removed ID
  * 
  * @param table The routing table the data has to be removed from

@@ -58,6 +58,26 @@ routing_data_t* find_routing_data(routing_table_t table, device_id_t id) {
     return NULL;
 }
 
+routing_data_t* find_direct_routing_data(routing_table_t table, device_id_t parent_id, routing_data_t *last) {
+    routing_data_t *current = last;
+    if(current != NULL) {
+        current = current->next;
+    }
+    id_hash_t b = current != NULL ? HASH_ID(current->id) : (last != NULL ? HASH_ID(last->id) + 1 : 0);
+    for(; b < UNIQUE_ID_HASHES; b++) {
+        if(current == NULL) {
+            current = table[b];
+        }
+        while(current != NULL && current->parent_id != parent_id) {
+            current = current->next;
+        }
+        if(current != NULL) {
+            return current;
+        }
+    }
+    return NULL;
+}
+
 void remove_routing_data(routing_table_t table, device_id_t id) {
     remove_routing_data_from_bucket(GET_BUCKET(table, id), id);
 }
