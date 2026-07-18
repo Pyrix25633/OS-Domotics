@@ -146,7 +146,6 @@ int main(int argc, char *argv[]) {
         wmove(commands_win, commands_bottom, 0);
         wrefresh(commands_win);
         token = strtok_r(input_buffer, " ", &last);
-        request.arguments_size = 0;
         if(token != NULL) {
             if(strcmp(token, "switch") == 0) {
                 request.command_code = SWITCH;
@@ -167,8 +166,7 @@ int main(int argc, char *argv[]) {
             } else if(strcmp(token, "link") == 0) {
                 request.command_code = LINK | LINK_CHANGE_PARENT;
                 token = strtok_r(NULL, " ", &last);
-                request.arguments[PARENT_ID_ARGUMENT] = string_to_unsigned(token);
-                request.arguments_size = 1;
+                request.argument = string_to_unsigned(token);
             } else if(strcmp(token, "info") == 0) {
                 request.command_code = INFO;
             } else if(strcmp(token, "del") == 0) {
@@ -189,8 +187,7 @@ int main(int argc, char *argv[]) {
                     request.command_code |= REGISTRY_PERCENTAGE;
                 }
                 token = strtok_r(NULL, " ", &last);
-                request.arguments[REGISTRY_ARGUMENT] = string_to_unsigned(token);
-                request.arguments_size = 1;
+                request.argument = string_to_unsigned(token);
             }
         }
 
@@ -199,7 +196,7 @@ int main(int argc, char *argv[]) {
         write(down, request_buffer, MAX_REQUEST_SIZE);
         if(IS_LINK(request.command_code)) {
             close(up);
-            create_fifo_name(request.arguments[PARENT_ID_ARGUMENT], DIRECTION_UP, name_buffer, INPUT_SIZE);
+            create_fifo_name(request.argument, DIRECTION_UP, name_buffer, INPUT_SIZE);
             up = open(name_buffer, O_RDONLY);
         }
     }
