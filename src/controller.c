@@ -19,12 +19,14 @@ int main(int argc, char *argv[]) {
     insert_indirect_routing_data(table, 0x39, WINDOW_DEVICE, 0x19);
     insert_indirect_routing_data(table, 0x47, WINDOW_DEVICE, 0x96);
     insert_indirect_routing_data(table, 0x11, WINDOW_DEVICE, 0x28);
+    insert_indirect_routing_data(table, 0x55, WINDOW_DEVICE, 0x11);
 
     /* logical tree:
         0x13
             0x18
             0x28
                 0x11
+                    0x55
             0x95
         0x15
             0x19
@@ -35,7 +37,14 @@ int main(int argc, char *argv[]) {
 
      */
 
-    print_routing_table(table);
+    routing_data_t *current = find_all_routing_data(table, current_id, NULL);
+
+    while(current != NULL) {
+        print_routing_data(current);
+        current = find_all_routing_data(table, current_id, current);
+    }
+
+    //print_routing_table(table);
 
     /*routing_data_t *child = find_direct_routing_data(table, 0x19, NULL);
     while(child != NULL) {
@@ -43,11 +52,11 @@ int main(int argc, char *argv[]) {
         child = find_direct_routing_data(table, 0x19, child);
     }*/
 
-    remove_routing_data(table, 0x19, 0x15);
+    //remove_routing_data(table, 0x19, 0x15);
 
-    printf("After removal\n");
+    //printf("After removal\n");
 
-    print_routing_table(table);
+    //print_routing_table(table);
 
     //routing_data_t *data = find_routing_data(table, 0x13);
     //print_routing_data(data);

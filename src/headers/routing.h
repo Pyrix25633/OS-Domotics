@@ -23,7 +23,7 @@ typedef struct routing_data_t {
     device_type_t type;
     device_id_t parent_id;
     int next_hop_fd; // Set automatically by the functions
-    depth_t depth; // Set automatically by the functions
+    depth_t depth; // Set automatically by the functions // ! should probably be removed
     struct routing_data_t *next; // Set automatically by the functions
 } routing_data_t;
 
@@ -90,6 +90,24 @@ routing_data_t* find_routing_data(routing_table_t table, device_id_t id);
  * direct children
  */
 routing_data_t* find_direct_routing_data(routing_table_t table, device_id_t parent_id, routing_data_t *last);
+
+/**
+ * Finds, if present, routing information about the next child, not limited to direct childs
+ * 
+ * It has to be called multiple times until it returns `NULL`, the logical tree is traversed from
+ * top to bottom, a child is always returned after its parent
+ * 
+ * This can be used to replay `CHANGE_PARENT` history
+ * 
+ * @param table Routing table where to search
+ * @param parent_id Parent ID where the search starts, usually the top of the local table, ID of the device where
+ * this operation is performed
+ * @param last Pointer to the last returned child, where to start the search, if `NULL` the search starts from the beginning
+ * 
+ * @returns Each time it returns a pointer to the routing information of the next child, `NULL` if there are no more
+ * direct children
+ */
+routing_data_t* find_all_routing_data(routing_table_t table, device_id_t parent_id, routing_data_t *last);
 
 /**
  * Removes recursively, if present, the routing data, also about children of the removed ID,
