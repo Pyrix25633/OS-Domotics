@@ -13,11 +13,24 @@
 #include <unistd.h>
 #include <signal.h>
 #include <pthread.h>
+#include <routing.h>
+
+#define UNDEFINED_STATE 0x10;
 
 // - Macros -
 
 #define END_ALL_FIFOS end_device_fifos(id, rcv_requests_parent_fd, snd_responses_parent_fd, rcv_responses_children_fd)
 #define END_CHILDREN_FIFO end_device_fifos(id, NO_FILE_DESCRIPTOR, NO_FILE_DESCRIPTOR, rcv_responses_children_fd)
+
+typedef struct linked_list_t {
+    command_code_t command_code;
+    device_id_t *responded;
+    size_t responded_size;
+    linked_list_t *next;
+    leaf_device_state_t state;
+    u_int16_t max_time;
+
+} linked_list_t;
 
 /**
  * Main function of the Hub Program

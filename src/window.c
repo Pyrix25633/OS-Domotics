@@ -41,8 +41,6 @@ char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send
 
 struct sigaction action_handler; //to set what to do when a signal occurs
 
-//TODO if an add request occurs i need to do a response with unexpected command
-
 // the controller starts a window process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec
