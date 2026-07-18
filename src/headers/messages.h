@@ -88,8 +88,10 @@ typedef struct response_t {
 
 #define STATE_ARGUMENT           0
 #define REQUEST_ARGUMENT         0
+#define PARENT_ID_ARGUMENT       0
 #define OPEN_SECONDS_ARGUMENT    1
 #define ON_SECONDS_ARGUMENT      1
+#define DEVICE_TYPE_ARGUMENT     1
 #define AUTOCLOSE_DELAY_ARGUMENT 2
 #define BEGIN_ARGUMENT           2
 #define FILL_PERCENTAGE_ARGUMENT 3
@@ -125,6 +127,8 @@ error_code_t format_request(request_t *request, char *buffer, size_t size);
 
 /**
  * Parses a string response and puts information in the response data structure
+ * 
+ * For an `INFO` it ensures that there are at least two arguments, which should be the state and the time on/open
  * 
  * @param response Pointer to the data structure in which to put the parsed response
  * @param buffer Pointer to the string response to be parsed

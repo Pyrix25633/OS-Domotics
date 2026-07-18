@@ -7,21 +7,51 @@
 
 #include "devices.h"
 #include "return_codes.h"
+#include "messages.h"
+#include "utils.h"
 
 #include <stdbool.h>
 #include <sys/types.h>
+#include <string.h>
 
 #define PIPE_NAME_MAX_LENGTH 24
 #define PIPE_PERMISSIONS 0660
 #define NO_FILE_DESCRIPTOR -1
+
+// Pipes
 
 typedef bool pipe_direction_t;
 
 #define DIRECTION_UP   0
 #define DIRECTION_DOWN 1
 
+// Processing time
+
 #define MIN_PROCESSING_TIME 1
 #define MAX_PROCESSING_TIME 3
+
+// User commands
+
+typedef u_int8_t user_command_code_t;
+
+#define MESSAGE_FLAG   0b1000
+#define ADD_COMMAND    0b0000
+#define DELETE_COMMAND 0b1000
+#define SWITCH_COMMAND 0b1001
+#define LINK_COMMAND   0b1010
+#define SET_COMMAND    0b1011
+#define INFO_COMMAND   0b1100
+#define LIST_COMMAND   0b0001
+#define EXIT_COMMAND   0b0010
+
+#define IS_MESSAGE(c) (c & MESSAGE_FLAG) == MESSAGE_FLAG
+
+typedef struct user_command_t {
+    device_id_t target;
+    user_command_code_t code;
+    command_code_t message_code;
+    u_int16_t argument;
+} user_command_t;
 
 /**
  * Measures the length of a possibly not NULL-terminated string
@@ -34,7 +64,7 @@ size_t string_length(char *string, size_t max_length);
 /**
  * Converts a string into an unsigned, checking for errors
  * @param string NULL-terminated string to be converted
- * @param 
+ *
  * @returns The converted number (positive),
  * `-CODE_FORMAT_ERROR` if the number is not correctly formatted
  */
@@ -120,5 +150,17 @@ error_code_t change_snd_responses_pipe(device_id_t parent_id, int *snd_responses
  * Functions that sleeps a random amount of time to simulate processing time
  */
 void simulate_processing_time();
+
+/**
+ * Parses string in `"<hours>:<minutes>"` to number of minutes
+ * 
+ * The passed string is modified and will no longer be valid
+ * 
+ * @param time Formatted string to parse
+ * 
+ * @returns The converted time (positive),
+ * `-CODE_FORMAT_ERROR` if the time is not correctly formatted
+ */
+int parse_time(char *time);
 
 #endif

@@ -25,9 +25,11 @@ typedef u_int8_t error_code_t;
 // - CAUSED BY USER -
 
 #define USER_ERROR               0x10
-#define INVALID_COMMAND          0x11
-#define DEVICE_TYPE_MISMATCH     0x12
-#define DEVICE_NOT_FOUND         0x13
+#define INVALID_TARGET_ID        0x11
+#define INVALID_COMMAND          0x12
+#define INVALID_COMMAND_ARGUMENT 0x13
+#define DEVICE_TYPE_MISMATCH     0x14
+#define DEVICE_NOT_FOUND         0x15
 
 // - CAUSED BY THE APPLICATION - (should never happen)
 
@@ -75,7 +77,7 @@ typedef u_int8_t error_code_t;
 #define IS_THREAD_ERROR(e)       (e & ERROR_MASK) == THREAD_ERROR
 #define IS_IPC_ERROR(e)          (e & ERROR_MASK) == IPC_ERROR
 
-#define IS_RETURN_ERROR(ret)   ret < 0 // Macro for error checking of negative return values
+#define IS_RETURN_ERROR(ret)   (ret < 0) // Macro for error checking of negative return values
 #define ERROR_FROM_RETURN(ret) -ret // Macro for conversion from negative return value to corresponding error code
 
 /**

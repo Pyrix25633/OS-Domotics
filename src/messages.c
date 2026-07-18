@@ -133,6 +133,10 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
         response->arguments_size = i;
     }
 
+    if(IS_INFO(response->command_code) && response->arguments_size < 2) {
+        return RESPONSE_FORMAT_ERROR;
+    }
+
     return OK;
 }
 

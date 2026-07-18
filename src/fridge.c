@@ -60,7 +60,7 @@ void execute_command() {
     response.arguments_size = 0;
     
     error_code_t error_code = read_pipe();
-    if(error_code != OK) {
+    if(IS_ERROR(error_code)) {
         response.command_code = NULL_COMMAND;
         response.response_code = error_code;
     }
@@ -122,7 +122,7 @@ void create_link_response() {
         response.arguments[REQUEST_ARGUMENT] = request.argument;
         if(request.argument != parent_id) {
             response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
-            if(response.response_code == OK) {
+            if(!IS_ERROR(response.response_code)) {
                 parent_id = request.argument;
             }
         }
@@ -181,7 +181,7 @@ void create_switch_response() {
 void write_pipe() {
     error_code_t error_code = format_response(&response, response_buffer, MAX_RESPONSE_SIZE);
     
-    if(error_code != OK) {
+    if(IS_ERROR(error_code)) {
         print_error(STDERR_FILENO, error_code, id, "while formatting response");
     }
     else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
@@ -191,7 +191,7 @@ void write_pipe() {
 
 void handle_shutdown() {
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, NO_FILE_DESCRIPTOR);
-    if(error_code != OK) {
+    if(IS_ERROR(error_code)) {
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
     if(state == STATE_OPEN && pthread_cancel(autoclose_thread) != 0) {
@@ -247,7 +247,7 @@ void* autoclose_routine(void *arg) {
     response.response_code = OK;
     response.arguments_size = 0;
     error_code_t error_code = format_response(&response, response_buffer, MAX_RESPONSE_SIZE);
-    if(error_code != OK) {
+    if(IS_ERROR(error_code)) {
         print_error(STDERR_FILENO, error_code, id, "in autoclose thread");
     } else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "in autoclose thread");

@@ -23,7 +23,9 @@ void print_error(int fd, int error_code, int device_id, char *message) {
     }
     char info[32];
     switch(error_code) {
+        case INVALID_TARGET_ID:        strcpy(info, "invalid target ID");        break;
         case INVALID_COMMAND:          strcpy(info, "invalid command");          break;
+        case INVALID_COMMAND_ARGUMENT: strcpy(info, "invalid command argument"); break;
         case DEVICE_TYPE_MISMATCH:     strcpy(info, "device type mismatch");     break;
         case DEVICE_NOT_FOUND:         strcpy(info, "device not found");         break;
 
