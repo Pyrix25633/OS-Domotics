@@ -92,12 +92,14 @@ routing_data_t* find_routing_data(routing_table_t table, device_id_t id);
 routing_data_t* find_direct_routing_data(routing_table_t table, device_id_t parent_id, routing_data_t *last);
 
 /**
- * Removes, if present, the routing data, also about children of the removed ID
+ * Removes recursively, if present, the routing data, also about children of the removed ID,
+ * only if the provided parent ID matches the actual parent ID found in the routing information
  * 
  * @param table The routing table the data has to be removed from
  * @param id ID of the device to be removed
+ * @param parent_it Its expected parent ID
  */
-void remove_routing_data(routing_table_t table, device_id_t id);
+void remove_routing_data(routing_table_t table, device_id_t id, device_id_t parent_id);
 
 /**
  * Inserts, or replaces, the routing data ordered by ID

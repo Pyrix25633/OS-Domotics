@@ -78,7 +78,29 @@ routing_data_t* find_direct_routing_data(routing_table_t table, device_id_t pare
     return NULL;
 }
 
-void remove_routing_data(routing_table_t table, device_id_t id) {
+void remove_routing_data(routing_table_t table, device_id_t id, device_id_t parent_id) {
+    routing_data_t *data = find_routing_data(table, id);
+    // Check if found and parent ID match
+    if(data == NULL || data->parent_id != parent_id) {
+        return;
+    }
+
+    // Recursively remove all children
+    routing_data_t *current = find_direct_routing_data(table, id, NULL);
+    while(current != NULL) {
+        /*
+          In this case the parent ID will always match, but it's not important
+          enough to write and use a different function without the check
+         */
+        remove_routing_data(table, current->id, current->parent_id);
+        /*
+          At this point `current` has been removed, so it's no longer a valid
+          starting point for the search, the next result is the first
+        */
+        current = find_direct_routing_data(table, id, NULL);
+    }
+
+    // Remove the entry
     remove_routing_data_from_bucket(GET_BUCKET(table, id), id);
 }
 
@@ -147,6 +169,9 @@ void print_routing_table(routing_table_t table) {
 
 void print_routing_data(routing_data_t *data) {
     if(data != NULL) {
+        for(int i = 1; i < data->depth; i++) {
+            printf("\t");
+        }
         printf("Id: 0x%x, type: %1x, parent id: 0x%x, next hop fd: %d, depth: %u\n", data->id, data->type, data->parent_id, data->next_hop_fd, data->depth);
     }
     else {
