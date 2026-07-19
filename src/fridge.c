@@ -49,14 +49,16 @@ int main(int argc, char *argv[]) {
 
     srand(last_closed); // Seed random generator with current time, always different
 
+    error_code_t error_code;
+
     while(!force_exit) {
-        execute_command();
+        error_code = execute_command();
     }
 
-    handle_shutdown();
+    handle_shutdown(error_code);
 }
 
-void execute_command() {
+error_code_t execute_command() {
     response.arguments_size = 0;
     
     error_code_t error_code = read_pipe();
@@ -83,7 +85,8 @@ void execute_command() {
                 response.response_code = UNEXPECTED_COMMAND;
             }
             if(pthread_mutex_unlock(&data_mutex) < 0) {
-                print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing request");
+                error_code = UNABLE_TO_UNLOCK_MUTEX;
+                print_error(STDERR_FILENO, error_code, id, "while processing request");
                 force_exit = true; // Nothing to do, do not try to lock again
             }
         }
@@ -92,6 +95,8 @@ void execute_command() {
     simulate_processing_time();
 
     write_pipe();
+
+    return error_code;
 }
 
 error_code_t read_pipe() {
@@ -195,7 +200,7 @@ void write_pipe() {
     }
 }
 
-void handle_shutdown() {
+void handle_shutdown(error_code_t error) {
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, NO_FILE_DESCRIPTOR);
     if(IS_ERROR(error_code)) {
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
@@ -203,6 +208,9 @@ void handle_shutdown() {
     if(state == STATE_OPEN && pthread_cancel(autoclose_thread) != 0) {
         error_code = UNABLE_TO_CANCEL_THREAD;
         print_error(STDERR_FILENO, error_code, id, "in shutdown");
+    }
+    if(!IS_ERROR(error_code)) {
+        error_code = error;
     }
     exit(error_code);
 }
@@ -243,7 +251,11 @@ void* autoclose_routine(void *arg) {
 
     if(pthread_mutex_unlock(&data_mutex) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "in autoclose thread");
-        handle_shutdown();
+        /*
+         Here the main thread is waiting to lock the mutex, it's not performing
+         any operation, so the program can exit without problems
+        */
+        handle_shutdown(UNABLE_TO_UNLOCK_MUTEX);
     }
 
     char response_buffer[MAX_RESPONSE_SIZE];

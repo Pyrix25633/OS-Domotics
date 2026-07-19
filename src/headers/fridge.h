@@ -50,17 +50,30 @@
  * `UNABLE_TO_OPEN_PIPE` if the IPC pipes could not be opened,
  * `UNABLE_TO_CLOSE_PIPE` if the IPC pipes could not be closed,
  * `UNABLE_TO_CANCEL_THREAD` if the autoclose thread could not be cancelled,
+ * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
  * `OK` otherwise
  */
 int main(int argc, char *argv[]);
 
 /**
  * Reads requests from the pipe, executes the commands and sends responses
+ * 
+ * @returns `UNABLE_TO_READ_PIPE` if there was an error reading the pipe,
+ * `UNEXPECTED_END_OF_FILE` if the pipe was closed by the parent,
+ * `BUFFER_TOO_SHORT` if the reading buffer was too short,
+ * `REQUEST_FORMAT_ERROR` if the request was not formatted properly,
+ * `OK` otherwise
  */
-void execute_command();
+error_code_t execute_command();
 
 /**
  * Reads the pipe and parses the request
+ * 
+ * @returns `UNABLE_TO_READ_PIPE` if there was an error reading the pipe,
+ * `UNEXPECTED_END_OF_FILE` if the pipe was closed by the parent,
+ * `BUFFER_TOO_SHORT` if the reading buffer was too short,
+ * `REQUEST_FORMAT_ERROR` if the request was not formatted properly,
+ * `OK` otherwise
  */
 error_code_t read_pipe();
 

@@ -43,6 +43,7 @@ typedef u_int8_t error_code_t;
 #define INVALID_REQUEST_ARGUMENT 0x27
 #define UNEXPECTED_COMMAND       0x28
 #define ROUTE_NOT_FOUND          0x29
+#define CHILD_NOT_FOUND          0x2a
 
 // - CAUSE RELATED TO PROCESSES -
 

@@ -42,7 +42,6 @@ typedef u_int8_t user_command_code_t;
 #define SET_COMMAND    0b1011
 #define INFO_COMMAND   0b1100
 #define LIST_COMMAND   0b0001
-#define EXIT_COMMAND   0b0010
 
 #define IS_MESSAGE(c) (c & MESSAGE_FLAG) == MESSAGE_FLAG
 

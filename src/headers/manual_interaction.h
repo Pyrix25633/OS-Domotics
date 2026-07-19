@@ -37,6 +37,8 @@ int main(int argc, char *argv[]);
 /**
  * Parses a command-line user command
  * 
+ * TODO: decide if the manual interaction can execute other commands, except for `list` and `add`
+ * 
  * @param user_command Struct where command data will be put
  * @param argc Number of string arguments
  * @param argv Arguments vector
