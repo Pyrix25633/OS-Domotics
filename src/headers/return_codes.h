@@ -77,7 +77,7 @@ typedef u_int8_t error_code_t;
 #define IS_THREAD_ERROR(e)       (e & ERROR_MASK) == THREAD_ERROR
 #define IS_IPC_ERROR(e)          (e & ERROR_MASK) == IPC_ERROR
 
-#define IS_RETURN_ERROR(ret)   (ret < 0) // Macro for error checking of negative return values
+#define IS_RETURN_ERROR(ret)   ((ret) < 0) // Macro for error checking of negative return values
 #define ERROR_FROM_RETURN(ret) -ret // Macro for conversion from negative return value to corresponding error code
 
 /**

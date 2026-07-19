@@ -118,8 +118,9 @@ void create_info_response() {
 
 void create_link_response() {
     if(LINK_SUBCOMMAND(request.command_code) == LINK_CHANGE_PARENT) {
-        response.arguments_size = 1;
-        response.arguments[REQUEST_ARGUMENT] = request.argument;
+        response.arguments_size = 2;
+        response.arguments[PARENT_ID_ARGUMENT] = request.argument;
+        response.arguments[DEVICE_TYPE_ARGUMENT] = FRIDGE_DEVICE;
         if(request.argument != parent_id) {
             response.response_code = change_snd_responses_pipe(request.argument, &snd_responses_fd);
             if(!IS_ERROR(response.response_code)) {
@@ -134,9 +135,14 @@ void create_link_response() {
 
 void create_registry_response() {
     response.arguments_size = 1;
-    response.arguments[REQUEST_ARGUMENT] = request.argument;
+    response.arguments[REGISTRY_ARGUMENT] = request.argument;
     if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_DELAY) {
-        autoclose_delay = request.argument;
+        if(request.argument >= MIN_DELAY && request.argument <= MAX_DELAY) {
+            autoclose_delay = request.argument;
+        }
+        else {
+            response.response_code = INVALID_REQUEST_ARGUMENT;
+        }
     }
     else if(REGISTRY_SUBCOMMAND(request.command_code) == REGISTRY_THERMOSTAT) {
         if(request.argument >= MIN_THERMOSTAT && request.argument <= MAX_THERMOSTAT) {

@@ -181,9 +181,7 @@ void remove_routing_data_from_bucket(routing_data_t **bucket, device_id_t id) {
 }
 
 void print_routing_table(routing_table_t table) {
-    routing_data_t *bucket;
     for(id_hash_t b = 0; b < UNIQUE_ID_HASHES; b++) {
-        //printf("Bucket: 0x%1x\n", b);
         routing_data_t *current = table[b];
         while(current != NULL) {
             print_routing_data(current);

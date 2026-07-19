@@ -13,6 +13,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <stdio.h>
 
 /**
  * Main function of the Manual Interaction Program
@@ -25,6 +27,9 @@
  * @returns `INVALID_TARGET_ID` if the target ID is missing or has an invalid format,
  * `INVALID_COMMAND` if the command is not between the expected ones or is missing,
  * `INVALID_COMMAND_ARGUMENT` if any of the arguments is missing or doesn't have a valid format,
+ * `UNABLE_TO_OPEN_PIPE` if the device pipe could not be opened,
+ * `BUFFER_TOO_SHORT` or `REQUEST_FORMAT_ERROR` if the request could not be formatted,
+ * `UNABLE_TO_WRITE_PIPE` if the request could not be sent,
  * `OK` otherwise
  */
 int main(int argc, char *argv[]);
@@ -66,5 +71,15 @@ error_code_t parse_switch_command(user_command_t *user_command, int argc, char *
  * `OK` otherwise
  */
 error_code_t parse_set_command(user_command_t *user_command, int argc, char *argv[]);
+
+/**
+ * Opens the pipe where to send commands to the target device
+ * 
+ * @param target Target device ID
+ * 
+ * @returns `UNABLE_TO_OPEN_PIPE` if the pipe could not be opened,
+ * `OK` otherwise
+ */
+void open_device_pipe(device_id_t target);
 
 #endif

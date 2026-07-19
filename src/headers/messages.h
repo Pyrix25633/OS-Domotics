@@ -53,9 +53,9 @@ typedef struct response_t {
 #define SWITCH_POWER            0b0000010
 #define SWITCH_OPEN             0b0000100
 #define SWITCH_CLOSE            0b0000110
-#define LINK_MASK               0b0000011
-#define LINK_CHANGE_PARENT      0b0000001
-#define LINK_REMOVE_CHILD       0b0000011
+#define LINK_MASK               0b0000001
+#define LINK_CHANGE_PARENT      0b0000000
+#define LINK_REMOVE_CHILD       0b0000001
 #define REGISTRY_MASK           0b0000111
 #define REGISTRY_BEGIN          0b0000001
 #define REGISTRY_END            0b0000010
@@ -87,8 +87,9 @@ typedef struct response_t {
 // Response argument positions
 
 #define STATE_ARGUMENT           0
-#define REQUEST_ARGUMENT         0
 #define PARENT_ID_ARGUMENT       0
+#define CHILD_ID_ARGUMENT        0
+#define REGISTRY_ARGUMENT        0
 #define OPEN_SECONDS_ARGUMENT    1
 #define ON_SECONDS_ARGUMENT      1
 #define DEVICE_TYPE_ARGUMENT     1

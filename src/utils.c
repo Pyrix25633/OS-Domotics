@@ -57,21 +57,21 @@ error_code_t create_fifo_name(device_id_t device_id, pipe_direction_t direction,
 
 void start_device_fifos(device_id_t device_id, int *rcv_requests_fd, int *snd_responses_fd, int *rcv_responses_fd) {
     char name[PIPE_NAME_MAX_LENGTH];
-    if(IS_ERROR(create_fifo_name(device_id, true, name, PIPE_NAME_MAX_LENGTH))
+    if(IS_ERROR(create_fifo_name(device_id, DIRECTION_DOWN, name, PIPE_NAME_MAX_LENGTH))
         || (*rcv_requests_fd = open(name, O_RDONLY)) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_OPEN_PIPE, device_id, "opening the device pipe to receive commands");
         exit(UNABLE_TO_OPEN_PIPE);
     }
-    if(IS_ERROR(create_fifo_name(CONTROLLER_ID, false, name, PIPE_NAME_MAX_LENGTH))
+    if(IS_ERROR(create_fifo_name(CONTROLLER_ID, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
         || (*snd_responses_fd = open(name, O_WRONLY)) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_OPEN_PIPE, device_id, "opening the controller pipe to send responses");
         exit(UNABLE_TO_OPEN_PIPE);
     }
     if(rcv_responses_fd != NULL) {
-        if(IS_ERROR(create_fifo_name(device_id, false, name, PIPE_NAME_MAX_LENGTH))
+        if(IS_ERROR(create_fifo_name(device_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
             || mkfifo(name, PIPE_PERMISSIONS) < 0
             || (*rcv_responses_fd = open(name, O_RDONLY)) < 0) {
-            print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, device_id, "creating the device pipe to receive commands");
+            print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, device_id, "creating the device pipe to receive responses");
             exit(UNABLE_TO_CREATE_PIPE);
         }
     }
@@ -94,7 +94,7 @@ error_code_t end_device_fifos(device_id_t device_id, int rcv_requests_fd, int sn
         if(close(rcv_responses_fd) < 0) {
             error_code = UNABLE_TO_CLOSE_PIPE;
         }
-        if(IS_ERROR(create_fifo_name(device_id, false, name, PIPE_NAME_MAX_LENGTH))
+        if(IS_ERROR(create_fifo_name(device_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
             || remove(name) < 0) {
             error_code = UNABLE_TO_REMOVE_PIPE;
         }
@@ -105,7 +105,7 @@ error_code_t end_device_fifos(device_id_t device_id, int rcv_requests_fd, int sn
 error_code_t change_snd_responses_pipe(device_id_t parent_id, int *snd_responses_fd) {
     int old_fd = *snd_responses_fd;
     char name[PIPE_NAME_MAX_LENGTH];
-    if(IS_ERROR(create_fifo_name(parent_id, false, name, PIPE_NAME_MAX_LENGTH))
+    if(IS_ERROR(create_fifo_name(parent_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
         || (*snd_responses_fd = open(name, O_WRONLY)) < 0) {
         return UNABLE_TO_OPEN_PIPE;
     }
@@ -121,8 +121,20 @@ void simulate_processing_time() {
 }
 
 int parse_time(char *time) {
-    char *last = NULL;
+    char *last;
     char *token = strtok_r(time, ":", &last);
-    // TODO
-    return 0; // ! modify
+    int hours;
+    if(token == NULL || IS_RETURN_ERROR(hours = string_to_unsigned(token)) || hours >= 24) {
+        return -CODE_FORMAT_ERROR;
+    }
+    token = strtok_r(NULL, ":", &last);
+    int minutes;
+    if(token == NULL || strlen(token) != 2 || IS_RETURN_ERROR(minutes = string_to_unsigned(token)) || minutes >= 60) {
+        return -CODE_FORMAT_ERROR;
+    }
+    token = strtok_r(NULL, ":", &last);
+    if(token != NULL) { // Time string continues
+        return -CODE_FORMAT_ERROR;
+    }
+    return minutes + (hours * 60);
 }
