@@ -2,64 +2,74 @@
 
 #include "controller.h"
 
+// - Concurrency management data -
+
+pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely
+// pthread_t autoclose_thread; // TODO: add threads
+
+// - IPC data -
+
+int rcv_responses_fd;
+bool force_exit = false;
+char request_buffer[MAX_REQUEST_SIZE];
+char response_buffer[MAX_RESPONSE_SIZE];
+request_t request;
+response_t response;
+routing_table_t routing_table;
+
+// - Signal handler -
+
+struct sigaction action_handler;
+
 int main(int argc, char *argv[]) {
-    routing_table_t table;
-    device_id_t current_id = CONTROLLER_ID;
+    set_signal_handler(SIGTERM, sigterm_handler);
 
-    init_routing_table(table);
+    start_responses_fifo();
 
-    insert_direct_routing_data(table, 0x13, WINDOW_DEVICE, current_id, 5);
-    insert_direct_routing_data(table, 0x15, WINDOW_DEVICE, current_id, 9);
-    insert_indirect_routing_data(table, 0x18, WINDOW_DEVICE, 0x13);
-    insert_indirect_routing_data(table, 0x19, WINDOW_DEVICE, 0x15);
-    insert_indirect_routing_data(table, 0x28, WINDOW_DEVICE, 0x13);
-    insert_indirect_routing_data(table, 0x95, WINDOW_DEVICE, 0x13);
-    insert_indirect_routing_data(table, 0x36, WINDOW_DEVICE, 0x15);
-    insert_indirect_routing_data(table, 0x96, WINDOW_DEVICE, 0x19);
-    insert_indirect_routing_data(table, 0x39, WINDOW_DEVICE, 0x19);
-    insert_indirect_routing_data(table, 0x47, WINDOW_DEVICE, 0x96);
-    insert_indirect_routing_data(table, 0x11, WINDOW_DEVICE, 0x28);
-    insert_indirect_routing_data(table, 0x55, WINDOW_DEVICE, 0x11);
+    init_routing_table(routing_table);
 
-    /* logical tree:
-        0x13
-            0x18
-            0x28
-                0x11
-                    0x55
-            0x95
-        0x15
-            0x19
-                0x96
-                    0x47
-                0x39
-            0x36
+    handle_shutdown(OK); // TODO: change passed error code
+}
 
-     */
-
-    routing_data_t *current = find_all_routing_data(table, current_id, NULL);
-
-    while(current != NULL) {
-        print_routing_data(current);
-        current = find_all_routing_data(table, current_id, current);
+void start_responses_fifo() {
+    char name[PIPE_NAME_MAX_LENGTH];
+    if(IS_ERROR(create_fifo_name(CONTROLLER_ID, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
+        || mkfifo(name, PIPE_PERMISSIONS) < 0
+        || (rcv_responses_fd = open(name, O_RDONLY)) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, CONTROLLER_ID, "creating the pipe to receive responses");
+        exit(UNABLE_TO_CREATE_PIPE);
     }
+}
 
-    //print_routing_table(table);
+error_code_t end_responses_fifo() {
+    error_code_t error_code = OK;
+    char name[PIPE_NAME_MAX_LENGTH];    
+    if(close(rcv_responses_fd) < 0) {
+        error_code = UNABLE_TO_CLOSE_PIPE;
+    }
+    if(IS_ERROR(create_fifo_name(CONTROLLER_ID, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
+        || remove(name) < 0) {
+        error_code = UNABLE_TO_REMOVE_PIPE;
+    }
+    return error_code;
+}
 
-    /*routing_data_t *child = find_direct_routing_data(table, 0x19, NULL);
-    while(child != NULL) {
-        print_routing_data(child);
-        child = find_direct_routing_data(table, 0x19, child);
+void handle_shutdown(error_code_t error) {
+    error_code_t error_code = end_responses_fifo();
+    if(IS_ERROR(error_code)) {
+        print_error(STDERR_FILENO, error_code, CONTROLLER_ID, "while closing and deleting pipes");
+    }
+    // TODO: join or cancel threads
+    /*if(state == STATE_OPEN && pthread_cancel(autoclose_thread) != 0) {
+        error_code = UNABLE_TO_CANCEL_THREAD;
+        print_error(STDERR_FILENO, error_code, id, "in shutdown");
     }*/
+    if(!IS_ERROR(error_code)) {
+        error_code = error;
+    }
+    exit(error_code);
+}
 
-    //remove_routing_data(table, 0x19, 0x15);
-
-    //printf("After removal\n");
-
-    //print_routing_table(table);
-
-    //routing_data_t *data = find_routing_data(table, 0x13);
-    //print_routing_data(data);
-
-    return OK;
+void sigterm_handler() {
+    handle_shutdown(UNEXPECTED_SHUTDOWN);
 }

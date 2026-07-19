@@ -28,6 +28,7 @@ void print_error(int fd, int error_code, int device_id, char *message) {
         case INVALID_COMMAND_ARGUMENT: strcpy(info, "invalid command argument"); break;
         case DEVICE_TYPE_MISMATCH:     strcpy(info, "device type mismatch");     break;
         case DEVICE_NOT_FOUND:         strcpy(info, "device not found");         break;
+        case UNEXPECTED_SHUTDOWN:      strcpy(info, "unexpected shutdown");      break;
 
         case MISSING_ID_ARGUMENT:      strcpy(info, "missing ID argument");      break;
         case CODE_FORMAT_ERROR:        strcpy(info, "code format error");        break;
@@ -68,7 +69,7 @@ void print_error(int fd, int error_code, int device_id, char *message) {
         case CONTROLLER_ID:         strcpy(source, "controller");                 break;
         default:                    sprintf(source, "device %u", device_id);
     }
-    char msg[48] = "";
+    char msg[64] = "";
     if(message != NULL) {
         sprintf(msg, ", %s", message);
     }

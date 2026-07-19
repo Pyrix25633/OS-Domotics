@@ -33,17 +33,12 @@ char response_buffer[MAX_RESPONSE_SIZE];
 request_t request;
 response_t response;
 
-// - Signal handler -
-
-struct sigaction action_handler;
-
 int main(int argc, char *argv[]) {
+    set_signal_handler(SIGTERM, sigterm_handler);
+
     id = get_id_from_arguments(argc, argv);
     response.source = id;
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, NULL);
-
-    action_handler.sa_handler = handle_shutdown;
-    sigaction(SIGTERM, &action_handler, NULL);
 
     last_closed = last_opened = last_thermostat_set = time(NULL);
 
@@ -101,12 +96,13 @@ error_code_t execute_command() {
 
 error_code_t read_pipe() {
     ssize_t size = read(rcv_requests_fd, request_buffer, MAX_REQUEST_SIZE);
-    if(size < 0) {
-        return UNABLE_TO_READ_PIPE;
-    }
+    
     if(size == 0) {
         force_exit = true;
         return UNEXPECTED_END_OF_FILE;
+    }
+    if(size != MAX_REQUEST_SIZE) {
+        return UNABLE_TO_READ_PIPE;
     }
     return parse_request(&request, request_buffer, MAX_REQUEST_SIZE);
 }
@@ -195,7 +191,7 @@ void write_pipe() {
     if(IS_ERROR(error_code)) {
         print_error(STDERR_FILENO, error_code, id, "while formatting response");
     }
-    else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
+    else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE) {
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
     }
 }
@@ -213,6 +209,10 @@ void handle_shutdown(error_code_t error) {
         error_code = error;
     }
     exit(error_code);
+}
+
+void sigterm_handler() {
+    handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
 error_code_t set_state(leaf_device_state_t new_state, bool automatic) {

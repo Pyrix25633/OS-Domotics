@@ -80,6 +80,16 @@ int string_to_unsigned(char *string);
 int get_id_from_arguments(int argc, char *argv[]);
 
 /**
+ * Sets the signal handler for a specific signal
+ * 
+ * @param signal Signal code
+ * @param signal_handled Handler function
+ * 
+ * If the operation fails, the function exits with code `UNABLE_TO_SET_SIGHANDLER`
+ */
+void set_signal_handler(int signal, void (*signal_handler)());
+
+/**
  * Create the pipe name from the ID and the direction
  * 
  * @param device_id The device ID

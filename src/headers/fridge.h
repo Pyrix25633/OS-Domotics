@@ -114,8 +114,15 @@ void write_pipe();
 
 /**
  * Handles the shutdown
+ * 
+ * @param error Error that caused the shutdown, if not `OK`
  */
-void handle_shutdown();
+void handle_shutdown(error_code_t error);
+
+/**
+ * Handles the shutdown caused by a `SIGTERM` signal
+ */
+void sigterm_handler();
 
 /**
  * Sets the state and updates auxiliary variables

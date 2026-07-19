@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 size_t string_length(char *string, size_t max_length) {
     unsigned i;
@@ -42,6 +43,15 @@ int get_id_from_arguments(int argc, char *argv[]) {
     }
     print_error(STDERR_FILENO, MISSING_ID_ARGUMENT, NO_ID, "in get_id_from_arguments");
     exit(MISSING_ID_ARGUMENT);
+}
+
+void set_signal_handler(int signal, void (*signal_handler)()) {
+    struct sigaction action;
+    action.sa_handler = signal_handler;
+    if(sigaction(signal, &action, NULL) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_SET_SIGHANDLER, NO_ID, "while setting signal handler");
+        exit(UNABLE_TO_SET_SIGHANDLER);
+    }
 }
 
 error_code_t create_fifo_name(device_id_t device_id, pipe_direction_t direction, char* buffer, size_t size) {

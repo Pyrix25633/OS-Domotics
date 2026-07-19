@@ -30,6 +30,7 @@ typedef u_int8_t error_code_t;
 #define INVALID_COMMAND_ARGUMENT 0x13
 #define DEVICE_TYPE_MISMATCH     0x14
 #define DEVICE_NOT_FOUND         0x15
+#define UNEXPECTED_SHUTDOWN      0x16
 
 // - CAUSED BY THE APPLICATION - (should never happen)
 
@@ -49,6 +50,7 @@ typedef u_int8_t error_code_t;
 
 #define PROCESS_ERROR            0x30
 #define UNABLE_TO_ALLOCATE_HEAP  0x31
+#define UNABLE_TO_SET_SIGHANDLER 0x32
 
 // - CAUSE RELATED TO THREADS -
 
