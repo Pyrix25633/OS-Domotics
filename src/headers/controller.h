@@ -19,6 +19,10 @@
 #include <time.h>
 #include <pthread.h>
 #include <fcntl.h>
+#include <ncurses.h>
+
+#define STDOUTERR_PIPE_NAME "./ipc/stdouterr.fifo"
+#define STDOUTERR_BUFFER_SIZE 512
 
 /**
  * Main function of the Controller Program
@@ -30,7 +34,8 @@
  * 
  * @returns `UNABLE_TO_CREATE_PIPE` if the pipe where the Controller receives
  * responses from children could not be created and opened,
- * `OK`
+ * `UNABLE_TO_RESTORE_STREAMS` if it was impossible to restore the standard streams after failing to redirect them,
+ * `OK` otherwise
  */
 int main(int argc, char *argv[]);
 
@@ -61,5 +66,72 @@ void handle_shutdown(error_code_t error);
  * Handles the shutdown caused by a `SIGTERM` signal
  */
 void sigterm_handler();
+
+/**
+ * Initializes the ncurses library, creates the windows and redirects the `stdout` and `stderr` threads,
+ * if there is no `--no-ncurses` argument
+ * 
+ * @param argc Number of command-line arguments
+ * @param argv Arguments vector
+ * 
+ * If errors occur, the function attempts to restore the original terminal mode and streams
+ * 
+ * @returns `INVALID_COMMAND_ARGUMENT` if there are errors with command-line arguments,
+ * `UNABLE_TO_CREATE_PIPE` if the pipe could not be created or opened in read mode,
+ * `UNABLE_TO_SET_FD_ATTR` if it could not be set back to blocking mode,
+ * `UNABLE_TO_OPEN_PIPE` if it could not be opened in write mode,
+ * `UNABLE_TO_CREATE_WINDOWS` if `ncurses` could not create the windows,
+ * `UNABLE_TO_CREATE_THREAD` if the thread dedicated to reading the redirected streams could not be created,
+ * `OK` otherwise
+ */
+error_code_t start_ncurses(int argc, char *argv[]);
+
+/**
+ * Redirects both `stdout` and `stderr` to a named pipe
+ * 
+ * @returns `UNABLE_TO_CREATE_PIPE` if the pipe could not be created or opened in read mode,
+ * `UNABLE_TO_SET_FD_ATTR` if it could not be set back to blocking mode,
+ * `UNABLE_TO_OPEN_PIPE` if it could not be opened in write mode,
+ * `OK` otherwise
+ */
+error_code_t redirect_stdout_stderr();
+
+/**
+ * Attempts to restore standard streams, if it fails it exits with code `UNABLE_TO_RESTORE_STREAMS`
+ * 
+ * @returns `UNABLE_TO_REMOVE_PIPE` if the redirect pipe could not be removed,
+ * `OK` otherwise
+ */
+error_code_t restore_stdout_stderr();
+
+/**
+ * Creates ncurses windows dedicated to input and ouput
+ * 
+ * If something fails it attempts to restore streams
+ * 
+ * @returns `UNABLE_TO_CREATE_WINDOWS` if the library failed to create the windows,
+ * `OK` otherwise
+ */
+error_code_t create_windows();
+
+/**
+ * Function that the `stdout` and `stderr` redirect thread executes
+ * 
+ * It reads from the redirection and prints to the ncurses terminal
+ * 
+ * If something fails there is not much that can be done as
+ * the input-output interface itself is being manipulated,
+ * so this function doesn't check for errors // TODO
+ * 
+ * @param arg Not used
+ * 
+ * @returns `NULL`
+ */
+void* read_redirected_routine(void *arg);
+
+/**
+ * Ends `ncurses` restoring the terminal to normal mode
+ */
+error_code_t end_ncurses();
 
 #endif

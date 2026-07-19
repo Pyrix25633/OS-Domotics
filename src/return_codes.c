@@ -23,38 +23,41 @@ void print_error(int fd, int error_code, int device_id, char *message) {
     }
     char info[32];
     switch(error_code) {
-        case INVALID_TARGET_ID:        strcpy(info, "invalid target ID");        break;
-        case INVALID_COMMAND:          strcpy(info, "invalid command");          break;
-        case INVALID_COMMAND_ARGUMENT: strcpy(info, "invalid command argument"); break;
-        case DEVICE_TYPE_MISMATCH:     strcpy(info, "device type mismatch");     break;
-        case DEVICE_NOT_FOUND:         strcpy(info, "device not found");         break;
-        case UNEXPECTED_SHUTDOWN:      strcpy(info, "unexpected shutdown");      break;
+        case INVALID_TARGET_ID:        strcpy(info, "invalid target ID");            break;
+        case INVALID_COMMAND:          strcpy(info, "invalid command");              break;
+        case INVALID_COMMAND_ARGUMENT: strcpy(info, "invalid command argument");     break;
+        case DEVICE_TYPE_MISMATCH:     strcpy(info, "device type mismatch");         break;
+        case DEVICE_NOT_FOUND:         strcpy(info, "device not found");             break;
+        case UNEXPECTED_SHUTDOWN:      strcpy(info, "unexpected shutdown");          break;
 
-        case MISSING_ID_ARGUMENT:      strcpy(info, "missing ID argument");      break;
-        case CODE_FORMAT_ERROR:        strcpy(info, "code format error");        break;
-        case REQUEST_FORMAT_ERROR:     strcpy(info, "request format error");     break;
-        case RESPONSE_FORMAT_ERROR:    strcpy(info, "response forma error");     break;
-        case BUFFER_TOO_SHORT:         strcpy(info, "buffer too short");         break;
-        case DESTINATION_ID_MISMATCH:  strcpy(info, "destination ID mismatch");  break;
-        case INVALID_REQUEST_ARGUMENT: strcpy(info, "invalid request argument"); break;
-        case UNEXPECTED_COMMAND:       strcpy(info, "unexpected command");       break;
-        case ROUTE_NOT_FOUND:          strcpy(info, "route not found");          break;
-        case CHILD_NOT_FOUND:          strcpy(info, "child not found");          break;
+        case MISSING_ID_ARGUMENT:      strcpy(info, "missing ID argument");          break;
+        case CODE_FORMAT_ERROR:        strcpy(info, "code format error");            break;
+        case REQUEST_FORMAT_ERROR:     strcpy(info, "request format error");         break;
+        case RESPONSE_FORMAT_ERROR:    strcpy(info, "response forma error");         break;
+        case BUFFER_TOO_SHORT:         strcpy(info, "buffer too short");             break;
+        case DESTINATION_ID_MISMATCH:  strcpy(info, "destination ID mismatch");      break;
+        case INVALID_REQUEST_ARGUMENT: strcpy(info, "invalid request argument");     break;
+        case UNEXPECTED_COMMAND:       strcpy(info, "unexpected command");           break;
+        case ROUTE_NOT_FOUND:          strcpy(info, "route not found");              break;
+        case CHILD_NOT_FOUND:          strcpy(info, "child not found");              break;
+        case UNABLE_TO_CREATE_WINDOWS: strcpy(info, "unable to create windows");     break;
 
-        case UNABLE_TO_ALLOCATE_HEAP:  strcpy(info, "unable to allocate heap");  break;
+        case UNABLE_TO_ALLOCATE_HEAP:  strcpy(info, "unable to allocate heap");      break;
+        case UNABLE_TO_SET_SIGHANDLER: strcpy(info, "unable to set signal handler"); break;
 
-        case UNABLE_TO_CREATE_THREAD:  strcpy(info, "unable to create thread");  break;
-        case UNABLE_TO_CANCEL_THREAD:  strcpy(info, "unable to cancel thread");  break;
-        case UNABLE_TO_LOCK_MUTEX:     strcpy(info, "unable to lock mutex");     break;
-        case UNABLE_TO_UNLOCK_MUTEX:   strcpy(info, "unable to unlock mutex");   break;
+        case UNABLE_TO_CREATE_THREAD:  strcpy(info, "unable to create thread");      break;
+        case UNABLE_TO_CANCEL_THREAD:  strcpy(info, "unable to cancel thread");      break;
+        case UNABLE_TO_LOCK_MUTEX:     strcpy(info, "unable to lock mutex");         break;
+        case UNABLE_TO_UNLOCK_MUTEX:   strcpy(info, "unable to unlock mutex");       break;
 
-        case UNABLE_TO_OPEN_PIPE:      strcpy(info, "unable to open pipe");      break;
-        case UNABLE_TO_CREATE_PIPE:    strcpy(info, "unable to create pipe");    break;
-        case UNABLE_TO_CLOSE_PIPE:     strcpy(info, "unable to close pipe");     break;
-        case UNABLE_TO_REMOVE_PIPE:    strcpy(info, "unable to remove pipe");    break;
-        case UNABLE_TO_READ_PIPE:      strcpy(info, "unable to read pipe");      break;
-        case UNABLE_TO_WRITE_PIPE:     strcpy(info, "unable to write pipe");     break;
-        case UNEXPECTED_END_OF_FILE:   strcpy(info, "unexpected end of file");   break;
+        case UNABLE_TO_OPEN_PIPE:      strcpy(info, "unable to open pipe");          break;
+        case UNABLE_TO_CREATE_PIPE:    strcpy(info, "unable to create pipe");        break;
+        case UNABLE_TO_CLOSE_PIPE:     strcpy(info, "unable to close pipe");         break;
+        case UNABLE_TO_REMOVE_PIPE:    strcpy(info, "unable to remove pipe");        break;
+        case UNABLE_TO_READ_PIPE:      strcpy(info, "unable to read pipe");          break;
+        case UNABLE_TO_WRITE_PIPE:     strcpy(info, "unable to write pipe");         break;
+        case UNEXPECTED_END_OF_FILE:   strcpy(info, "unexpected end of file");       break;
+        case UNABLE_TO_SET_FD_ATTR:    strcpy(info, "unable to set fd attributes");  break;
 
         default:                       strcpy(info, "no additional information");
     }
