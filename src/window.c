@@ -38,9 +38,6 @@ response_t response;
 char buffer_read[MAX_REQUEST_SIZE]; //buffer to read the request from the pipe
 char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send it to the pipe
 
-// - Signal handler -
-
-struct sigaction action_handler; //to set what to do when a signal occurs
 
 // the controller starts a window process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
@@ -48,8 +45,7 @@ int main(int argc, char *argv[]) {
     response.source = id;
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, NULL);
 
-    action_handler.sa_handler = handle_shutdown; //set the function to be called when the signal occurs
-    sigaction(SIGTERM, &action_handler, NULL);
+    set_signal_handler(SIGTERM, sigterm_handler);
 
     last_closed = last_opened = time(NULL);
     srand(last_closed); //set random seed with the current time so it's always different
@@ -76,13 +72,17 @@ void handle_shutdown(error_code_t error) {
     exit(error_code);
 }
 
+void sigterm_handler(){
+    handle_shutdown(UNEXPECTED_COMMAND);
+}
+
 error_code_t read_pipe(){
     ssize_t size = read(rcv_requests_fd, buffer_read, MAX_REQUEST_SIZE);
 
-    if(size < 0){
+    if(size != MAX_REQUEST_SIZE){
         return UNABLE_TO_READ_PIPE;
     }
-    else if(size == 0){
+    if(size == 0){
         force_exit = true;
         return UNEXPECTED_END_OF_FILE; //EOF only if it doesn not have a parent anymore
     }
@@ -95,7 +95,7 @@ void write_pipe(){
     if(IS_ERROR(error_code)){
         print_error(STDERR_FILENO, error_code, id, "while formatting response");
     }
-    else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE) < 0){
+    else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
     }
 }
