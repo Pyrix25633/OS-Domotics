@@ -20,6 +20,7 @@
 
 device_id_t id;
 leaf_device_state_t state = STATE_CLOSED;
+device_type_t device_type = WINDOW_DEVICE;
 
 // - Auxiliary device data -
 
@@ -53,22 +54,25 @@ int main(int argc, char *argv[]) {
     last_closed = last_opened = time(NULL);
     srand(last_closed); //set random seed with the current time so it's always different
 
+    error_code_t error_code;
+
     //the main thread is blocked waiting for requests in a loop (while the exit is not forced by the delete command)
     //when a request is received it is executed, one by one in order of arrival
     while(!force_exit) {
-        execute_command();
+        error_code = execute_command();
     }
-    handle_shutdown();
+    handle_shutdown(error_code);
 }
 
-void handle_shutdown() {
+void handle_shutdown(error_code_t error) {
     //it's different from the start_device_fifos but it's not a problem, it's not NULL because the first
     //takes pointers while this it doesn't
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, NO_FILE_DESCRIPTOR);
-    if(error_code != OK){
+    if(IS_ERROR(error_code)){
         //prints the error on standard error, best practice to do
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
+    else{ error_code = error; }
     exit(error_code);
 }
 
@@ -88,7 +92,7 @@ error_code_t read_pipe(){
 void write_pipe(){
     error_code_t error_code = format_response(&response, buffer_write, MAX_RESPONSE_SIZE);
 
-    if(error_code != OK){
+    if(IS_ERROR(error_code)){
         print_error(STDERR_FILENO, error_code, id, "while formatting response");
     }
     else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE) < 0){
@@ -96,12 +100,13 @@ void write_pipe(){
     }
 }
 
-void execute_command(){
+error_code_t execute_command(){
     command_code_t code;
     response.arguments_size = 0;
 
     error_code_t error_code = read_pipe();
-    if(error_code != OK){
+
+    if(IS_ERROR(error_code)){
         response.command_code = NULL_COMMAND;
         response.response_code = error_code;
     }
@@ -124,6 +129,8 @@ void execute_command(){
     }
     simulate_processing_time();
     write_pipe();
+
+    return error_code;
 }
 
 void create_info_response(){
@@ -136,8 +143,9 @@ void create_link_response(){
     if(LINK_SUBCOMMAND(request.command_code)==LINK_CHANGE_PARENT){
         //the request argument is the new parent id
         u_int16_t new_parent_id = request.argument;
-        response.arguments[REQUEST_ARGUMENT] = new_parent_id; //to give always a feedback
-        response.arguments_size = 1;
+        response.arguments[PARENT_ID_ARGUMENT] = new_parent_id; //to give always a feedback
+        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
+        response.arguments_size = 2;
 
         if(parent_id!=new_parent_id){
             response.response_code = change_snd_responses_pipe(new_parent_id,&snd_responses_fd);
