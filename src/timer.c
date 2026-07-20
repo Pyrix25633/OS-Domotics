@@ -43,7 +43,9 @@ char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send
 
 pthread_t child_responses_thread;           //bottom-up thread: reads the child responses and forwards them up
 volatile bool child_thread_running = false; //true once the thread exists, to cancel it safely at shutdown
-pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; //guards snd_responses_fd, shared by the two threads
+pthread_t schedule_thread;                     //schedule thread: switches the child on at begin and off at end
+volatile bool schedule_thread_running = false; //true once the thread exists, to cancel it safely at shutdown
+pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; //guards the state shared between the threads (pipes, child scalars, begin, end, state)
 
 // the controller starts a timer process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
@@ -64,8 +66,14 @@ int main(int argc, char *argv[]) {
     }
     child_thread_running = true;
 
+    //start the schedule thread that switches the child on at begin and off at end
+    if(pthread_create(&schedule_thread, NULL, schedule_handler, NULL) != 0){
+        print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating the schedule thread");
+        handle_shutdown(UNABLE_TO_CREATE_THREAD);
+    }
+    schedule_thread_running = true;
+
     error_code_t error_code;
-    //TODO start the thread that fires the schedule
     //the main thread handles the requests coming from the parent, one by one in order of arrival
     while(!force_exit) {
         error_code = execute_command();
@@ -81,6 +89,12 @@ void handle_shutdown(error_code_t error) {
         pthread_join(child_responses_thread, NULL);
         child_thread_running = false;
     }
+    //the schedule thread may be sleeping or writing to the child, it is cancelled and joined before its pipe is closed
+    if(schedule_thread_running){
+        pthread_cancel(schedule_thread);
+        pthread_join(schedule_thread, NULL);
+        schedule_thread_running = false;
+    }
     //the child down pipe is only opened for writing, the child owns it, so it is just closed and not deleted
     if(has_child && close(snd_requests_child_fd) < 0){
         print_error(STDERR_FILENO, UNABLE_TO_CLOSE_PIPE, id, "while closing the child requests pipe");
@@ -92,7 +106,6 @@ void handle_shutdown(error_code_t error) {
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
     else{ error_code = error; } //no closing error: return the code that caused the shutdown
-    //TODO cancel the schedule thread
     exit(error_code);
 }
 
@@ -188,6 +201,86 @@ void *child_responses_handler(void *arg){
             print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while forwarding a child response");
         }
         pthread_mutex_unlock(&data_mutex);
+    }
+    return NULL;
+}
+
+//builds the switch command for the child from its type and sends it down, the label depends on the child
+//type (power for a bulb, open or close for a window or a fridge), the position turns it on or off
+error_code_t send_child_switch(bool activate){
+    //the child scalars are shared with the other threads, so they are snapshotted under the lock
+    pthread_mutex_lock(&data_mutex);
+    bool present = has_child;
+    device_id_t target = child_id;
+    device_type_t type = child_type;
+    int child_fd = snd_requests_child_fd;
+    pthread_mutex_unlock(&data_mutex);
+    if(!present){
+        return CHILD_NOT_FOUND; //nothing to switch
+    }
+
+    command_code_t switch_code = SWITCH;
+    if(IS_BULB_LIKE(type)){
+        //a bulb has a single power switch, the position turns it on or off
+        switch_code |= SWITCH_POWER | (activate ? POSITION_ON : POSITION_OFF);
+    }
+    else{
+        //a window or a fridge have separate open and close momentary switches, both triggered on
+        switch_code |= (activate ? SWITCH_OPEN : SWITCH_CLOSE) | POSITION_ON;
+    }
+
+    request_t child_request;
+    child_request.destination = target;
+    child_request.command_code = switch_code;
+    char buffer[MAX_REQUEST_SIZE];
+    error_code_t error_code = format_request(&child_request, buffer, MAX_REQUEST_SIZE);
+    if(IS_ERROR(error_code)){
+        return error_code;
+    }
+    if(write(child_fd, buffer, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
+        return UNABLE_TO_WRITE_PIPE;
+    }
+    return OK;
+}
+
+//schedule thread: sleeps until the next begin or end and switches the child on or off, repeating each day
+void *schedule_handler(void *arg){
+    (void)arg; //unused
+    while(!force_exit){
+        pthread_mutex_lock(&data_mutex);
+        u_int16_t local_begin = begin;
+        u_int16_t local_end = end;
+        pthread_mutex_unlock(&data_mutex);
+
+        //current time of the day in seconds, begin and end are minutes from midnight
+        time_t now = time(NULL);
+        struct tm *local_time = localtime(&now);
+        int now_second = local_time->tm_hour * 3600 + local_time->tm_min * 60 + local_time->tm_sec;
+        int begin_second = local_begin * 60;
+        int end_second = local_end * 60;
+
+        //before begin wait to switch on, inside the window wait to switch off, after end wait for the next day
+        bool activate;
+        int target_second;
+        if(now_second < begin_second){
+            activate = true;  target_second = begin_second;
+        }
+        else if(now_second < end_second){
+            activate = false; target_second = end_second;
+        }
+        else{
+            activate = true;  target_second = begin_second + SECONDS_IN_A_DAY;
+        }
+
+        //sleep is a cancellation point, so pthread_cancel can wake the thread at shutdown
+        sleep(target_second - now_second);
+
+        //the state is mirrored only if the switch was actually sent to the child
+        if(send_child_switch(activate) == OK){
+            pthread_mutex_lock(&data_mutex);
+            state = activate ? STATE_ON : STATE_OFF;
+            pthread_mutex_unlock(&data_mutex);
+        }
     }
     return NULL;
 }
