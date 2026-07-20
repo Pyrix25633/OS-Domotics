@@ -113,6 +113,26 @@ error_code_t parse_set_command(user_command_t *user_command, char **last);
 error_code_t parse_link_command(user_command_t *user_command, char **last);
 
 /**
+ * Checks the user command for semantic (not syntactic) errors
+ * 
+ * @param user_command The parsed user command
+ * 
+ * @returns `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
+ * `DEVICE_TYPE_MISMATCH` if the command is not compatible with the target device,
+ * `OK` otherwise
+ */
+error_code_t check_user_command(user_command_t *user_command);
+
+/**
+ * Executes user command
+ * 
+ * @param user_command The parsed use command
+ * 
+ * TODO
+ */
+error_code_t execute_user_command(user_command_t *user_command);
+
+/**
  * Creates and opens `"./ipc/<controller_id>_up.fifo"` in read-write mode, this way
  * the open doesn't block and no end of file is returned to the read when the controller is empty
  * 

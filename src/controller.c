@@ -63,6 +63,16 @@ int main(int argc, char *argv[]) {
             print_error(STDERR_FILENO, error_code, id, "while parsing user command");
             continue;
         }
+        error_code = check_user_command(&user_command);
+        if(IS_ERROR(error_code)) {
+            print_error(STDERR_FILENO, error_code, id, "while parsing user command");
+            continue;
+        }
+        error_code = execute_user_command(&user_command);
+        if(IS_ERROR(error_code)) {
+            print_error(STDERR_FILENO, error_code, id, "while parsing user command");
+            continue;
+        }
         // TODO: check for further errors
         // TODO: execute user command
         output("Command code: %d, target: %d, argument: %d", user_command.code, user_command.target, user_command.argument);
@@ -250,6 +260,67 @@ error_code_t parse_link_command(user_command_t *user_command, char **last) {
         return INVALID_COMMAND_ARGUMENT;
     }
     user_command->argument = parsed;
+    return OK;
+}
+
+error_code_t check_user_command(user_command_t *user_command) {
+    if(IS_MESSAGE(user_command->code)) { // Check that destination exists and eventually that the device type is compatible
+        routing_data_t *target = find_routing_data(routing_table, user_command->target);
+        if(target == NULL) { // Also covers messages where the destination is the Controller itself
+            return DEVICE_NOT_FOUND;
+        }
+        if(IS_SWITCH(user_command->message_code)) {
+            if(IS_BULB_LIKE(target->type)) {
+                if(SWITCH_LABEL(user_command->message_code) != SWITCH_POWER) {
+                    return DEVICE_TYPE_MISMATCH;
+                }
+            }
+            else if(IS_WINDOW_LIKE(target->type) || IS_FRIDGE_LIKE(target->type)) {
+                if(SWITCH_LABEL(user_command->message_code) == SWITCH_POWER) {
+                    return DEVICE_TYPE_MISMATCH;
+                }
+            }
+            else {
+                return DEVICE_TYPE_MISMATCH;
+            }
+        }
+        else if(IS_REGISTRY(user_command->message_code)) {
+            if(IS_TIMER(target->type)) {
+                if(REGISTRY_SUBCOMMAND(user_command->message_code) == REGISTRY_DELAY) {
+                    return DEVICE_TYPE_MISMATCH;
+                }
+            }
+            else if(IS_FRIDGE(target->type)) {
+                if(REGISTRY_SUBCOMMAND(user_command->message_code) != REGISTRY_DELAY) {
+                    return DEVICE_TYPE_MISMATCH;
+                }
+            }
+            else {
+                return DEVICE_TYPE_MISMATCH;
+            }
+        }
+        else if(IS_LINK(user_command->message_code)) {
+            if(user_command->argument == CONTROLLER_ID) {
+                return OK;
+            }
+            routing_data_t *parent = find_routing_data(routing_table, user_command->argument);
+            if(parent == NULL) {
+                return DEVICE_NOT_FOUND;
+            }
+            if(IS_LEAF(parent->type)) { // TODO: check type compatibility
+                return DEVICE_TYPE_MISMATCH;
+            }
+            //
+            // Check that the target is not currently a parent of its future parent (detect cycles)
+            routing_data_t *current = find_routing_data(routing_table, parent->parent_id);
+            while(current != NULL) {
+                if(current->parent_id == user_command->target) {
+                    return DEVICE_TYPE_MISMATCH; // ! create another error
+                }
+                current = find_routing_data(routing_table, current->parent_id);
+            }
+        }
+    }
     return OK;
 }
 
