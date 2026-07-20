@@ -48,6 +48,7 @@ int get_id_from_arguments(int argc, char *argv[]) {
 void set_signal_handler(int signal, void (*signal_handler)()) {
     struct sigaction action;
     action.sa_handler = signal_handler;
+    action.sa_flags = SA_RESTART;
     if(sigaction(signal, &action, NULL) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_SET_SIGHANDLER, NO_ID, "while setting signal handler");
         exit(UNABLE_TO_SET_SIGHANDLER);

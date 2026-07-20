@@ -80,7 +80,8 @@ int string_to_unsigned(char *string);
 int get_id_from_arguments(int argc, char *argv[]);
 
 /**
- * Sets the signal handler for a specific signal
+ * Sets the signal handler for a specific signal, with flag `SA_RESTART`, which means that any
+ * system call that was blocking before the signal arrived is restarted instead of failing
  * 
  * @param signal Signal code
  * @param signal_handled Handler function

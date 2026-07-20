@@ -35,6 +35,7 @@ response_t response;
 
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGPIPE, sigpipe_handler);
 
     id = get_id_from_arguments(argc, argv);
     response.source = id;
@@ -213,6 +214,10 @@ void handle_shutdown(error_code_t error) {
 
 void sigterm_handler() {
     handle_shutdown(UNEXPECTED_SHUTDOWN);
+}
+
+void sigpipe_handler() {
+    handle_shutdown(BROKEN_PIPE);
 }
 
 error_code_t set_state(leaf_device_state_t new_state, bool automatic) {

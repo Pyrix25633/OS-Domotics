@@ -125,6 +125,11 @@ void handle_shutdown(error_code_t error);
 void sigterm_handler();
 
 /**
+ * Handles the shutdown caused by a `SIGPIPE` signal
+ */
+void sigpipe_handler();
+
+/**
  * Sets the state and updates auxiliary variables
  * 
  * @param new_state The new state

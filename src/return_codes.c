@@ -56,6 +56,7 @@ void print_error(int fd, int error_code, int device_id, char *message) {
         case UNABLE_TO_REMOVE_PIPE:    strcpy(info, "unable to remove pipe");        break;
         case UNABLE_TO_READ_PIPE:      strcpy(info, "unable to read pipe");          break;
         case UNABLE_TO_WRITE_PIPE:     strcpy(info, "unable to write pipe");         break;
+        case BROKEN_PIPE:              strcpy(info, "broken pipe");                  break;
         case UNEXPECTED_END_OF_FILE:   strcpy(info, "unexpected end of file");       break;
         case UNABLE_TO_SET_FD_ATTR:    strcpy(info, "unable to set fd attributes");  break;
 

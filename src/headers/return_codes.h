@@ -72,8 +72,9 @@ typedef u_int8_t error_code_t;
 #define UNABLE_TO_READ_PIPE       0x55
 #define UNABLE_TO_WRITE_PIPE      0x56
 #define UNEXPECTED_END_OF_FILE    0x57
-#define UNABLE_TO_SET_FD_ATTR     0x58
-#define UNABLE_TO_RESTORE_STREAMS 0x59 // Impossible to print    
+#define BROKEN_PIPE               0x58
+#define UNABLE_TO_SET_FD_ATTR     0x59
+#define UNABLE_TO_RESTORE_STREAMS 0x5a // Impossible to print because streams were redirected
 
 // Macros for error checking
 
