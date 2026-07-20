@@ -23,6 +23,7 @@ device_id_t parent_id = CONTROLLER_ID;
 bool has_child = false;   //the timer controls a single device, but it can also have none
 device_id_t child_id;     //valid only if has_child is true
 device_type_t child_type; //needed to know which switch label to send to the child
+bool parent_changed = false; //set when a link changes the parent, so the child is replayed after the own response
 
 // - IPC data -
 
@@ -241,6 +242,12 @@ error_code_t execute_command(){
     simulate_processing_time();
     write_pipe();
 
+    //after the own change-parent response is sent, the child is replayed so the new parent rebuilds the branch
+    if(parent_changed){
+        replay_child_add();
+        parent_changed = false;
+    }
+
     return error_code;
 }
 
@@ -272,9 +279,9 @@ void create_link_response(){
             pthread_mutex_unlock(&data_mutex);
             if(response.response_code == OK){
                 parent_id = new_parent_id;
+                parent_changed = true; //the child is replayed to the new parent after the timer own response
             }
         }
-        //TODO if the timer already has a child, replay its "add" to the new parent
     }
     else if(LINK_SUBCOMMAND(request.command_code)==LINK_REMOVE_CHILD){
         //the request argument is the child id to remove
@@ -298,6 +305,41 @@ void create_link_response(){
         response.response_code = UNEXPECTED_COMMAND;
     }
     //a child is no longer added here, it is acquired from its change-parent response
+}
+
+//re-announces the child to the new parent by faking its change-parent response, so the new parent and the
+//chain above rebuild the branch, the source is the child and the declared parent is the timer
+void replay_child_add(){
+    //the child scalars are shared with the child-responses thread, so they are snapshotted under the lock
+    pthread_mutex_lock(&data_mutex);
+    bool present = has_child;
+    device_id_t replayed_child_id = child_id;
+    device_type_t replayed_child_type = child_type;
+    pthread_mutex_unlock(&data_mutex);
+    if(!present){
+        return; //no child, nothing to replay
+    }
+
+    response_t child_add;
+    child_add.source = replayed_child_id;
+    child_add.command_code = LINK | LINK_CHANGE_PARENT; //looks like the child own change-parent response
+    child_add.response_code = OK;
+    child_add.arguments[PARENT_ID_ARGUMENT] = id;                     //the child parent is the timer
+    child_add.arguments[DEVICE_TYPE_ARGUMENT] = replayed_child_type;  //the child declares its own type
+    child_add.arguments_size = 2;
+
+    char buffer[MAX_RESPONSE_SIZE];
+    error_code_t error_code = format_response(&child_add, buffer, MAX_RESPONSE_SIZE);
+    if(IS_ERROR(error_code)){
+        print_error(STDERR_FILENO, error_code, id, "while formatting the child replay");
+        return;
+    }
+    //snd_responses_fd is shared with the child-responses thread, so the write is guarded
+    pthread_mutex_lock(&data_mutex);
+    if(write(snd_responses_fd, buffer, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE){
+        print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending the child replay");
+    }
+    pthread_mutex_unlock(&data_mutex);
 }
 
 //begin and end are minutes from midnight, the professor said that there are no timers across midnight

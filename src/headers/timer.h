@@ -95,6 +95,13 @@ void create_info_response();
 void create_link_response();
 
 /**
+ * Sends a faked change-parent response on behalf of the child, so a new parent rebuilds the branch
+ *
+ * Does nothing if the timer has no child
+ */
+void replay_child_add();
+
+/**
  * Sets the attributes for the registry response and performs actions if needed
  */
 void create_registry_response();
