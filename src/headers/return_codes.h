@@ -24,57 +24,57 @@ typedef u_int8_t error_code_t;
 
 // - CAUSED BY USER -
 
-#define USER_ERROR                0x10
-#define INVALID_TARGET_ID         0x11
-#define INVALID_COMMAND           0x12
-#define INVALID_COMMAND_ARGUMENT  0x13
-#define DEVICE_TYPE_MISMATCH      0x14
-#define DEVICE_NOT_FOUND          0x15
-#define UNEXPECTED_SHUTDOWN       0x16
+#define USER_ERROR               0x10
+#define INVALID_TARGET_ID        0x11
+#define INVALID_COMMAND          0x12
+#define INVALID_COMMAND_ARGUMENT 0x13
+#define DEVICE_TYPE_MISMATCH     0x14
+#define DEVICE_NOT_FOUND         0x15
+#define UNEXPECTED_SHUTDOWN      0x16
 
 // - CAUSED BY THE APPLICATION - (should never happen)
 
-#define APPLICATION_ERROR         0x20
-#define MISSING_ID_ARGUMENT       0x21
-#define CODE_FORMAT_ERROR         0x22
-#define REQUEST_FORMAT_ERROR      0x23
-#define RESPONSE_FORMAT_ERROR     0x24
-#define BUFFER_TOO_SHORT          0x25
-#define DESTINATION_ID_MISMATCH   0x26
-#define INVALID_REQUEST_ARGUMENT  0x27
-#define UNEXPECTED_COMMAND        0x28
-#define ROUTE_NOT_FOUND           0x29
-#define CHILD_NOT_FOUND           0x2a
-#define UNABLE_TO_CREATE_WINDOWS  0x2b
+#define APPLICATION_ERROR        0x20
+#define MISSING_ID_ARGUMENT      0x21
+#define CODE_FORMAT_ERROR        0x22
+#define REQUEST_FORMAT_ERROR     0x23
+#define RESPONSE_FORMAT_ERROR    0x24
+#define BUFFER_TOO_SHORT         0x25
+#define DESTINATION_ID_MISMATCH  0x26
+#define INVALID_REQUEST_ARGUMENT 0x27
+#define UNEXPECTED_COMMAND       0x28
+#define ROUTE_NOT_FOUND          0x29
+#define CHILD_NOT_FOUND          0x2a
+#define UNABLE_TO_CREATE_WINDOWS 0x2b
 
 // - CAUSE RELATED TO PROCESSES -
 
-#define PROCESS_ERROR             0x30
-#define UNABLE_TO_ALLOCATE_HEAP   0x31
-#define UNABLE_TO_SET_SIGHANDLER  0x32
+#define PROCESS_ERROR            0x30
+#define UNABLE_TO_ALLOCATE_HEAP  0x31
+#define UNABLE_TO_SET_SIGHANDLER 0x32
 
 // - CAUSE RELATED TO THREADS -
 
-#define THREAD_ERROR              0x40
-#define UNABLE_TO_CREATE_THREAD   0x41
-#define UNABLE_TO_JOIN_THREAD     0x42
-#define UNABLE_TO_CANCEL_THREAD   0x43
-#define UNABLE_TO_LOCK_MUTEX      0x44
-#define UNABLE_TO_UNLOCK_MUTEX    0x45
+#define THREAD_ERROR             0x40
+#define UNABLE_TO_CREATE_THREAD  0x41
+#define UNABLE_TO_JOIN_THREAD    0x42
+#define UNABLE_TO_CANCEL_THREAD  0x43
+#define UNABLE_TO_LOCK_MUTEX     0x44
+#define UNABLE_TO_UNLOCK_MUTEX   0x45
 
 // - CAUSE RELATED TO IPC -
 
-#define IPC_ERROR                 0x50
-#define UNABLE_TO_OPEN_PIPE       0x51
-#define UNABLE_TO_CREATE_PIPE     0x52
-#define UNABLE_TO_CLOSE_PIPE      0x53
-#define UNABLE_TO_REMOVE_PIPE     0x54
-#define UNABLE_TO_READ_PIPE       0x55
-#define UNABLE_TO_WRITE_PIPE      0x56
-#define UNEXPECTED_END_OF_FILE    0x57
-#define BROKEN_PIPE               0x58
-#define UNABLE_TO_SET_FD_ATTR     0x59
-#define UNABLE_TO_RESTORE_STREAMS 0x5a // Impossible to print because streams were redirected
+#define IPC_ERROR                0x50
+#define UNABLE_TO_OPEN_PIPE      0x51
+#define UNABLE_TO_CREATE_PIPE    0x52
+#define UNABLE_TO_CLOSE_PIPE     0x53
+#define UNABLE_TO_REMOVE_PIPE    0x54
+#define UNABLE_TO_READ_PIPE      0x55
+#define UNABLE_TO_WRITE_PIPE     0x56
+#define UNEXPECTED_END_OF_FILE   0x57
+#define BROKEN_PIPE              0x58
+#define UNABLE_TO_SET_FD_ATTR    0x59
+#define UNABLE_TO_RESTORE_STDERR 0x5a // Impossible to print to stderr
 
 // Macros for error checking
 

@@ -50,8 +50,8 @@ ipc/:
 
 # Remove all compiled files, executables and IPC related files
 clean:
-	rm bin/*
-	rm ipc/*
+	rm -f bin/*
+	rm -f ipc/*
 
 # TODO: execute a scenario
 run:

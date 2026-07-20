@@ -34,7 +34,7 @@
  * 
  * @returns `UNABLE_TO_CREATE_PIPE` if the pipe where the Controller receives
  * responses from children could not be created and opened,
- * `UNABLE_TO_RESTORE_STREAMS` if it was impossible to restore the standard streams after failing to redirect them,
+ * `UNABLE_TO_RESTORE_STDERR` if it was impossible to restore the standard streams after failing to redirect them,
  * `OK` otherwise
  */
 int main(int argc, char *argv[]);
@@ -87,22 +87,22 @@ void sigterm_handler();
 error_code_t start_ncurses(int argc, char *argv[]);
 
 /**
- * Redirects both `stdout` and `stderr` to a named pipe
+ * Redirects `stderr` to a named pipe
  * 
  * @returns `UNABLE_TO_CREATE_PIPE` if the pipe could not be created or opened in read mode,
  * `UNABLE_TO_SET_FD_ATTR` if it could not be set back to blocking mode,
  * `UNABLE_TO_OPEN_PIPE` if it could not be opened in write mode,
  * `OK` otherwise
  */
-error_code_t redirect_stdout_stderr();
+error_code_t redirect_stderr();
 
 /**
- * Attempts to restore standard streams, if it fails it exits with code `UNABLE_TO_RESTORE_STREAMS`
+ * Attempts to restore standard `stderr`, if it fails it exits with code `UNABLE_TO_RESTORE_STDERR`
  * 
  * @returns `UNABLE_TO_REMOVE_PIPE` if the redirect pipe could not be removed,
  * `OK` otherwise
  */
-error_code_t restore_stdout_stderr();
+error_code_t restore_stderr();
 
 /**
  * Creates ncurses windows dedicated to input and ouput
@@ -115,7 +115,7 @@ error_code_t restore_stdout_stderr();
 error_code_t create_windows();
 
 /**
- * Function that the `stdout` and `stderr` redirect thread executes
+ * Function that the `stderr` redirect thread executes
  * 
  * It reads from the redirection and prints to the ncurses terminal
  * 
@@ -127,7 +127,7 @@ error_code_t create_windows();
  * 
  * @returns `NULL`
  */
-void* read_redirected_routine(void *arg);
+void* stderr_routine(void *arg);
 
 /**
  * Ends `ncurses` restoring the terminal to normal mode

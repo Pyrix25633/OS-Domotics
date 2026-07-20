@@ -51,6 +51,8 @@
  * `UNABLE_TO_CLOSE_PIPE` if the IPC pipes could not be closed,
  * `UNABLE_TO_CANCEL_THREAD` if the autoclose thread could not be cancelled,
  * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
+ * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM`,
+ * `BROKEN_PIPE` if it received `SIGPIPE`,
  * `OK` otherwise
  */
 int main(int argc, char *argv[]);

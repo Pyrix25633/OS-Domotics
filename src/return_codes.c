@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <unistd.h>
 
 void print_error(int fd, int error_code, int device_id, char *message) {
     char type[24];
@@ -59,6 +60,7 @@ void print_error(int fd, int error_code, int device_id, char *message) {
         case BROKEN_PIPE:              strcpy(info, "broken pipe");                  break;
         case UNEXPECTED_END_OF_FILE:   strcpy(info, "unexpected end of file");       break;
         case UNABLE_TO_SET_FD_ATTR:    strcpy(info, "unable to set fd attributes");  break;
+        case UNABLE_TO_RESTORE_STDERR: strcpy(info, "unable to restore stderr");     break;
 
         default:                       strcpy(info, "no additional information");
     }
@@ -76,6 +78,9 @@ void print_error(int fd, int error_code, int device_id, char *message) {
     char msg[64] = "";
     if(message != NULL) {
         sprintf(msg, ", %s", message);
+    }
+    if(error_code == UNABLE_TO_RESTORE_STDERR) {
+        fd = STDOUT_FILENO;
     }
     dprintf(fd, "%s error: 0x%2x %s%s, source: %s%s\n", type, error_code, info, code, source, msg);
 }
