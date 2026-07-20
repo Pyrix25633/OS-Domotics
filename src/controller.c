@@ -2,6 +2,8 @@
 
 #include "controller.h"
 
+#include <errno.h> // ! remove
+
 // - Ncurses data -
 bool redirect;
 WINDOW *output_win;
@@ -26,12 +28,11 @@ int original_stderr_fd;
 
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGPIPE, sigpipe_handler);
 
     start_responses_fifo();
 
     init_routing_table(routing_table);
-
-    // ! fails somewhere
 
     error_code_t error_code = start_ncurses(argc, argv);
     if(IS_ERROR(error_code)) { // Normal terminal and streams should be available again
@@ -39,10 +40,11 @@ int main(int argc, char *argv[]) {
     }
 
     // Testing
-    char buffer[64];
-    wgetnstr(input_win, buffer, 64);
-    wprintw(output_win, "%s\n", buffer);
-    wgetnstr(input_win, buffer, 64);
+    char buffer[64] = "";
+    while(strcmp(buffer, "exit") != 0) {
+        input(buffer, 64);
+        output("%s", buffer);
+    }
 
     handle_shutdown(OK); // TODO: change passed error code
 }
@@ -98,6 +100,10 @@ void sigterm_handler() {
     handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
+void sigpipe_handler() {
+    handle_shutdown(BROKEN_PIPE);
+}
+
 error_code_t start_ncurses(int argc, char *argv[]) {
     if(argc == 1) { // Implicitly redirect
         redirect = true;
@@ -130,17 +136,12 @@ error_code_t start_ncurses(int argc, char *argv[]) {
 
 error_code_t redirect_stderr() {
     /*
-     Pipe is opened in non-blocking, otherwise the open would block until there's an open in write mode
+     Pipe is opened in read-write, otherwise the open would block until there's an open in write mode
      It is also created with O_CLOEXEC so that it is automatically closed by `exec`
-     The same could be obtained by opening it in read-write
     */
     if(mkfifo(STDERR_PIPE_NAME, PIPE_PERMISSIONS) < 0
-        || (stderr_read_fd = open(STDERR_PIPE_NAME, O_RDONLY | O_CLOEXEC | O_NONBLOCK)) < 0) {
+        || (stderr_read_fd = open(STDERR_PIPE_NAME, O_RDWR | O_CLOEXEC)) < 0) {
         return UNABLE_TO_CREATE_PIPE;
-    }
-    // Then it is set back to blocking mode, otherwise reads wouldn't block
-    if(fcntl(stderr_read_fd, F_SETFD, fcntl(stderr_read_fd, F_GETFD) & ~O_NONBLOCK) < 0) {
-        return UNABLE_TO_SET_FD_ATTR;
     }
     // Then it is also opened in write and used to replace original `stderr`
     original_stderr_fd = dup(STDERR_FILENO);
@@ -183,9 +184,9 @@ error_code_t create_windows() {
         return UNABLE_TO_CREATE_WINDOWS;
     }
     // Set initial position and refresh
-    wmove(input_win, output_height - 1, 0);
+    wmove(output_win, output_height - 1, 0);
     wmove(input_win, input_height - 1, 0);
-    scrollok(input_win, true);
+    scrollok(output_win, true);
     scrollok(input_win, true);
     refresh();
     wrefresh(input_win);
@@ -196,15 +197,15 @@ error_code_t create_windows() {
 void* stderr_routine(void *arg) {
     (void)arg; // Unused parameter
 
+    int err;
+
     char buffer[STDERR_BUFFER_SIZE];
     char tmp;
     int i = 0;
-    while((read(stderr_read_fd, &tmp, 1)) > 0) { // TODO: maybe change to use `fread`
-        if(tmp == '\n' || tmp == '\0' || i == STDERR_BUFFER_SIZE - 1) {
+    while((err = read(stderr_read_fd, &tmp, 1)) > 0) { // TODO: maybe change to use `fread`
+        if(tmp == '\n' || tmp == '\0' || i == STDERR_BUFFER_SIZE - 1) { // TODO: fix lost char
             buffer[i] = '\0';
-            wprintw(output_win, "\n%s", buffer);     
-            wrefresh(output_win);
-            wrefresh(input_win);
+            output("%s", buffer);
             i = 0;
         }
         else {
@@ -216,13 +217,51 @@ void* stderr_routine(void *arg) {
     pthread_exit(NULL);
 }
 
+int output(char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    int n;
+    
+    if(redirect) {
+        n = wprintw(output_win, "\n");
+        n += vw_printw(output_win, format, args);
+        wrefresh(output_win);
+        wrefresh(input_win);
+    }
+    else {
+        n = vprintf(format, args);
+        n += printf("\n");
+    }
+
+    va_end(args);
+    return n;
+}
+
+int input(char *buffer, size_t size) {
+    if(redirect) {
+        return wgetnstr(input_win, buffer, size);
+    }
+    else {
+        fgets(buffer, size, stdin);
+        int n = strnlen(buffer, size);
+        if(n > 0) {
+            buffer[--n] = '\0'; // Remove '\n'
+        }
+        return n;
+    }
+}
+
 error_code_t end_ncurses() {
     error_code_t error_code = OK;
 
     if(close(stderr_read_fd) < 0 || close(STDERR_FILENO)) {
         error_code = UNABLE_TO_CLOSE_PIPE;
     }
-    if(pthread_join(stderr_thread, NULL) < 0) {
+    /*
+     The thread is canceled because it is very likely blocked on a read call
+     It's not a problem since it has nothing else to do and doesn't modify data
+    */
+    if(pthread_cancel(stderr_thread) < 0) {
         error_code = UNABLE_TO_JOIN_THREAD;
     }
 

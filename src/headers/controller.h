@@ -20,6 +20,7 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <ncurses.h>
+#include <stdarg.h>
 
 #define STDERR_PIPE_NAME "./ipc/stderr.fifo"
 #define STDERR_BUFFER_SIZE 512
@@ -67,6 +68,11 @@ void handle_shutdown(error_code_t error);
  * Handles the shutdown caused by a `SIGTERM` signal
  */
 void sigterm_handler();
+
+/**
+ * Handles the shutdown caused by a `SIGPIPE` signal
+ */
+void sigpipe_handler();
 
 /**
  * Initializes the ncurses library, creates the windows and redirects the `stdout` and `stderr` threads,
@@ -129,6 +135,21 @@ error_code_t create_windows();
  * @returns `NULL`
  */
 void* stderr_routine(void *arg);
+
+/**
+ * Prints to `stdout` or `ncurses` based on current mode
+ * 
+ * Do not include a new line, as it's position changes based on the current mode,
+ * so it's added automatically
+ * 
+ * It doesn't check for errors because nothing can be done
+ * 
+ * @param format Format string
+ * @param ... Additional arguments
+ * 
+ * @returns The number of written chars
+ */
+int output(char *format, ...);
 
 /**
  * Ends `ncurses` restoring the terminal to normal mode

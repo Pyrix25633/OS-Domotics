@@ -36,7 +36,7 @@ typedef routing_data_t *routing_table_t[UNIQUE_ID_HASHES];
 void init_routing_table(routing_table_t table);
 
 /**
- * Inserts, or replaces, routing data for an indirect child
+ * Inserts, or replaces, routing data for a direct child
  * 
  * Automatically allocates needed space in the heap
  * 
