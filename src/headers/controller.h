@@ -40,7 +40,8 @@
 int main(int argc, char *argv[]);
 
 /**
- * Creates and opens `"./ipc/<controller_id>_up.fifo"`
+ * Creates and opens `"./ipc/<controller_id>_up.fifo"` in read-write mode, this way
+ * the open doesn't block and no end of file is returned to the read when the controller is empty
  * 
  * If an error occurs, it is printed and the function exits, as it's a critical non-solvable error
  */

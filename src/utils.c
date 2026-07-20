@@ -85,7 +85,7 @@ void start_device_fifos(device_id_t device_id, int *rcv_requests_fd, int *snd_re
          */
         if(IS_ERROR(create_fifo_name(device_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
             || mkfifo(name, PIPE_PERMISSIONS) < 0
-            || (*rcv_responses_fd = open(name, O_RDONLY)) < 0) {
+            || (*rcv_responses_fd = open(name, O_RDWR)) < 0) {
             print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, device_id, "creating the device pipe to receive responses");
             exit(UNABLE_TO_CREATE_PIPE);
         }

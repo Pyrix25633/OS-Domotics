@@ -49,13 +49,13 @@ int main(int argc, char *argv[]) {
 
 void start_responses_fifo() {
     char name[PIPE_NAME_MAX_LENGTH];
-    // The pipe is opened in non-blocking and then restored to blocking, because there is no child that will read yet
-    // TODO: most probably it will have to be reopened every time there are no children
-    // TODO: check if it can be done differently
+    /*
+     The pipe is opened in read write, this way the open doesn't block on startup and the read doesn't get
+     end of file every time there is no device in writing mode because the controller is empty
+    */
     if(IS_ERROR(create_fifo_name(CONTROLLER_ID, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
         || mkfifo(name, PIPE_PERMISSIONS) < 0
-        || (rcv_responses_fd = open(name, O_RDONLY | O_NONBLOCK | O_CLOEXEC)) < 0
-        || fcntl(rcv_responses_fd, F_SETFD, fcntl(rcv_responses_fd, F_GETFD) & ~O_NONBLOCK) < 0) {
+        || (rcv_responses_fd = open(name, O_RDWR | O_CLOEXEC)) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, CONTROLLER_ID, "while creating the pipe to receive responses");
         exit(UNABLE_TO_CREATE_PIPE);
     }
