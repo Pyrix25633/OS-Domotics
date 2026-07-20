@@ -20,7 +20,6 @@
 
 device_id_t id;
 leaf_device_state_t state = STATE_CLOSED;
-device_type_t device_type = WINDOW_DEVICE;
 
 // - Auxiliary device data -
 
@@ -41,11 +40,12 @@ char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send
 
 // the controller starts a window process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
+    set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGPIPE, sigpipe_handler); //when a device write on a pipe but the device is no more listening due to crash or child removed
+
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec
     response.source = id;
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, NULL);
-
-    set_signal_handler(SIGTERM, sigterm_handler);
 
     last_closed = last_opened = time(NULL);
     srand(last_closed); //set random seed with the current time so it's always different
@@ -76,15 +76,19 @@ void sigterm_handler(){
     handle_shutdown(UNEXPECTED_COMMAND);
 }
 
+void sigpipe_handler(){
+    handle_shutdown(BROKEN_PIPE);
+} 
+
 error_code_t read_pipe(){
     ssize_t size = read(rcv_requests_fd, buffer_read, MAX_REQUEST_SIZE);
 
-    if(size != MAX_REQUEST_SIZE){
-        return UNABLE_TO_READ_PIPE;
-    }
     if(size == 0){
         force_exit = true;
         return UNEXPECTED_END_OF_FILE; //EOF only if it doesn not have a parent anymore
+    }
+    if(size != MAX_REQUEST_SIZE){
+        return UNABLE_TO_READ_PIPE;
     }
     return parse_request(&request, buffer_read, MAX_REQUEST_SIZE);
 }
@@ -144,7 +148,7 @@ void create_link_response(){
         //the request argument is the new parent id
         u_int16_t new_parent_id = request.argument;
         response.arguments[PARENT_ID_ARGUMENT] = new_parent_id; //to give always a feedback
-        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
+        response.arguments[DEVICE_TYPE_ARGUMENT] = WINDOW_DEVICE;
         response.arguments_size = 2;
 
         if(parent_id!=new_parent_id){
