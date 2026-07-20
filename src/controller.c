@@ -132,9 +132,10 @@ error_code_t redirect_stderr() {
     /*
      Pipe is opened in non-blocking, otherwise the open would block until there's an open in write mode
      It is also created with O_CLOEXEC so that it is automatically closed by `exec`
+     The same could be obtained by opening it in read-write
     */
-    if(mkfifo(STDOUTERR_PIPE_NAME, PIPE_PERMISSIONS) < 0
-        || (stderr_read_fd = open(STDOUTERR_PIPE_NAME, O_RDONLY | O_CLOEXEC | O_NONBLOCK)) < 0) {
+    if(mkfifo(STDERR_PIPE_NAME, PIPE_PERMISSIONS) < 0
+        || (stderr_read_fd = open(STDERR_PIPE_NAME, O_RDONLY | O_CLOEXEC | O_NONBLOCK)) < 0) {
         return UNABLE_TO_CREATE_PIPE;
     }
     // Then it is set back to blocking mode, otherwise reads wouldn't block
@@ -143,7 +144,7 @@ error_code_t redirect_stderr() {
     }
     // Then it is also opened in write and used to replace original `stderr`
     original_stderr_fd = dup(STDERR_FILENO);
-    int stderr_write_fd = open(STDOUTERR_PIPE_NAME, O_WRONLY);
+    int stderr_write_fd = open(STDERR_PIPE_NAME, O_WRONLY);
     if(stderr_write_fd < 0
         || dup2(stderr_write_fd, STDERR_FILENO) < 0) {
         return UNABLE_TO_OPEN_PIPE;
@@ -155,7 +156,7 @@ error_code_t restore_stderr() {
     if(dup2(original_stderr_fd, STDERR_FILENO) < 0) {
         exit(UNABLE_TO_RESTORE_STDERR);
     }
-    if(remove(STDOUTERR_PIPE_NAME) < 0) {
+    if(remove(STDERR_PIPE_NAME) < 0) {
         return UNABLE_TO_REMOVE_PIPE;
     }
     return OK;
@@ -195,11 +196,11 @@ error_code_t create_windows() {
 void* stderr_routine(void *arg) {
     (void)arg; // Unused parameter
 
-    char buffer[STDOUTERR_BUFFER_SIZE];
+    char buffer[STDERR_BUFFER_SIZE];
     char tmp;
     int i = 0;
     while((read(stderr_read_fd, &tmp, 1)) > 0) { // TODO: maybe change to use `fread`
-        if(tmp == '\n' || tmp == '\0' || i == STDOUTERR_BUFFER_SIZE - 1) {
+        if(tmp == '\n' || tmp == '\0' || i == STDERR_BUFFER_SIZE - 1) {
             buffer[i] = '\0';
             wprintw(output_win, "\n%s", buffer);     
             wrefresh(output_win);

@@ -21,8 +21,8 @@
 #include <fcntl.h>
 #include <ncurses.h>
 
-#define STDOUTERR_PIPE_NAME "./ipc/stdouterr.fifo"
-#define STDOUTERR_BUFFER_SIZE 512
+#define STDERR_PIPE_NAME "./ipc/stderr.fifo"
+#define STDERR_BUFFER_SIZE 512
 
 /**
  * Main function of the Controller Program

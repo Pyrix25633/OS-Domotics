@@ -112,7 +112,7 @@ error_code_t create_fifo_name(device_id_t device_id, pipe_direction_t direction,
  * @param rcv_requests_fd Pointer where the function will put the file descriptor where to receive requests from the parent
  * @param snd_responses_fd Pointer where the function will put the file descriptor where to send responses to the parent
  * @param rcv_responses_fd Pointer where the function will put the file descriptor where to receive responses from the
- * child/children, `NULL` for a leaf device
+ * child/children, `NULL` for a leaf device, opened in read-write to avoid end of file when there are no more children in write
  * 
  * If any error happens the function exits as it's a critical non-solvable error
  * 

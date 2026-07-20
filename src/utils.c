@@ -79,6 +79,10 @@ void start_device_fifos(device_id_t device_id, int *rcv_requests_fd, int *snd_re
         exit(UNABLE_TO_OPEN_PIPE);
     }
     if(rcv_responses_fd != NULL) {
+        /*
+         The pipe is opened in read-write mode, this way when all children are deleted or moved
+         the reading cycle will not get an end of file, but the read will block normally instead
+         */
         if(IS_ERROR(create_fifo_name(device_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
             || mkfifo(name, PIPE_PERMISSIONS) < 0
             || (*rcv_responses_fd = open(name, O_RDONLY)) < 0) {
