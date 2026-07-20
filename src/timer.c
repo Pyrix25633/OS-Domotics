@@ -12,6 +12,7 @@
 // - Explicit device data -
 
 device_id_t id;
+device_type_t device_type = TIMER_DEVICE; //declared in the change-parent response, may become TIMER|child_type (ask Mattia)
 control_device_state_t state = STATE_OFF; //it mirrors the state of the child
 u_int16_t begin = DEFAULT_BEGIN; //activation time, minutes from midnight
 u_int16_t end = DEFAULT_END;     //deactivation time, minutes from midnight
@@ -37,10 +38,6 @@ response_t response;
 char buffer_read[MAX_REQUEST_SIZE];   //buffer to read the request from the pipe
 char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send it to the pipe
 
-// - Signal handler -
-
-struct sigaction action_handler; //to set what to do when a signal occurs
-
 // the controller starts a timer process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec
@@ -48,43 +45,55 @@ int main(int argc, char *argv[]) {
     //the last argument is not NULL because the timer is a control device, so the pipe for the child is created too
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, &rcv_responses_child_fd);
 
-    action_handler.sa_handler = handle_shutdown; //set the function to be called when the signal occurs
-    sigaction(SIGTERM, &action_handler, NULL);
+    set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGPIPE, sigpipe_handler);
 
     srand(time(NULL)); //set random seed with the current time so it's always different
 
+    error_code_t error_code;
     //TODO start the thread that reads the responses of the child and the one that fires the schedule
     //for now only the requests for the timer itself are handled, one by one in order of arrival
     while(!force_exit) {
-        execute_command();
+        error_code = execute_command();
     }
-    handle_shutdown();
+    handle_shutdown(error_code);
 }
 
-void handle_shutdown() {
+void handle_shutdown(error_code_t error) {
     //the child down pipe is only opened for writing, the child owns it, so it is just closed and not deleted
     if(has_child && close(snd_requests_child_fd) < 0){
         print_error(STDERR_FILENO, UNABLE_TO_CLOSE_PIPE, id, "while closing the child requests pipe");
     }
     //control device: the last argument is the child pipe and not NO_FILE_DESCRIPTOR, so it is closed and deleted too
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, rcv_responses_child_fd);
-    if(error_code != OK){
+    if(IS_ERROR(error_code)){
         //prints the error on standard error, best practice to do
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
+    else{ error_code = error; } //no closing error: return the code that caused the shutdown
     //TODO cancel the child and the schedule threads
     exit(error_code);
+}
+
+//SIGTERM is used by the controller for a clean deletion, the device shuts down returning the code
+void sigterm_handler() {
+    handle_shutdown(UNEXPECTED_SHUTDOWN);
+}
+
+//SIGPIPE means a write to a pipe with no reader, it is a critical error, the device shuts down
+void sigpipe_handler() {
+    handle_shutdown(BROKEN_PIPE);
 }
 
 error_code_t read_pipe(){
     ssize_t size = read(rcv_requests_fd, buffer_read, MAX_REQUEST_SIZE);
 
-    if(size < 0){
-        return UNABLE_TO_READ_PIPE;
-    }
-    else if(size == 0){ //the write end was closed, no more requests will arrive
+    if(size == 0){ //the write end was closed, no more requests will arrive
         force_exit = true;
         return UNEXPECTED_END_OF_FILE;
+    }
+    if(size != MAX_REQUEST_SIZE){ //a wrong number of bytes was read, the message is not a valid fixed-size one
+        return UNABLE_TO_READ_PIPE;
     }
     return parse_request(&request, buffer_read, MAX_REQUEST_SIZE);
 }
@@ -92,21 +101,21 @@ error_code_t read_pipe(){
 void write_pipe(){
     error_code_t error_code = format_response(&response, buffer_write, MAX_RESPONSE_SIZE);
 
-    if(error_code != OK){
+    if(IS_ERROR(error_code)){
         print_error(STDERR_FILENO, error_code, id, "while formatting response");
     }
-    else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE) < 0){
+    else if(write(snd_responses_fd, buffer_write, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending response");
     }
 }
 
-void execute_command(){
+error_code_t execute_command(){
     command_code_t code;
     response.command_code = NULL_COMMAND; //default, overwritten below when a valid request is parsed
     response.arguments_size = 0;
 
     error_code_t error_code = read_pipe();
-    if(error_code != OK){
+    if(IS_ERROR(error_code)){
         response.response_code = error_code;
     }
     else if(request.destination != id) {
@@ -114,8 +123,8 @@ void execute_command(){
         if(has_child){
             //buffer_read has been modified by parse_request, so the request is rebuilt from the struct
             error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
-            if(forward_code == OK && write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) >= 0){
-                return; //forwarded: the response is sent by the destination and not by the timer
+            if(!IS_ERROR(forward_code) && write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) == MAX_REQUEST_SIZE){
+                return error_code; //forwarded: the response is sent by the destination and not by the timer
             }
             //the forwarding failed, so the destination will not answer: the timer answers with an error itself
             response.response_code = UNABLE_TO_WRITE_PIPE;
@@ -144,6 +153,8 @@ void execute_command(){
     //the delay is applied before responding, for any command, error responses included
     simulate_processing_time();
     write_pipe();
+
+    return error_code;
 }
 
 void create_info_response(){
@@ -159,9 +170,10 @@ void create_info_response(){
 void create_link_response(){
     if(LINK_SUBCOMMAND(request.command_code)==LINK_CHANGE_PARENT){
         //the request argument is the new parent id
-        device_id_t new_parent_id = request.arguments[PARENT_ID_ARGUMENT];
-        response.arguments[REQUEST_ARGUMENT] = new_parent_id; //to give always a feedback
-        response.arguments_size = 1;
+        device_id_t new_parent_id = request.argument;
+        response.arguments[PARENT_ID_ARGUMENT] = new_parent_id; //to give always a feedback
+        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type; //the parent learns the child type from this response
+        response.arguments_size = 2;
 
         if(parent_id!=new_parent_id){
             response.response_code = change_snd_responses_pipe(new_parent_id,&snd_responses_fd);
@@ -169,29 +181,13 @@ void create_link_response(){
                 parent_id = new_parent_id;
             }
         }
-    }
-    else if(LINK_SUBCOMMAND(request.command_code)==LINK_ADD_CHILD){
-        //the request arguments are the new child id and its type
-        response.arguments[REQUEST_ARGUMENT] = request.arguments[CHILD_ID_ARGUMENT]; //to give always a feedback
-        response.arguments_size = 1;
-        //the timer controls a single device, so a second child is refused
-        if(has_child){
-            response.response_code = INVALID_COMMAND;
-        }
-        else{
-            response.response_code = open_child_requests_pipe(request.arguments[CHILD_ID_ARGUMENT], &snd_requests_child_fd);
-            if(response.response_code == OK){
-                child_id = request.arguments[CHILD_ID_ARGUMENT];
-                child_type = request.arguments[CHILD_TYPE_ARGUMENT]; //needed to know which switch label to send it
-                has_child = true;
-            }
-        }
+        //TODO if the timer already has a child, replay its "add" to the new parent (step 3)
     }
     else if(LINK_SUBCOMMAND(request.command_code)==LINK_REMOVE_CHILD){
         //the request argument is the child id to remove
-        response.arguments[REQUEST_ARGUMENT] = request.arguments[CHILD_ID_ARGUMENT]; //to give always a feedback
+        response.arguments[CHILD_ID_ARGUMENT] = request.argument; //to give always a feedback
         response.arguments_size = 1;
-        if(has_child && request.arguments[CHILD_ID_ARGUMENT] == child_id){
+        if(has_child && request.argument == child_id){
             if(close(snd_requests_child_fd) < 0){
                 response.response_code = UNABLE_TO_CLOSE_PIPE;
             }
@@ -204,25 +200,26 @@ void create_link_response(){
     else{
         response.response_code = UNEXPECTED_COMMAND;
     }
+    //the timer now gains a child from the child's change-parent response, not from an add-child request (step 3)
 }
 
 //begin and end are minutes from midnight, the professor said that there are no timers across midnight
 //so the only invalid case is begin > end (as stated in the spec, section 2.2.8), so begin == end is allowed
 void create_registry_response(){
-    response.arguments[REQUEST_ARGUMENT] = request.arguments[REGISTRY_ARGUMENT]; //to give always a feedback
+    response.arguments[REGISTRY_ARGUMENT] = request.argument; //to give always a feedback
     response.arguments_size = 1;
 
     if(REGISTRY_SUBCOMMAND(request.command_code)==REGISTRY_BEGIN){
-        if(request.arguments[REGISTRY_ARGUMENT] <= end){ //end is always smaller than MINUTES_IN_A_DAY, so begin is too
-            begin = request.arguments[REGISTRY_ARGUMENT];
+        if(request.argument <= end){ //end is always smaller than MINUTES_IN_A_DAY, so begin is too
+            begin = request.argument;
         }
         else{
             response.response_code = INVALID_REQUEST_ARGUMENT;
         }
     }
     else if(REGISTRY_SUBCOMMAND(request.command_code)==REGISTRY_END){
-        if(request.arguments[REGISTRY_ARGUMENT] >= begin && request.arguments[REGISTRY_ARGUMENT] < MINUTES_IN_A_DAY){
-            end = request.arguments[REGISTRY_ARGUMENT];
+        if(request.argument >= begin && request.argument < MINUTES_IN_A_DAY){
+            end = request.argument;
         }
         else{
             response.response_code = INVALID_REQUEST_ARGUMENT;
@@ -245,7 +242,7 @@ void create_switch_response(){
 //opening in writing does not block because the child already opened its down pipe in reading at startup
 error_code_t open_child_requests_pipe(device_id_t child_id, int *snd_requests_child_fd){
     char name[PIPE_NAME_MAX_LENGTH];
-    if(create_fifo_name(child_id, DIRECTION_DOWN, name, PIPE_NAME_MAX_LENGTH) != OK
+    if(IS_ERROR(create_fifo_name(child_id, DIRECTION_DOWN, name, PIPE_NAME_MAX_LENGTH))
         || (*snd_requests_child_fd = open(name, O_WRONLY)) < 0){
         return UNABLE_TO_OPEN_PIPE;
     }
