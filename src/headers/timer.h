@@ -14,6 +14,7 @@
 #include <signal.h>
 #include <time.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 // Default values
 
@@ -60,6 +61,13 @@ error_code_t read_pipe();
  * Writes to the pipe
  */
 void write_pipe();
+
+/**
+ * Bottom-up thread body: reads the responses coming from the child and forwards them up to the parent
+ * @param arg Unused
+ * @returns `NULL`
+ */
+void *child_responses_handler(void *arg);
 
 /**
  * Executes the command received from the pipe
