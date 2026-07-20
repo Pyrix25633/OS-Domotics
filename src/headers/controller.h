@@ -24,6 +24,9 @@
 
 #define STDERR_PIPE_NAME "./ipc/stderr.fifo"
 #define STDERR_BUFFER_SIZE 512
+#define USER_BUFFER_SIZE 64
+
+#define CHECK_NO_OTHER_ARGUMENTS(last) strtok_r(NULL, " ", &last) == NULL ? OK : INVALID_COMMAND_ARGUMENT
 
 /**
  * Main function of the Controller Program
@@ -35,10 +38,79 @@
  * 
  * @returns `UNABLE_TO_CREATE_PIPE` if the pipe where the Controller receives
  * responses from children could not be created and opened,
- * `UNABLE_TO_RESTORE_STDERR` if it was impossible to restore the standard streams after failing to redirect them,
+ * `UNABLE_TO_RESTORE_STDERR` if it was impossible to restore `stderr` after failing to redirect it,
  * `OK` otherwise
  */
 int main(int argc, char *argv[]);
+
+/**
+ * Parses a user command
+ * 
+ * @param user_command Struct where command data will be put
+ * @param string The string command
+ * 
+ * @returns `INVALID_TARGET_ID` if the target ID is missing or has an invalid format,
+ * `INVALID_COMMAND` if the command is not between the expected ones or is missing,
+ * `INVALID_COMMAND_ARGUMENT` if any of the arguments is missing or doesn't have a valid format,
+ * `OK` otherwise // TODO: there are surely others
+ */
+error_code_t parse_user_command(user_command_t *user_command, char *string);
+
+/**
+ * Parses an add command
+ * 
+ * @param user_command Struct where command data will be put
+ * @param last Last parsing position the parsing
+ * 
+ * @returns `INVALID_COMMAND_ARGUMENT` if the type argument is missing or invalid,
+ * `OK` otherwise
+ */
+error_code_t parse_add_command(user_command_t *user_command, char **last);
+
+/**
+ * Parses command target ID
+ * 
+ * @param user_command Struct where command data will be put
+ * @param last Last parsing position the parsing
+ * 
+ * @returns `INVALID_COMMAND` if `"to"` is missing,
+ * `INVALID_TARGET_ID` if the target is missing or invalid,
+ * `OK` otherwise
+ */
+error_code_t parse_command_target(user_command_t *user_command, char **last);
+
+/**
+ * Parses a switch command
+ * 
+ * @param user_command Struct where command data will be put
+ * @param last Last parsing position the parsing
+ * 
+ * @returns `INVALID_COMMAND_ARGUMENT` if the label or position arguments are missing or invalid,
+ * `OK` otherwise
+ */
+error_code_t parse_switch_command(user_command_t *user_command, char **last);
+
+/**
+ * Parses a registry set command
+ * 
+ * @param user_command Struct where command data will be put
+ * @param last Last parsing position the parsing
+ * 
+ * @returns `INVALID_COMMAND_ARGUMENT` if the label or position arguments are missing or invalid,
+ * `OK` otherwise
+ */
+error_code_t parse_set_command(user_command_t *user_command, char **last);
+
+/**
+ * Parses an link command
+ * 
+ * @param user_command Struct where command data will be put
+ * @param last Last parsing position the parsing
+ * 
+ * @returns `INVALID_COMMAND_ARGUMENT` if the parent argument is missing or invalid,
+ * `OK` otherwise
+ */
+error_code_t parse_link_command(user_command_t *user_command, char **last);
 
 /**
  * Creates and opens `"./ipc/<controller_id>_up.fifo"` in read-write mode, this way
@@ -150,6 +222,18 @@ void* stderr_routine(void *arg);
  * @returns The number of written chars
  */
 int output(char *format, ...);
+
+/**
+ * Reads from `stdin` or `ncurses` based on current mode
+ * 
+ * It doesn't check for errors because nothing can be done
+ * 
+ * @param buffer Where the input will be written
+ * @param size Buffer size
+ * 
+ * @returns The number of chars read
+ */
+int input(char *buffer, size_t size);
 
 /**
  * Ends `ncurses` restoring the terminal to normal mode

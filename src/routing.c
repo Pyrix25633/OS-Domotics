@@ -11,7 +11,7 @@ void init_routing_table(routing_table_t table) {
     }
 }
 
-error_code_t insert_direct_routing_data(routing_table_t table, device_id_t id, device_type_t type, device_id_t current_id, int fd) {
+error_code_t insert_direct_routing_data_pid(routing_table_t table, device_id_t id, pid_t pid, device_type_t type, device_id_t current_id, int fd) {
     routing_data_t **bucket = GET_BUCKET(table, id);
     routing_data_t *data = malloc(sizeof(routing_data_t));
     if(data == NULL) {
@@ -21,10 +21,14 @@ error_code_t insert_direct_routing_data(routing_table_t table, device_id_t id, d
     data->type = type;
     data->parent_id = current_id;
     data->next_hop_fd = fd;
-    data->depth = 1;
+    data->pid = pid;
     data->next = NULL;
     insert_routing_data_in_bucket(bucket, data);
     return OK;
+}
+
+error_code_t insert_direct_routing_data(routing_table_t table, device_id_t id, device_type_t type, device_id_t current_id, int fd) {
+    return insert_direct_routing_data_pid(table, id, NO_PID, type, current_id, fd);
 }
 
 error_code_t insert_indirect_routing_data(routing_table_t table, device_id_t id, device_type_t type, device_id_t parent_id) {
@@ -41,7 +45,7 @@ error_code_t insert_indirect_routing_data(routing_table_t table, device_id_t id,
     data->type = type;
     data->parent_id = parent_id;
     data->next_hop_fd = parent->next_hop_fd;
-    data->depth = parent->depth + 1;
+    // `pid` is not set here because this function is never used by the Controller
     data->next = NULL;
     insert_routing_data_in_bucket(bucket, data);
     return OK;
@@ -192,10 +196,7 @@ void print_routing_table(routing_table_t table) {
 
 void print_routing_data(routing_data_t *data) {
     if(data != NULL) {
-        for(int i = 1; i < data->depth; i++) {
-            printf("\t");
-        }
-        printf("Id: 0x%x, type: %1x, parent id: 0x%x, next hop fd: %d, depth: %u\n", data->id, data->type, data->parent_id, data->next_hop_fd, data->depth);
+        printf("Id: 0x%x, type: %1x, parent id: 0x%x, next hop fd: %d\n", data->id, data->type, data->parent_id, data->next_hop_fd);
     }
     else {
         printf("Not found\n");

@@ -10,20 +10,24 @@
 
 #include <sys/types.h>
 
+// Hashing
+
 #define ID_HASH_MASK     0xF // Takes the 4 least significant bits
 #define UNIQUE_ID_HASHES ID_HASH_MASK + 1 // So 16 possible hashes
 #define HASH_ID(i)       (i & ID_HASH_MASK)
 #define GET_BUCKET(t, i) (t + HASH_ID(i))
+
+#define NO_PID 0
 
 typedef u_int8_t id_hash_t;
 typedef u_int8_t depth_t;
 
 typedef struct routing_data_t {
     device_id_t id;
+    pid_t pid; // Used only in Controller
     device_type_t type;
     device_id_t parent_id;
     int next_hop_fd; // Set automatically by the functions
-    depth_t depth; // Set automatically by the functions // ! should probably be removed
     struct routing_data_t *next; // Set automatically by the functions
 } routing_data_t;
 
@@ -34,6 +38,23 @@ typedef routing_data_t *routing_table_t[UNIQUE_ID_HASHES];
  * Initializes the routing table by setting empty buckets
  */
 void init_routing_table(routing_table_t table);
+
+/**
+ * Inserts, or replaces, routing data for a direct child, including PID
+ * 
+ * Automatically allocates needed space in the heap
+ * 
+ * @param table Routing table where to insert the data
+ * @param id New device ID
+ * @param pid New device PID
+ * @param type Its type
+ * @param current_id The current device ID, where the routing is performed
+ * @param fd File descriptor where to send requests
+ * 
+ * @returns `UNABLE_TO_ALLOCATE_HEAP` if `malloc` failed,
+ * `OK` otherwise
+ */
+error_code_t insert_direct_routing_data_pid(routing_table_t table, device_id_t id, pid_t pid, device_type_t type, device_id_t current_id, int fd);
 
 /**
  * Inserts, or replaces, routing data for a direct child

@@ -2,12 +2,19 @@
 
 #include "manual_interaction.h"
 
+// - User data -
+
+user_command_t user_command;
+
+
+// - IPC data -
+
+request_t request;
+char request_buffer[MAX_REQUEST_SIZE];
 int snd_command_fd;
 
 int main(int argc, char *argv[]) {
     // Parse user command
-
-    user_command_t user_command;
     error_code_t error_code = parse_user_command(&user_command, argc, argv);
     if(IS_ERROR(error_code)) {
         print_error(STDERR_FILENO, error_code, MANUAL_INTERACTION_ID, "while parsing command");
@@ -25,11 +32,10 @@ int main(int argc, char *argv[]) {
 
     open_device_pipe(user_command.target);
 
-    request_t request;
+    
     request.destination = user_command.target;
     request.command_code = user_command.message_code;
     request.argument = user_command.argument; // Doesn't matter if undefined, it will not be read if the command doesn't require it
-    char request_buffer[MAX_REQUEST_SIZE];
     error_code = format_request(&request, request_buffer, MAX_REQUEST_SIZE);
     if(IS_ERROR(error_code)) {
         print_error(STDERR_FILENO, error_code, MANUAL_INTERACTION_ID, "while formatting command to send");

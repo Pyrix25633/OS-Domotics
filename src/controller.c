@@ -2,7 +2,8 @@
 
 #include "controller.h"
 
-#include <errno.h> // ! remove
+// - Device data -
+device_id_t id = CONTROLLER_ID;
 
 // - Ncurses data -
 bool redirect;
@@ -11,8 +12,12 @@ WINDOW *input_win;
 
 // - Concurrency management data -
 
-pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely
-pthread_t stderr_thread; // Used for reading from redirected `stdout` and `stderr`
+pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely // ! check if used
+pthread_t stderr_thread; // Used for reading from redirected `stderr`
+
+// - User input -
+user_command_t user_command;
+char user_buffer[USER_BUFFER_SIZE];
 
 // - IPC data -
 
@@ -28,7 +33,9 @@ int original_stderr_fd;
 
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGINT, sigterm_handler);
     set_signal_handler(SIGPIPE, sigpipe_handler);
+    // ! must set `SIGCHLD` handler
 
     start_responses_fifo();
 
@@ -36,17 +43,214 @@ int main(int argc, char *argv[]) {
 
     error_code_t error_code = start_ncurses(argc, argv);
     if(IS_ERROR(error_code)) { // Normal terminal and streams should be available again
-        print_error(STDERR_FILENO, error_code, CONTROLLER_ID, "while starting ncurses");
+        print_error(STDERR_FILENO, error_code, id, "while starting ncurses");
     }
 
-    // Testing
-    char buffer[64] = "";
-    while(strcmp(buffer, "exit") != 0) {
-        input(buffer, 64);
-        output("%s", buffer);
+    output("Controller ID: %d", id);
+    output("Available commands:");
+    output("- add <type>");
+    output("- list");
+    output("- info <id>");
+    output("- switch <id> <label> <position>");
+    output("- set <id> <label> <value>");
+    output("- link <id1> to <id2>");
+    output("- del <id>");
+
+    while(!force_exit) {
+        input(user_buffer, USER_BUFFER_SIZE);
+        error_code = parse_user_command(&user_command, user_buffer);
+        if(IS_ERROR(error_code)) {
+            print_error(STDERR_FILENO, error_code, id, "while parsing user command");
+            continue;
+        }
+        // TODO: check for further errors
+        // TODO: execute user command
+        output("Command code: %d, target: %d, argument: %d", user_command.code, user_command.target, user_command.argument);
     }
 
     handle_shutdown(OK); // TODO: change passed error code
+}
+
+error_code_t parse_user_command(user_command_t *user_command, char *string) {
+    char *last;
+    char *token = strtok_r(string, " ", &last);
+    error_code_t error_code;
+    if(token == NULL) {
+        return INVALID_COMMAND;
+    }
+    if(strcmp(token, "add") == 0) {
+        user_command->code = ADD_COMMAND;
+        error_code = parse_add_command(user_command, &last);
+    }
+    else if(strcmp(token, "list") == 0) {
+        user_command->code = LIST_COMMAND;
+    }
+    else {
+        error_code = parse_command_target(user_command, &last);
+        if(strcmp(token, "info") == 0) {
+            user_command->code = INFO_COMMAND;
+            user_command->message_code = INFO;
+        }
+        else if(strcmp(token, "switch") == 0) {
+            user_command->code = SWITCH_COMMAND;
+            user_command->message_code = SWITCH;
+            if(IS_ERROR(error_code)) {
+                return error_code;
+            }
+            error_code = parse_switch_command(user_command, &last);
+        }
+        else if(strcmp(token, "set") == 0) {
+            user_command->code = SET_COMMAND;
+            user_command->message_code = REGISTRY;
+            if(IS_ERROR(error_code)) {
+                return error_code;
+            }
+            error_code = parse_set_command(user_command, &last);
+        }
+        else if(strcmp(token, "link") == 0) {
+            user_command->code = LINK_COMMAND;
+            user_command->message_code = LINK | LINK_CHANGE_PARENT;
+            if(IS_ERROR(error_code)) {
+                return error_code;
+            }
+            error_code = parse_link_command(user_command, &last);
+        }
+        else if(strcmp(token, "del") == 0) {
+            user_command->code = DELETE_COMMAND;
+        }
+        else {
+            error_code = INVALID_COMMAND;
+        }
+    }
+    if(IS_ERROR(error_code)) {
+        return error_code;
+    }
+    return CHECK_NO_OTHER_ARGUMENTS(last);
+}
+
+error_code_t parse_add_command(user_command_t *user_command, char **last) {
+    char *type = strtok_r(NULL, " ", last);
+    if(type == NULL) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    if(strcmp(type, "bulb") == 0) {
+        user_command->argument = BULB_DEVICE;
+    }
+    else if(strcmp(type, "window") == 0) {
+        user_command->argument = WINDOW_DEVICE;
+    }
+    else if(strcmp(type, "fridge") == 0) {
+        user_command->argument = FRIDGE_DEVICE;
+    }
+    else if(strcmp(type, "hub") == 0) {
+        user_command->argument = HUB_DEVICE;
+    }
+    else if(strcmp(type, "timer") == 0) {
+        user_command->argument = TIMER_DEVICE;
+    }
+    else {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    return OK;
+}
+
+error_code_t parse_command_target(user_command_t *user_command, char **last) {
+    char *target = strtok_r(NULL, " ", last);
+    if(target == NULL) {
+        return INVALID_TARGET_ID;
+    }
+    int parsed = string_to_unsigned(target);
+    if(IS_RETURN_ERROR(parsed)) {
+        return INVALID_TARGET_ID;
+    }
+    user_command->target = parsed;
+    return OK;
+}
+
+error_code_t parse_switch_command(user_command_t *user_command, char **last) {
+    char *label = strtok_r(NULL, " ", last);
+    if(label == NULL) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    if(strcmp(label, "power") == 0) {
+        user_command->message_code |= SWITCH_POWER;
+    }
+    else if(strcmp(label, "open") == 0) {
+        user_command->message_code |= SWITCH_OPEN;
+    }
+    else if(strcmp(label, "close") == 0) {
+        user_command->message_code |= SWITCH_CLOSE;
+    }
+    else {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    char *position = strtok_r(NULL, " ", last);
+    if(position == NULL) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    if(strcmp(position, "on") == 0) {
+        user_command->message_code |= POSITION_ON;
+    }
+    else if(strcmp(position, "off") == 0) {
+        user_command->message_code |= POSITION_OFF;
+    }
+    else {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    return OK;
+}
+
+error_code_t parse_set_command(user_command_t *user_command, char **last) {
+    char *label = strtok_r(NULL, " ", last);
+    if(label == NULL) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    char *value = strtok_r(NULL, " ", last);
+    if(value == NULL) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    int parsed;
+    if(strcmp(label, "delay") == 0) {
+        user_command->message_code |= REGISTRY_DELAY;
+        parsed = string_to_unsigned(value);
+        if(IS_RETURN_ERROR(parsed) || parsed < MIN_DELAY || parsed > MAX_DELAY) {
+            return INVALID_COMMAND_ARGUMENT;
+        }
+    }
+    else {
+        if(strcmp(label, "begin") == 0) {
+        user_command->message_code |= REGISTRY_BEGIN;
+        }
+        else if(strcmp(label, "end") == 0) {
+            user_command->message_code |= REGISTRY_END;
+        }
+        else {
+            return INVALID_COMMAND_ARGUMENT;
+        }
+        parsed = parse_time(value);
+        if(IS_RETURN_ERROR(parsed)) {
+            return INVALID_COMMAND_ARGUMENT;
+        }
+    }
+    user_command->argument = parsed;
+    return OK;
+}
+
+error_code_t parse_link_command(user_command_t *user_command, char **last) {
+    char *to = strtok_r(NULL, " ", last);
+    if(to == NULL || strcmp(to, "to") != 0) {
+        return INVALID_COMMAND;
+    }
+    char *parent = strtok_r(NULL, " ", last);
+    if(parent == NULL) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    int parsed = string_to_unsigned(parent);
+    if(IS_RETURN_ERROR(parsed)) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    user_command->argument = parsed;
+    return OK;
 }
 
 void start_responses_fifo() {
@@ -55,10 +259,10 @@ void start_responses_fifo() {
      The pipe is opened in read write, this way the open doesn't block on startup and the read doesn't get
      end of file every time there is no device in writing mode because the controller is empty
     */
-    if(IS_ERROR(create_fifo_name(CONTROLLER_ID, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
+    if(IS_ERROR(create_fifo_name(id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
         || mkfifo(name, PIPE_PERMISSIONS) < 0
         || (rcv_responses_fd = open(name, O_RDWR | O_CLOEXEC)) < 0) {
-        print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, CONTROLLER_ID, "while creating the pipe to receive responses");
+        print_error(STDERR_FILENO, UNABLE_TO_CREATE_PIPE, id, "while creating the pipe to receive responses");
         exit(UNABLE_TO_CREATE_PIPE);
     }
 }
@@ -69,7 +273,7 @@ error_code_t end_responses_fifo() {
     if(close(rcv_responses_fd) < 0) {
         error_code = UNABLE_TO_CLOSE_PIPE;
     }
-    if(IS_ERROR(create_fifo_name(CONTROLLER_ID, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
+    if(IS_ERROR(create_fifo_name(id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
         || remove(name) < 0) {
         error_code = UNABLE_TO_REMOVE_PIPE;
     }
@@ -80,13 +284,13 @@ void handle_shutdown(error_code_t error) {
     error_code_t error_code = end_responses_fifo();
     error_code_t tmp;
     if(IS_ERROR(error_code)) {
-        print_error(STDERR_FILENO, error_code, CONTROLLER_ID, "while closing and deleting pipes");
+        print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
     if(redirect) {
         tmp = end_ncurses();
         if(IS_ERROR(tmp)) {
             error_code = tmp;
-            print_error(STDERR_FILENO, error_code, CONTROLLER_ID, "while closing ncurses");
+            print_error(STDERR_FILENO, error_code, id, "while closing ncurses");
         }
     }
     // TODO: send `SIGTERM` to all devices if any
