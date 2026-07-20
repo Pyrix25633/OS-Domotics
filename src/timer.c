@@ -133,11 +133,40 @@ void write_pipe(){
     pthread_mutex_unlock(&data_mutex);
 }
 
+//a change-parent response naming the timer as the new parent identifies the single child to acquire,
+//replayed responses of deeper descendants carry another parent id and are only forwarded up
+void acquire_child(response_t *child_response){
+    command_code_t code = child_response->command_code;
+    if(!((IS_LINK(code)) && LINK_SUBCOMMAND(code) == LINK_CHANGE_PARENT)){
+        return;
+    }
+    if(child_response->response_code != OK || child_response->arguments[PARENT_ID_ARGUMENT] != id){
+        return;
+    }
+    device_id_t new_child_id = child_response->source;
+    device_type_t new_child_type = child_response->arguments[DEVICE_TYPE_ARGUMENT];
+    //opening does not block, the child already opened its down pipe in reading, done outside the lock
+    int new_child_fd;
+    if(IS_ERROR(open_child_requests_pipe(new_child_id, &new_child_fd))){
+        print_error(STDERR_FILENO, UNABLE_TO_OPEN_PIPE, id, "while opening the child requests pipe");
+        return;
+    }
+    //these scalars are read by the main thread, so they are published together under the lock
+    pthread_mutex_lock(&data_mutex);
+    child_id = new_child_id;
+    child_type = new_child_type;
+    snd_requests_child_fd = new_child_fd;
+    device_type = TIMER_DEVICE | new_child_type; //the declared type keeps the child leaf bits for the switch label
+    has_child = true; //set last, the main thread checks it before using the other child scalars
+    pthread_mutex_unlock(&data_mutex);
+}
+
 //bottom-up thread: reads the responses coming from the child and forwards them up to the parent
-//TODO intercept here the responses to the requests made by the timer itself
 void *child_responses_handler(void *arg){
     (void)arg; //unused
-    char child_buffer[MAX_RESPONSE_SIZE]; //local buffer, not shared with the main thread
+    char child_buffer[MAX_RESPONSE_SIZE]; //raw bytes from the child, forwarded up unchanged
+    char parse_buffer[MAX_RESPONSE_SIZE]; //copy to parse, parse_response inserts terminators in the buffer
+    response_t child_response;
     while(!force_exit){
         //with the up pipe opened in O_RDWR the read never returns EOF: it blocks until the child writes,
         //or it is interrupted by pthread_cancel at shutdown
@@ -146,6 +175,12 @@ void *child_responses_handler(void *arg){
             print_error(STDERR_FILENO, UNABLE_TO_READ_PIPE, id, "while reading a child response");
             continue;
         }
+        //the change-parent response of a new child is intercepted to acquire it, parsing a copy of the bytes
+        memcpy(parse_buffer, child_buffer, MAX_RESPONSE_SIZE);
+        if(!IS_ERROR(parse_response(&child_response, parse_buffer, MAX_RESPONSE_SIZE))){
+            acquire_child(&child_response);
+        }
+        //TODO intercept the responses to the info and switch requests the timer sends to the child for mirroring
         //forward the child response to the parent; guarded because the main thread shares the parent pipe
         pthread_mutex_lock(&data_mutex);
         if(write(snd_responses_fd, child_buffer, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE){
@@ -167,10 +202,15 @@ error_code_t execute_command(){
     }
     else if(request.destination != id) {
         //the request is not for the timer, so it is for the child or for something under it
-        if(has_child){
+        //has_child and the child fd are set by the child-responses thread, so they are read under the lock
+        pthread_mutex_lock(&data_mutex);
+        bool forward = has_child;
+        int child_fd = snd_requests_child_fd;
+        pthread_mutex_unlock(&data_mutex);
+        if(forward){
             //buffer_read has been modified by parse_request, so the request is rebuilt from the struct
             error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
-            if(!IS_ERROR(forward_code) && write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) == MAX_REQUEST_SIZE){
+            if(!IS_ERROR(forward_code) && write(child_fd, buffer_read, MAX_REQUEST_SIZE) == MAX_REQUEST_SIZE){
                 return error_code; //forwarded: the response is sent by the destination and not by the timer
             }
             //the forwarding failed, so the destination will not answer: the timer answers with an error itself
@@ -219,7 +259,10 @@ void create_link_response(){
         //the request argument is the new parent id
         device_id_t new_parent_id = request.argument;
         response.arguments[PARENT_ID_ARGUMENT] = new_parent_id; //to give always a feedback
-        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type; //the parent learns the child type from this response
+        //device_type is updated by the child-responses thread when a child is acquired, so it is read under the lock
+        pthread_mutex_lock(&data_mutex);
+        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type; //the parent learns the timer type from this response
+        pthread_mutex_unlock(&data_mutex);
         response.arguments_size = 2;
 
         if(parent_id!=new_parent_id){
@@ -237,15 +280,19 @@ void create_link_response(){
         //the request argument is the child id to remove
         response.arguments[CHILD_ID_ARGUMENT] = request.argument; //to give always a feedback
         response.arguments_size = 1;
+        //the child scalars are shared with the child-responses thread, so they are accessed under the lock
+        pthread_mutex_lock(&data_mutex);
         if(has_child && request.argument == child_id){
             if(close(snd_requests_child_fd) < 0){
                 response.response_code = UNABLE_TO_CLOSE_PIPE;
             }
             has_child = false;
+            device_type = TIMER_DEVICE; //without a child the declared type is again the plain timer type
         }
         else{
             response.response_code = DEVICE_NOT_FOUND;
         }
+        pthread_mutex_unlock(&data_mutex);
     }
     else{
         response.response_code = UNEXPECTED_COMMAND;

@@ -63,6 +63,15 @@ error_code_t read_pipe();
 void write_pipe();
 
 /**
+ * Acquires the child if the response is its change-parent response naming the timer as the new parent
+ *
+ * Sets the child scalars and the declared type under the lock, does nothing for any other response
+ *
+ * @param child_response The response read from the child
+ */
+void acquire_child(response_t *child_response);
+
+/**
  * Bottom-up thread body: reads the responses coming from the child and forwards them up to the parent
  * @param arg Unused
  * @returns `NULL`
