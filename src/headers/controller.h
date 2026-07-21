@@ -21,6 +21,7 @@
 #include <fcntl.h>
 #include <ncurses.h>
 #include <stdarg.h>
+#include <errno.h>
 
 #define STDERR_PIPE_NAME "./ipc/stderr.fifo"
 #define STDERR_BUFFER_SIZE 512
@@ -44,6 +45,34 @@
 int main(int argc, char *argv[]);
 
 /**
+ * Parses, checks and execute a user command
+ * 
+ * User for input from both terminal and file
+ * 
+ * Prints errors, returns error code for exit code
+ * 
+ * @param user_command Struct where command data will be put
+ * @param string The string command
+ * 
+ * @returns `INVALID_TARGET_ID` if the target ID is missing or has an invalid format,
+ * `INVALID_COMMAND` if the command is not between the expected ones or is missing,
+ * `INVALID_COMMAND_ARGUMENT` if any of the arguments is missing or doesn't have a valid format,
+ * `UNABLE_TO_LOCK_MUTEX` if data mutex could not be locked,
+ * `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
+ * `DEVICE_TYPE_MISMATCH` if the command is not compatible with the target device,
+ * `LINKING_PARENT_TO_CHILD` if the link would create cycles,
+ * `UNABLE_TO_UNLOCK_MUTEX` if data mutex could not be locked,
+ * `BUFFER_TOO_SHORT` if the formatted request does not fit in the buffer,
+ * `REQUEST_FORMAT_ERROR` if there was an error formatting the request,
+ * `UNABLE_TO_WRITE_PIPE` if the write failed,
+ * `UNABLE_TO_CREATE_PIPE` if the pipe where the device will receive commands could not be created,
+ * `UNABLE_TO_OPEN_PIPE` if the pipe could not be opened in write mode,
+ * `UNABLE_TO_ALLOCATE_HEAP` if the routing information could not be inserted,
+ * `OK` otherwise
+ */
+error_code_t process_user_command(user_command_t *user_command, char *string);
+
+/**
  * Parses a user command
  * 
  * @param user_command Struct where command data will be put
@@ -52,7 +81,7 @@ int main(int argc, char *argv[]);
  * @returns `INVALID_TARGET_ID` if the target ID is missing or has an invalid format,
  * `INVALID_COMMAND` if the command is not between the expected ones or is missing,
  * `INVALID_COMMAND_ARGUMENT` if any of the arguments is missing or doesn't have a valid format,
- * `OK` otherwise // TODO: there are surely others
+ * `OK` otherwise
  */
 error_code_t parse_user_command(user_command_t *user_command, char *string);
 
@@ -216,6 +245,13 @@ error_code_t end_responses_fifo();
  * @param error Error that caused the shutdown, if not `OK`
  */
 void handle_shutdown(error_code_t error);
+
+/**
+ * Sends `SIGTERM` to all devices and cleans their pipes
+ * 
+ * @returns
+ */
+error_code_t shutdown_devices();
 
 /**
  * Handles the shutdown caused by a `SIGTERM` signal

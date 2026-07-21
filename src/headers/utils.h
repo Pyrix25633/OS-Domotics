@@ -44,7 +44,7 @@ typedef u_int8_t user_command_code_t;
 #define INFO_COMMAND   0b1100
 #define LIST_COMMAND   0b0001
 
-#define IS_MESSAGE(c) (c & MESSAGE_FLAG) == MESSAGE_FLAG
+#define IS_MESSAGE(c) ((c & MESSAGE_FLAG) == MESSAGE_FLAG)
 
 typedef struct user_command_t {
     device_id_t target;

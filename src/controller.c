@@ -4,7 +4,7 @@
 
 // - Device data -
 device_id_t id = CONTROLLER_ID;
-device_id_t last_device_id = CONTROLLER_ID + 1;
+device_id_t last_device_id = CONTROLLER_ID;
 
 // - Ncurses data -
 bool redirect;
@@ -48,6 +48,8 @@ int main(int argc, char *argv[]) {
         print_error(STDERR_FILENO, error_code, id, "while starting ncurses");
     }
 
+    // TODO: start read responses thread
+
     output("Controller ID: %d", id);
     output("Available commands:");
     output("- add <type>");
@@ -60,26 +62,30 @@ int main(int argc, char *argv[]) {
 
     while(!force_exit) {
         input(user_buffer, USER_BUFFER_SIZE);
-        error_code = parse_user_command(&user_command, user_buffer);
-        if(IS_ERROR(error_code)) {
-            print_error(STDERR_FILENO, error_code, id, "while parsing user command");
-            continue;
-        }
-        error_code = check_user_command(&user_command);
-        if(IS_ERROR(error_code)) {
-            print_error(STDERR_FILENO, error_code, id, "while parsing user command");
-            continue;
-        }
-        error_code = execute_user_command(&user_command);
-        if(IS_ERROR(error_code)) {
-            print_error(STDERR_FILENO, error_code, id, "while parsing user command");
-            continue;
-        }
+        error_code = process_user_command(&user_command, user_buffer);
         // TODO: check that it actually works, need to create the responses thread first
         output("Command code: %d, target: %d, argument: %d", user_command.code, user_command.target, user_command.argument);
     }
 
-    handle_shutdown(OK); // TODO: change passed error code
+    handle_shutdown(error_code);
+}
+
+error_code_t process_user_command(user_command_t *user_command, char *string) {
+    error_code_t error_code = parse_user_command(user_command, string);
+    if(IS_ERROR(error_code)) {
+        print_error(STDERR_FILENO, error_code, id, "while parsing user command");
+        return error_code;
+    }
+    error_code = check_user_command(user_command);
+    if(IS_ERROR(error_code)) {
+        print_error(STDERR_FILENO, error_code, id, "while checking user command");
+        return error_code;
+    }
+    error_code = execute_user_command(user_command);
+    if(IS_ERROR(error_code)) {
+        print_error(STDERR_FILENO, error_code, id, "while executing user command");
+    }
+    return error_code;
 }
 
 error_code_t parse_user_command(user_command_t *user_command, char *string) {
@@ -121,6 +127,7 @@ error_code_t parse_user_command(user_command_t *user_command, char *string) {
         }
         else if(strcmp(token, "del") == 0) {
             user_command->code = DELETE_COMMAND;
+            user_command->message_code = DELETE;
         }
         else {
             error_code = INVALID_COMMAND;
@@ -271,6 +278,7 @@ error_code_t check_user_command(user_command_t *user_command) {
     if(IS_DELETE(user_command->message_code) && user_command->target == CONTROLLER_ID) { // Delete of everything
         return OK;
     }
+    output("Non delete");
     // Check that destination exists and eventually that the device type is compatible
     if(pthread_mutex_lock(&data_mutex) < 0) {
         return UNABLE_TO_LOCK_MUTEX;
@@ -335,7 +343,9 @@ error_code_t check_user_command(user_command_t *user_command) {
             parent = find_routing_data(routing_table, parent->parent_id);
         }
     }
-    next_hop_fd = target->next_hop_fd;
+    if(!IS_ERROR(error_code)) {
+        next_hop_fd = target->next_hop_fd;
+    }
     if(pthread_mutex_unlock(&data_mutex) < 0) {
         force_exit = true;
         return UNABLE_TO_LOCK_MUTEX;
@@ -392,8 +402,14 @@ error_code_t execute_add_command(device_type_t type) {
         if(pid < 0) {
             return UNABLE_TO_FORK;
         }
-        int fd = open(pipe_name, O_WRONLY); // Blocks until the device opens it in read mode
-        if(fd < 0) {
+        /*
+         Pipe is opened in read-write so the open doesn't block, this because the child can
+         encounter errors before opening it and keep the Controller blocked
+         It is then put in write only with the `O_CLOEXEC` flag so that it's automatically closed on exec
+        */
+        int fd;
+        if((fd = open(pipe_name, O_RDWR)) < 0
+            || fcntl(fd, F_SETFD, O_WRONLY | O_CLOEXEC)) {
             return UNABLE_TO_OPEN_PIPE;
         }
         if(pthread_mutex_lock(&data_mutex) < 0) {
@@ -420,7 +436,7 @@ error_code_t execute_add_command(device_type_t type) {
         execv(full_path, arguments);
         // If here the exec failed
         print_error(STDERR_FILENO, UNABLE_TO_EXEC, new_id, "after fork");
-        exit(UNABLE_TO_EXEC);
+        exit(UNABLE_TO_EXEC); // Exit is then detected with `SIGCHLD`
     }
 }
 
@@ -430,7 +446,10 @@ error_code_t execute_delete_command() {
     }
     // Loop all direct children
     routing_data_t *direct = find_direct_routing_data(routing_table, id, NULL);
-    error_code_t error_code;
+    error_code_t error_code = OK;
+    if(direct == NULL) { // No children, can directly terminate
+        force_exit = true;
+    }
     while(direct != NULL) {
         request.destination = direct->id;
         next_hop_fd = direct->next_hop_fd;
@@ -501,11 +520,37 @@ void handle_shutdown(error_code_t error) {
             print_error(STDERR_FILENO, error_code, id, "while closing ncurses");
         }
     }
-    // TODO: send `SIGTERM` to all devices if any
+    tmp = shutdown_devices();
+    if(IS_ERROR(tmp)) {
+        error_code = tmp;
+        print_error(STDERR_FILENO, error_code, id, "while cleaning up devices");
+    }
     if(!IS_ERROR(error_code)) {
         error_code = error;
     }
     exit(error_code);
+}
+
+error_code_t shutdown_devices() {
+    // About to shutdown, mutex not used to read data as it may be locked and/or not working
+    routing_data_t *device = find_all_routing_data(routing_table, id, NULL);
+    char pipe_name[PIPE_NAME_MAX_LENGTH];
+    error_code_t error_code = OK;
+    while(device != NULL) {
+        if(kill(device->pid, SIGTERM) < 0) {
+            error_code = UNABLE_TO_SEND_SIGNAL;
+        }
+
+        close(device->next_hop_fd); // Not checking for errors, could be already closed
+        if(IS_ERROR(create_fifo_name(device->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
+            || (remove(pipe_name) < 0 && errno != ENOENT)) {
+            // Could not remove, not because the file doesn't exist
+            error_code = UNABLE_TO_REMOVE_PIPE;
+        }
+
+        device = find_all_routing_data(routing_table, id, device);
+    }
+    return error_code;
 }
 
 void sigterm_handler() {
@@ -540,7 +585,7 @@ error_code_t start_ncurses(int argc, char *argv[]) {
 
     error_code = create_windows();
 
-    if(pthread_create(&stderr_thread, NULL, stderr_routine, NULL) < 0) { // TODO: currently is an attached thread, check how to make it exit
+    if(pthread_create(&stderr_thread, NULL, stderr_routine, NULL) < 0) {
         return UNABLE_TO_CREATE_THREAD;
     }
     return error_code;
@@ -609,21 +654,11 @@ error_code_t create_windows() {
 void* stderr_routine(void *arg) {
     (void)arg; // Unused parameter
 
-    int err;
-
     char buffer[STDERR_BUFFER_SIZE];
-    char tmp;
-    int i = 0;
-    while((err = read(stderr_read_fd, &tmp, 1)) > 0) { // TODO: maybe change to use `fread`
-        if(tmp == '\n' || tmp == '\0' || i == STDERR_BUFFER_SIZE - 1) { // TODO: fix lost char
-            buffer[i] = '\0';
-            output("%s", buffer);
-            i = 0;
-        }
-        else {
-            buffer[i] = tmp;
-            i++;
-        }
+    FILE *stderr_file = fdopen(stderr_read_fd, "r");
+    while(fgets(buffer, STDERR_BUFFER_SIZE, stderr_file) != NULL) {
+        buffer[strlen(buffer) - 1] = '\0'; // remove new line automatically inserted while printing
+        output("%s", buffer);
     }
     
     pthread_exit(NULL);

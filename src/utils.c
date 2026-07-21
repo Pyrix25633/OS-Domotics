@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <errno.h>
 
 size_t string_length(char *string, size_t max_length) {
     unsigned i;
@@ -110,7 +111,8 @@ error_code_t end_device_fifos(device_id_t device_id, int rcv_requests_fd, int sn
             error_code = UNABLE_TO_CLOSE_PIPE;
         }
         if(IS_ERROR(create_fifo_name(device_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
-            || remove(name) < 0) {
+            || (remove(name) < 0 && errno != ENOENT)) {
+            // Could not remove, not because the file doesn't exist
             error_code = UNABLE_TO_REMOVE_PIPE;
         }
     }
@@ -175,5 +177,5 @@ void create_executable_name(device_type_t type, char path[EXECUTABLE_NAME_MAX_LE
             strcpy(name, "fridge");
         }
     }
-    snprintf(name, EXECUTABLE_NAME_MAX_LENGTH, "./bin/%s", name);
+    snprintf(path, EXECUTABLE_NAME_MAX_LENGTH, "./bin/%s", name);
 }

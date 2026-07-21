@@ -18,8 +18,8 @@ void print_error(int fd, int error_code, int device_id, char *message) {
     char source[ERROR_SOURCE_SIZE];
     switch(device_id) {
         case NO_ID:                 strcpy(source, "no ID");                      break;
-        case MANUAL_INTERACTION_ID: strcpy(source, "manual interaction program"); break;
-        case CONTROLLER_ID:         strcpy(source, "controller");                 break;
+        case MANUAL_INTERACTION_ID: strcpy(source, "Manual Interaction Program"); break;
+        case CONTROLLER_ID:         strcpy(source, "Controller");                 break;
         default:                    sprintf(source, "device %u", device_id);
     }
     char msg[ERROR_MSG_SIZE] = "";
@@ -71,6 +71,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         case UNABLE_TO_SET_SIGHANDLER: strcpy(info, "unable to set signal handler"); break;
         case UNABLE_TO_FORK:           strcpy(info, "unable to fork");               break;
         case UNABLE_TO_EXEC:           strcpy(info, "unable to exec");               break;
+        case UNABLE_TO_SEND_SIGNAL:    strcpy(info, "unable to send signal");        break;
 
         case UNABLE_TO_CREATE_THREAD:  strcpy(info, "unable to create thread");      break;
         case UNABLE_TO_CANCEL_THREAD:  strcpy(info, "unable to cancel thread");      break;

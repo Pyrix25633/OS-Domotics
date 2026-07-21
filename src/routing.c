@@ -134,6 +134,7 @@ void remove_routing_data(routing_table_t table, device_id_t id, device_id_t pare
 void insert_routing_data_in_bucket(routing_data_t **bucket, routing_data_t *data) {
     if(*bucket == NULL) { // Empty bucket
         *bucket = data;
+        data->next = NULL;
     }
     else {
         routing_data_t *previous = NULL;

@@ -55,6 +55,7 @@ typedef u_int8_t error_code_t;
 #define UNABLE_TO_SET_SIGHANDLER 0x32
 #define UNABLE_TO_FORK           0x33
 #define UNABLE_TO_EXEC           0x34
+#define UNABLE_TO_SEND_SIGNAL    0x35
 
 // - CAUSE RELATED TO THREADS -
 
