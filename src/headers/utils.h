@@ -18,6 +18,7 @@
 #define EXECUTABLE_NAME_MAX_LENGTH 16
 #define PIPE_PERMISSIONS           0660
 #define NO_FILE_DESCRIPTOR         -1
+#define TIME_SIZE                  8
 
 // Pipes
 
@@ -173,6 +174,14 @@ void simulate_processing_time();
  * `-CODE_FORMAT_ERROR` if the time is not correctly formatted
  */
 int parse_time(char *time);
+
+/**
+ * Formats string in `"<hours>:<minutes>"` from number of minutes
+ * 
+ * @param time String where to put the formatted time, of size `TIME_SIZE`
+ * @param minutes Number of minutes
+ */
+void format_time(char time[TIME_SIZE], u_int16_t minutes);
 
 /**
  * Creates the executable name for `exec`

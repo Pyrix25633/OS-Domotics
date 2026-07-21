@@ -86,19 +86,22 @@ typedef struct response_t {
 
 // Response argument positions
 
-#define STATE_ARGUMENT           0
-#define PARENT_ID_ARGUMENT       0
-#define CHILD_ID_ARGUMENT        0
-#define REGISTRY_ARGUMENT        0
-#define OPEN_SECONDS_ARGUMENT    1
-#define ON_SECONDS_ARGUMENT      1
-#define DEVICE_TYPE_ARGUMENT     1
-#define AUTOCLOSE_DELAY_ARGUMENT 2
-#define BEGIN_ARGUMENT           2
-#define FILL_PERCENTAGE_ARGUMENT 3
-#define END_ARGUMENT             3
-#define THERMOSTAT_ARGUMENT      4
-#define TEMPERATURE_ARGUMENT     5
+#define STATE_ARGUMENT             0
+#define PARENT_ID_ARGUMENT         0
+#define CHILD_ID_ARGUMENT          0
+#define REGISTRY_ARGUMENT          0
+#define ADDITIONAL_SWITCH_ARGUMENT 0
+#define ADDITIONAL_DELETE_ARGUMENT 0
+#define OPEN_SECONDS_ARGUMENT      1
+#define ON_SECONDS_ARGUMENT        1
+#define DEVICE_TYPE_ARGUMENT       1
+#define AUTOCLOSE_DELAY_ARGUMENT   2
+#define BEGIN_ARGUMENT             2
+#define ADDITIONAL_INFO_ARGUMENT   2
+#define FILL_PERCENTAGE_ARGUMENT   3
+#define END_ARGUMENT               3
+#define THERMOSTAT_ARGUMENT        4
+#define TEMPERATURE_ARGUMENT       5
 
 /**
  * Parses a string request and puts information in the request data structure

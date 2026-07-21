@@ -507,6 +507,159 @@ void output_device(routing_data_t *device) {
     output("%s, ID: %d, Parent ID: %d, PID: %d", type, device->id, device->parent_id, device->pid);
 }
 
+void output_response(response_t *response) {
+    char user_message[USER_MESSAGE_SIZE];
+    char response_status[RESPONSE_STATUS_SIZE];
+    char device_type[DEVICE_TYPE_SIZE];
+    command_code_t code = response->command_code;
+    routing_data_t *source = find_routing_data(routing_table, response->source);
+    if(source == NULL) {
+        output("Response from unknown device with source ID: %u", response->source);
+        return;
+    }
+    format_device_type(source->type, device_type);
+    if(IS_ERROR(response->response_code)) {
+        char type[ERROR_TYPE_SIZE];
+        char info[ERROR_INFO_SIZE];
+        set_error_type_info(response->response_code, type, info);
+        snprintf(response_status, RESPONSE_STATUS_SIZE, "failed, %s error: 0x%2x %s", type, response->response_code, info);
+    }
+    else {
+        strcpy(response_status, "successful");
+    }
+    if(IS_SWITCH(code)) {
+        snprintf(user_message, USER_MESSAGE_SIZE, "switch %s %s",
+            SWITCH_LABEL(code) == SWITCH_POWER ? "power" : (SWITCH_LABEL(code) == SWITCH_OPEN ? "open" : "close"),
+            SWITCH_POSITION(code) == POSITION_ON ? "on" : "off");
+    }
+    else if(IS_INFO(code)) {
+        if(IS_ERROR(response->response_code)) {
+            strcpy(user_message, "info");
+        }
+        else {
+            format_info_user_message(response, user_message, source->type);
+            strcpy(response_status, "");
+        }
+    }
+    else if(IS_DELETE(code)) {
+        strcpy(user_message, "delete");
+    }
+    else if(IS_LINK(code)) {
+        if(LINK_SUBCOMMAND(code) == LINK_CHANGE_PARENT) {
+            snprintf(user_message, USER_MESSAGE_SIZE, "change parent to %u", response->arguments[PARENT_ID_ARGUMENT]);
+        }
+        else {
+            snprintf(user_message, USER_MESSAGE_SIZE, "remove child %d", response->arguments[CHILD_ID_ARGUMENT]);
+        }
+    }
+    else if(IS_REGISTRY(code)) {
+        format_set_user_message(response, user_message);
+    }
+    else {
+        strcpy(user_message, "unknown command");
+    }
+    output("%s with ID %u: %s %s", device_type, source->id, user_message, response_status);
+}
+
+void format_info_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE], device_type_t type) {
+    control_device_state_t state = response->arguments[STATE_ARGUMENT];
+    u_int16_t time = response->arguments[OPEN_SECONDS_ARGUMENT]; // Or `ON_SECONDS_ARGUMENT`
+    char state_string[16];
+    if(state == STATE_MANUAL_OVERRIDE) {
+        strcpy(state_string, "manual override");
+    }
+    else if(state == UNDEFINED_STATE) {
+        strcpy(state_string, "undefined");
+    }
+    else if(IS_BULB_LIKE(type)) {
+        if(state == STATE_ON) {
+            strcpy(state_string, "on");
+        }
+        else {
+            strcpy(state_string, "off");
+        }
+    }
+    else {
+        if(state == STATE_OPEN) {
+            strcpy(state_string, "open");
+        }
+        else {
+            strcpy(state_string, "closed");
+        }
+    }
+    if(IS_BULB(type)) {
+        snprintf(user_message, USER_MESSAGE_SIZE, "state: %s, last time on: %um", state_string, time/60);
+    }
+    else if(IS_WINDOW(type)) {
+        snprintf(user_message, USER_MESSAGE_SIZE, "state: %s, last time open: %um", state_string, time/60);
+    }
+    else if(IS_FRIDGE(type)) {
+        snprintf(user_message, USER_MESSAGE_SIZE, "state: %s, last time open: %us, delay: %us, percentage: %u%%, thermostat: %u°C, temperature: %.1f°C",
+            state_string, time, response->arguments[AUTOCLOSE_DELAY_ARGUMENT], response->arguments[FILL_PERCENTAGE_ARGUMENT],
+            response->arguments[THERMOSTAT_ARGUMENT], response->arguments[TEMPERATURE_ARGUMENT]/10.0);
+    }
+    else {
+        char intermediate[RESPONSE_STATUS_SIZE];
+        if(IS_BULB_LIKE(type)) {
+            snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s, max last time on: %um", state_string, time/60);
+        }
+        else if(IS_WINDOW_LIKE(type)) {
+            snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s, max last time open: %um", state_string, time/60);
+        }
+        else if(IS_FRIDGE_LIKE(type)) {
+            snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s, max last time open: %us", state_string, time);
+        }
+        else {
+            snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s", state_string);
+        }
+        if(IS_HUB(type)) {
+            char child_error[8];
+            snprintf(child_error, 8, "0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
+            snprintf(user_message, RESPONSE_STATUS_SIZE, "%s%s", intermediate,
+                response->arguments_size == 3 ? child_error : "");
+        }
+        else { // TODO: check if other data is given
+            char begin[TIME_SIZE];
+            char end[TIME_SIZE];
+            format_time(begin, response->arguments[BEGIN_ARGUMENT]);
+            format_time(end, response->arguments[END_ARGUMENT]);
+            snprintf(user_message, USER_MESSAGE_SIZE, "%s, begin: %s, end: %s", intermediate, begin, end);
+        }
+    }
+}
+
+void format_set_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE]) {
+    char label_string[16];
+    char value_string[16];
+    command_code_t code = response->command_code;
+    u_int16_t value = response->arguments[REGISTRY_ARGUMENT];
+    if(REGISTRY_SUBCOMMAND(code) == REGISTRY_BEGIN) {
+        strcpy(label_string, "begin");
+        format_time(value_string, value);
+    }
+    else if(REGISTRY_SUBCOMMAND(code) == REGISTRY_END) {
+        strcpy(label_string, "end");
+        format_time(value_string, value);
+    }
+    else if(REGISTRY_SUBCOMMAND(code) == REGISTRY_DELAY) {
+        strcpy(label_string, "delay");
+        snprintf(value_string, 16, "%us", value);
+    }
+    else if(REGISTRY_SUBCOMMAND(code) == REGISTRY_PERCENTAGE) {
+        strcpy(label_string, "percentage");
+        snprintf(value_string, 16, "%u%%", value);
+    }
+    else if(REGISTRY_SUBCOMMAND(code) == REGISTRY_THERMOSTAT) {
+        strcpy(label_string, "thermostat");
+        snprintf(value_string, 16, "%u°C", value);
+    }
+    else {
+        strcpy(label_string, "unknown");
+        strcpy(value_string, "undefined");
+    }
+    snprintf(user_message, USER_MESSAGE_SIZE, "set registry %s to %s", label_string, value_string);
+}
+
 error_code_t write_pipe() {
     error_code_t error_code = format_request(&request, request_buffer, MAX_REQUEST_SIZE);
     if(IS_ERROR(error_code)) {
@@ -531,12 +684,27 @@ void* responses_routine(void *arg) {
             force_exit = true;
             break; // Fatal error, cannot receive responses from devices
         }
-        // TODO: better printing for user, also use received data in some occasions
-        output(response_buffer);
+        error_code = parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
+        if(IS_ERROR(error_code)) {
+            print_error(STDERR_FILENO, error_code, id, "while parsing response");
+            continue;
+        }
+        if(pthread_mutex_lock(&data_mutex) < 0) {
+            error_code = UNABLE_TO_LOCK_MUTEX;
+            print_error(STDERR_FILENO, error_code, id, "after receiving response");
+            continue;
+        }
+        // TODO: use received data to update routing
+        output_response(&response);
+        if(pthread_mutex_lock(&data_mutex) < 0) {
+            error_code = UNABLE_TO_UNLOCK_MUTEX;
+            print_error(STDERR_FILENO, error_code, id, "after processing response");
+            force_exit = true;
+        }
     }
     
     // Then this thread makes the entire Controller exit
-    handle_shutdown(OK, true); // TODO: Change
+    handle_shutdown(OK, error_code);
     pthread_exit(NULL); // Not really used, just to suppress compiler warning
 }
 

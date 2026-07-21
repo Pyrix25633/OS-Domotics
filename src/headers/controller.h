@@ -23,11 +23,12 @@
 #include <stdarg.h>
 #include <errno.h>
 
-#define STDERR_PIPE_NAME "./ipc/stderr.fifo"
-#define STDERR_BUFFER_SIZE 512
-#define USER_BUFFER_SIZE 64
-
-#define SCENARIO_FILE_NAME "./commands.scenario"
+#define STDERR_PIPE_NAME     "./ipc/stderr.fifo"
+#define STDERR_BUFFER_SIZE   512
+#define USER_BUFFER_SIZE     64
+#define RESPONSE_STATUS_SIZE 128
+#define USER_MESSAGE_SIZE    256
+#define SCENARIO_FILE_NAME   "./commands.scenario"
 
 #define CHECK_NO_OTHER_ARGUMENTS(last) strtok_r(NULL, " ", &last) == NULL ? OK : INVALID_COMMAND_ARGUMENT
 
@@ -222,6 +223,30 @@ error_code_t execute_scenario();
  * @param device Pointer to the device data
  */
 void output_device(routing_data_t *device);
+
+/**
+ * Outputs response data
+ * 
+ * @param response Response to be printed
+ */
+void output_response(response_t *response);
+
+/**
+ * Formats user message for received info response
+ * 
+ * @param response Received response
+ * @param user_message String where to put the formatted message, of size `USER_MESSAGE_SIZE`
+ * @param type Device type
+ */
+void format_info_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE], device_type_t type);
+
+/**
+ * Formats user message for received registry set response
+ * 
+ * @param response Received response
+ * @param user_message String where to put the formatted message, of size `USER_MESSAGE_SIZE`
+ */
+void format_set_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE]);
 
 /**
  * Sends command to device using the correct pipe, accessing routing information
