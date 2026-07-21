@@ -156,6 +156,12 @@ int parse_time(char *time) {
     return minutes + (hours * 60);
 }
 
+void format_time(char time[TIME_SIZE], u_int16_t minutes) {
+    u_int16_t hours = minutes / 60;
+    minutes %= 60;
+    snprintf(time, TIME_SIZE, "%u:%s%u", hours, minutes < 10 ? "0" : "", minutes);
+}
+
 void create_executable_name(device_type_t type, char path[EXECUTABLE_NAME_MAX_LENGTH], char name[EXECUTABLE_NAME_MAX_LENGTH]) {
     // No error should occur, the length is fixed and only constant strings are used
     if(IS_CONTROL(type)) {
