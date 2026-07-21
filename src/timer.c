@@ -236,6 +236,11 @@ bool handle_own_reply(response_t *child_response){
         //the child info reply already carries its live state in the first argument, the following positions
         //(num, begin, end) are the timer own and replace whatever the child put after the state
         pthread_mutex_lock(&data_mutex);
+        //a live state different from the last one the timer commanded means the child was switched manually,
+        //so a manual override is reported instead of a definite state (the next command clears it on its own)
+        if(child_response->arguments[STATE_ARGUMENT] != state){
+            child_response->arguments[STATE_ARGUMENT] = STATE_MANUAL_OVERRIDE;
+        }
         child_response->arguments[NUM_ARGUMENT] = 1; //the info is deferred only when the timer has a child
         child_response->arguments[BEGIN_ARGUMENT] = begin;
         child_response->arguments[END_ARGUMENT] = end;
