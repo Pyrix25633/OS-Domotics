@@ -13,7 +13,7 @@ WINDOW *input_win;
 
 // - Concurrency management data -
 
-pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely // ! check if used
+pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely
 pthread_t stderr_thread; // Used for reading from redirected `stderr`
 pthread_t responses_thread; // Used for reading device responses from pipe
 
@@ -26,6 +26,7 @@ char user_buffer[USER_BUFFER_SIZE];
 int rcv_responses_fd;
 int next_hop_fd;
 volatile bool force_exit = false;
+volatile bool pending_shutdown = false;
 char request_buffer[MAX_REQUEST_SIZE];
 char response_buffer[MAX_RESPONSE_SIZE];
 request_t request;
@@ -304,7 +305,7 @@ error_code_t check_user_command(user_command_t *user_command) {
     if(!IS_MESSAGE(user_command->code)) { // Nothing else to check
         return OK;
     }
-    if(IS_DELETE(user_command->message_code) && user_command->target == CONTROLLER_ID) { // Delete of everything
+    if(IS_DELETE(user_command->message_code) && user_command->target == id) { // Delete of everything
         return OK;
     }
     // Check that destination exists and eventually that the device type is compatible
@@ -350,7 +351,7 @@ error_code_t check_user_command(user_command_t *user_command) {
         if(user_command->target == user_command->argument) { // Cannot link to itself
             error_code = LINKING_PARENT_TO_CHILD;
         }
-        if(user_command->argument == CONTROLLER_ID) { // Controller is surely type compatible and not one of its children
+        if(user_command->argument == id) { // Controller is surely type compatible and not one of its children
             error_code = OK;
         }
         routing_data_t *parent = find_routing_data(routing_table, user_command->argument);
@@ -385,12 +386,12 @@ error_code_t execute_user_command(user_command_t *user_command) {
     if(IS_MESSAGE(user_command->code)) {
         request.command_code = user_command->message_code;
         request.argument = user_command->argument;
-        if(user_command->code == DELETE_COMMAND && user_command->target == CONTROLLER_ID) { // Request delete of all direct children
+        if(user_command->code == DELETE_COMMAND && user_command->target == id) { // Request delete of all direct children
             return execute_delete_command();
         }
         else { // Forward request to destination
             request.destination = user_command->target;
-            return write_pipe();
+            return write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, next_hop_fd);
         }
     }
     else {
@@ -412,7 +413,7 @@ void execute_list_command() {
     u_int16_t count = 0;
     output("Active devices:");
     while(current != NULL) { // Loop all devices
-        if(current->parent_id == CONTROLLER_ID) { // Count as direct child
+        if(current->parent_id == id) { // Count as direct child
             count++;
         }
         output_device(current);
@@ -484,10 +485,10 @@ error_code_t execute_delete_command() {
     if(direct == NULL) { // No children, can directly terminate
         force_exit = true;
     }
+    pending_shutdown = true;
     while(direct != NULL) {
         request.destination = direct->id;
-        next_hop_fd = direct->next_hop_fd;
-        error_code = write_pipe(); // Send delete request to all direct children
+        error_code = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, direct->next_hop_fd); // Send delete request to all direct children
         direct = find_direct_routing_data(routing_table, id, direct);
     }
     if(pthread_mutex_unlock(&data_mutex) < 0) {
@@ -586,25 +587,117 @@ void output_response(response_t *response) {
     output("%s with ID %u: %s %s", device_type, source->id, user_message, response_status);
 }
 
-error_code_t update_with_response(response_t *response) {
-    if(IS_ERROR(response->response_code)) { // Nothing to update
+error_code_t update_with_link_response(response_t *response) {
+    if(LINK_SUBCOMMAND(response->command_code) == LINK_REMOVE_CHILD) { // Update type
+        routing_data_t *device = find_routing_data(routing_table, response->source);
+        if(device == NULL) {
+            return CHILD_NOT_FOUND;
+        }
+        if(response->arguments_size != 2) {
+            return RESPONSE_FORMAT_ERROR;
+        }
+        device->type = response->arguments[DEVICE_TYPE_ARGUMENT];
+        update_type_to_empty(device);
         return OK;
     }
-    if(IS_LINK(response->command_code)) {
-        if(LINK_SUBCOMMAND(response->command_code) == LINK_CHANGE_PARENT) {
-            // TODO: send link remove child
-            // TODO: update routing information
+    routing_data_t *source = find_routing_data(routing_table, response->source);
+    if(source == NULL) {
+        return CHILD_NOT_FOUND;
+    }
+    if(source->parent_id == response->arguments[PARENT_ID_ARGUMENT]) { // Parent didn't change
+        return OK;
+    }
+    error_code_t error_code = OK;
+    if(response->arguments[PARENT_ID_ARGUMENT] == id) { // Controller is the new parent
+        char pipe_name[PIPE_NAME_MAX_LENGTH];
+        int fd;
+        if(IS_ERROR(create_fifo_name(source->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
+            || (fd = open(pipe_name, O_WRONLY | O_CLOEXEC)) < 0) { // Shouldn't block because already open by child
+            error_code = UNABLE_TO_OPEN_PIPE;
         }
-        else {
-            // TODO: child removed, remove from routing data
-            // TODO: or maybe not, maybe useless since it's gonna remain a child of the Controller
+        error_code_t tmp = insert_direct_routing_data(routing_table, source->id, source->type, id, fd);
+        return IS_ERROR(tmp) ? tmp : error_code;
+    }
+
+    // TODO: work here
+
+    if(source->parent_id == id) { // Controller is the old parent
+        if(close(source->next_hop_fd) < 0) {
+            error_code = UNABLE_TO_CLOSE_PIPE;
         }
     }
-    else if(IS_DELETE(response->command_code)) {
-        // TODO: delete pipe
-        // TODO: remove from routing data
-        // TODO: check if it was del 0 and if it was the last
+    request_t request;
+    char request_buffer[MAX_REQUEST_SIZE];
+    request.destination = source->parent_id;
+    request.command_code = LINK | LINK_REMOVE_CHILD;
+    request.argument = source->id;
+    error_code = insert_indirect_routing_data(routing_table, source->id, source->type, response->arguments[PARENT_ID_ARGUMENT]);
+    
+    routing_data_t *old_parent = find_routing_data(routing_table, source->parent_id);
+    if(old_parent == NULL) {
+        return ROUTE_NOT_FOUND;
     }
+
+    error_code_t tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, old_parent->next_hop_fd);
+    return IS_ERROR(tmp) ? tmp : error_code;
+}
+
+error_code_t update_with_delete_response(response_t *response) {
+    routing_data_t *device = find_routing_data(routing_table, response->source);
+    if(device == NULL) {
+        return CHILD_NOT_FOUND;
+    }
+    error_code_t error_code;
+    // No need to handle cascading deletion here, it is already handled by Hub and Timer
+    if(device->parent_id == id) { // Pipe has to be closed
+        if(close(device->next_hop_fd) < 0) {
+            error_code = UNABLE_TO_CLOSE_PIPE;
+        }
+    }
+    // Remove pipe
+    char pipe_name[PIPE_NAME_MAX_LENGTH];
+    if(IS_ERROR(create_fifo_name(device->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
+        || remove(pipe_name) < 0) {
+        error_code = UNABLE_TO_REMOVE_PIPE;
+    }
+    routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
+    if(parent != NULL) {
+        update_type_to_empty(parent);
+    }
+    remove_routing_data(routing_table, device->id, device->parent_id);
+    if(pending_shutdown && find_direct_routing_data(routing_table, id, NULL) == NULL) { // Pending Controller delete and no more children
+        force_exit = true;
+    }
+    return error_code;
+}
+
+void update_type_to_empty(routing_data_t *device) {
+    routing_data_t *current = device;
+    while(current != NULL) { // Recalculate types up to topmost parent
+        if(IS_EMPTY(current->type)) {
+            return OK;
+        }
+
+        routing_data_t *child = find_direct_routing_data(routing_table, current->id, NULL);
+        bool empty = true;
+        while(child != NULL) {
+            if(!IS_EMPTY(child->type)) {
+                empty = false;
+                break;
+            }
+            child = find_direct_routing_data(routing_table, current->id, child);
+        }
+        
+        if(empty) {
+            current->type = IS_HUB(current->type) ? HUB_DEVICE : TIMER_DEVICE;
+        }
+
+        current = find_routing_data(routing_table, current->parent_id);
+    }
+}
+
+void update_type_to_not_empty(routing_data_t *device) {
+
 }
 
 void format_info_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE], device_type_t type) {
@@ -706,12 +799,12 @@ void format_set_user_message(response_t *response, char user_message[USER_MESSAG
     snprintf(user_message, USER_MESSAGE_SIZE, "set registry %s to %s", label_string, value_string);
 }
 
-error_code_t write_pipe() {
-    error_code_t error_code = format_request(&request, request_buffer, MAX_REQUEST_SIZE);
+error_code_t write_pipe(request_t *request, char *request_buffer, size_t size, int fd) {
+    error_code_t error_code = format_request(request, request_buffer, size);
     if(IS_ERROR(error_code)) {
         return error_code;
     }
-    if(write(next_hop_fd, request_buffer, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE) {
+    if(write(fd, request_buffer, size) != (ssize_t)size) {
         return UNABLE_TO_WRITE_PIPE;
     }
     return OK;
@@ -740,12 +833,19 @@ void* responses_routine(void *arg) {
             print_error(STDERR_FILENO, error_code, id, "after receiving response");
             continue;
         }
-        error_code = update_with_response(&response);
+
+        if(!IS_ERROR(response.response_code) && IS_LINK(response.command_code)) {
+            error_code = update_with_link_response(&response);
+        }
+        output_response(&response);
         if(IS_ERROR(error_code)) {
             print_error(STDERR_FILENO, error_code, id, "while parsing response");
         }
-        output_response(&response);
-        if(pthread_mutex_lock(&data_mutex) < 0) {
+        if(!IS_ERROR(response.response_code) && IS_DELETE(response.command_code)) {
+            error_code = update_with_delete_response(&response);
+        }
+
+        if(pthread_mutex_unlock(&data_mutex) < 0) {
             error_code = UNABLE_TO_UNLOCK_MUTEX;
             print_error(STDERR_FILENO, error_code, id, "after processing response");
             force_exit = true;
@@ -753,7 +853,7 @@ void* responses_routine(void *arg) {
     }
     
     // Then this thread makes the entire Controller exit
-    handle_shutdown(OK, error_code);
+    handle_shutdown(error_code, true);
     pthread_exit(NULL); // Not really used, just to suppress compiler warning
 }
 
@@ -827,6 +927,13 @@ error_code_t shutdown_devices() {
             || (remove(pipe_name) < 0 && errno != ENOENT)) {
             // Could not remove, not because the file doesn't exist
             error_code = UNABLE_TO_REMOVE_PIPE;
+        }
+        if(IS_CONTROL(device->type)) {
+            if(IS_ERROR(create_fifo_name(device->id, DIRECTION_UP, pipe_name, PIPE_NAME_MAX_LENGTH))
+                || (remove(pipe_name) < 0 && errno != ENOENT)) {
+                // Could not remove, not because the file doesn't exist
+                error_code = UNABLE_TO_REMOVE_PIPE;
+            }
         }
 
         device = find_all_routing_data(routing_table, id, device);

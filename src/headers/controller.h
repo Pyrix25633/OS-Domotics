@@ -244,13 +244,48 @@ void output_device(routing_data_t *device);
 void output_response(response_t *response);
 
 /**
- * Uses received response mainly to update routing data
+ * Uses received link response mainly to update routing data
  * 
  * @param response The received response
  * 
- * @returns // TODO
+ * @returns `CHILD_NOT_FOUND` if the device could not be found,
+ * `RESPONSE_FORMAT_ERROR` if the response did not include the new type,
+ * `UNABLE_TO_OPEN_PIPE` if a pipe for the new direct child could not be opened,
+ * `UNABLE_TO_ALLOCATE_HEAP` if the routing data could not be updated,
+ * `UNABLE_TO_CLOSE_PIPE` if the pipe of the old direct child could not be closed,
+ * `ROUTE_NOT_FOUND` if the route to the old parent could not be found,
+ * `BUFFER_TOO_SHORT` if the formatted request does not fit in the buffer,
+ * `REQUEST_FORMAT_ERROR` if there was an error formatting the request,
+ * `UNABLE_TO_WRITE_PIPE` if the write failed,
+ * `OK` otherwise
  */
-error_code_t update_with_response(response_t *response);
+error_code_t update_with_link_response(response_t *response);
+
+/**
+ * Uses received delete response mainly to update routing data
+ * 
+ * @param response The received response
+ * 
+ * @returns `CHILD_NOT_FOUND` if the device could not be found,
+ * `UNABLE_TO_CLOSE_PIPE` if the pipe of the old direct child could not be closed,
+ * `UNABLE_TO_REMOVE_PIPE` if the pipe could not be removed,
+ * `OK` otherwise
+ */
+error_code_t update_with_delete_response(response_t *response);
+
+/**
+ * Updates the devices type to empty if possible
+ * 
+ * @param device Device that was updated
+ */
+void update_type_to_empty(routing_data_t *device);
+
+/**
+ * Updates the devices type to not empty if possible
+ * 
+ * @param device Device that was updated
+ */
+void update_type_to_not_empty(routing_data_t *device);
 
 /**
  * Formats user message for received info response
@@ -270,14 +305,19 @@ void format_info_user_message(response_t *response, char user_message[USER_MESSA
 void format_set_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE]);
 
 /**
- * Sends command to device using the correct pipe, accessing routing information
+ * Sends command to device using the correct pipe
+ * 
+ * @param request Request to send
+ * @param request_buffer Buffer where to put the formatted request
+ * @param size Size of the buffer
+ * @param fd File descriptor to use to send the request
  * 
  * @returns `BUFFER_TOO_SHORT` if the formatted request does not fit in the buffer,
  * `REQUEST_FORMAT_ERROR` if there was an error formatting the request,
  * `UNABLE_TO_WRITE_PIPE` if the write failed,
  * `OK` otherwise
  */
-error_code_t write_pipe();
+error_code_t write_pipe(request_t *request, char *request_buffer, size_t size, int fd);
 
 /**
  * Function that the responses thread executes
