@@ -97,6 +97,11 @@ error_code_t send_child_switch(bool activate);
 void *schedule_handler(void *arg);
 
 /**
+ * Cancels the schedule thread and starts a new one, so it re-reads the current begin and end times
+ */
+void reschedule();
+
+/**
  * Executes the command received from the pipe
  * @returns the error code that occurred while reading the request, `OK` otherwise
  */

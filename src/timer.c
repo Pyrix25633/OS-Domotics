@@ -435,15 +435,33 @@ void replay_child_add(){
     pthread_mutex_unlock(&data_mutex);
 }
 
+//cancels the schedule thread waiting on the old times and starts a new one that uses the current begin and end
+void reschedule(){
+    if(schedule_thread_running){
+        pthread_cancel(schedule_thread);
+        pthread_join(schedule_thread, NULL);
+        schedule_thread_running = false;
+    }
+    if(pthread_create(&schedule_thread, NULL, schedule_handler, NULL) != 0){
+        print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while restarting the schedule thread");
+        return;
+    }
+    schedule_thread_running = true;
+}
+
 //begin and end are minutes from midnight, the professor said that there are no timers across midnight
 //so the only invalid case is begin > end (as stated in the spec, section 2.2.8), so begin == end is allowed
 void create_registry_response(){
     response.arguments[REGISTRY_ARGUMENT] = request.argument; //to give always a feedback
     response.arguments_size = 1;
+    bool changed = false;
 
+    //begin and end are read by the schedule thread, so they are validated and updated under the lock
+    pthread_mutex_lock(&data_mutex);
     if(REGISTRY_SUBCOMMAND(request.command_code)==REGISTRY_BEGIN){
         if(request.argument <= end){ //end is always smaller than MINUTES_IN_A_DAY, so begin is too
             begin = request.argument;
+            changed = true;
         }
         else{
             response.response_code = INVALID_REQUEST_ARGUMENT;
@@ -452,6 +470,7 @@ void create_registry_response(){
     else if(REGISTRY_SUBCOMMAND(request.command_code)==REGISTRY_END){
         if(request.argument >= begin && request.argument < MINUTES_IN_A_DAY){
             end = request.argument;
+            changed = true;
         }
         else{
             response.response_code = INVALID_REQUEST_ARGUMENT;
@@ -461,7 +480,12 @@ void create_registry_response(){
         response.arguments_size = 0;
         response.response_code = UNEXPECTED_COMMAND;
     }
-    //TODO the schedule thread is waiting on the old times, it has to be woken up to use the new ones
+    pthread_mutex_unlock(&data_mutex);
+
+    //the schedule thread was sleeping on the old times, it is restarted so it uses the new begin or end
+    if(changed){
+        reschedule();
+    }
 }
 
 //the timer mirrors the state of its child, so a switch is propagated down and it also clears a manual override
