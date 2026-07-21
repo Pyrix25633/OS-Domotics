@@ -69,18 +69,12 @@ error_code_t top_down_handler(){
     int child_fd;
 
     response.source = id;
-    response.arguments_size = 0;
 
-    //trying to get the mutex
-    if(pthread_mutex_lock(&data_mutex) < 0){
-        error_code = UNABLE_TO_LOCK_MUTEX;
-        response.response_code = error_code;
-        response.command_code = NULL_COMMAND;
-        write_pipe_response(&response, response_buffer);
-        force_exit = true; //to force exit the other thread
-    }
-    else{//if i get it i will execute the critical section
         while(!force_exit){
+            is_request = false;
+            to_be_forwarded = false;
+            response.arguments_size = 0;
+
             error_code = read_pipe(rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE);
             if(!IS_ERROR(error_code)){
                 error_code = parse_request(&request, request_buffer, MAX_REQUEST_SIZE);
@@ -93,57 +87,76 @@ error_code_t top_down_handler(){
                 code = request.command_code;
                 response.command_code = code;
                 response.response_code = OK;
-                
-                if (has_children){
-                    if(request.destination == id){ //the destination is the parent
-                        if(IS_INFO(code)) {forward_request(&request, &to_be_forwarded, request_buffer);}
-                        else if(IS_SWITCH(code)) { create_switch(&request, &response, &to_be_forwarded, request_buffer); }
-                        else if(IS_LINK(code)) { create_link(&request, &response, &parent_changed); }
-                        else if(IS_DELETE(code)) { forward_request(&request, &to_be_forwarded, request_buffer); }
-                        else{
-                            response.response_code = UNEXPECTED_COMMAND;
-                        }
-                    }
-                    else{
-                        int temp = send_to_child(&response, request.destination);
-                        if(temp > 0) child_fd = temp;
-                        is_request = true;
-                    }
+
+                //trying to get the mutex
+                if(pthread_mutex_lock(&data_mutex) < 0){
+                    error_code = UNABLE_TO_LOCK_MUTEX;
+                    response.response_code = error_code;
                 }
                 else{
-                    if(request.destination == id){
-                        if(IS_INFO(code)){
-                            response.arguments_size = 1;
-                            response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
-                        }
-                        else if(IS_DELETE(code)){
-                            force_exit = true;
+                    if (has_children){
+                        if(request.destination == id){ //the destination is the parent
+                            if(IS_INFO(code)) {forward_request(&request, &to_be_forwarded, request_buffer);}
+                            else if(IS_SWITCH(code)) { create_switch(&request, &response, &to_be_forwarded, request_buffer); }
+                            else if(IS_LINK(code)) { create_link(&request, &response, &parent_changed); }
+                            else if(IS_DELETE(code)) { forward_request(&request, &to_be_forwarded, request_buffer); }
+                            else{
+                                response.response_code = UNEXPECTED_COMMAND;
+                            }
                         }
                         else{
-                            response.response_code = UNEXPECTED_COMMAND;
+                            int temp = send_to_child(&response, request.destination);
+                            if(temp >= 0) child_fd = temp;
+                            is_request = true;
                         }
                     }
                     else{
-                        response.response_code = CHILD_NOT_FOUND;
+                        if(request.destination == id){
+                            if(IS_INFO(code)){
+                                response.arguments_size = 1;
+                                response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
+                            }
+                            else if(IS_DELETE(code)){
+                                force_exit = true;
+                            }
+                            else{
+                                response.response_code = UNEXPECTED_COMMAND;
+                            }
+                        }
+                        else{
+                            response.response_code = CHILD_NOT_FOUND;
+                        }
                     }
-                }
+                    if(pthread_mutex_unlock(&data_mutex) < 0){
+                        error_code = UNABLE_TO_UNLOCK_MUTEX;
+                        response.response_code = error_code;
+                        force_exit = true;
+                    }
+                }                
+
                 if(!to_be_forwarded){
                     simulate_processing_time();
                     (is_request ? write_pipe_request(&request, request_buffer, child_fd) : write_pipe_response(&response, response_buffer));
                 }
-                if(parent_changed) {
-                    replay_history(&response, response_buffer);
-                    parent_changed = false;
+
+                if(pthread_mutex_lock(&data_mutex) < 0){
+                    error_code = UNABLE_TO_LOCK_MUTEX;
+                    response.response_code = error_code;
+                }
+                else {
+                    if (parent_changed) {
+                        replay_history(&response, response_buffer);
+                        parent_changed = false;
+                    }
+                    if(pthread_mutex_unlock(&data_mutex) < 0){
+                        error_code = UNABLE_TO_UNLOCK_MUTEX;
+                        response.response_code = error_code;
+                        write_pipe_response(&response, response_buffer);
+                        force_exit = true;
+                    }
                 }
             }  
         }
-        if(pthread_mutex_unlock(&data_mutex) < 0){
-            error_code = UNABLE_TO_UNLOCK_MUTEX;
-            response.response_code = error_code;
-            write_pipe_response(&response, response_buffer);
-            force_exit = true; //to force exit the other thread
-        }
-    }
     return error_code;
 }
 
@@ -175,10 +188,12 @@ void bottom_up_handler(){
                 if(pthread_mutex_lock(&data_mutex) < 0){
                     response.response_code = UNABLE_TO_LOCK_MUTEX;
                 }
-                link_response(&response);
-                if(pthread_mutex_unlock(&data_mutex) < 0){
-                    print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing mutex unlock request");
-                    force_exit = true;
+                else{
+                    link_response(&response);
+                    if(pthread_mutex_unlock(&data_mutex) < 0){
+                        print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing mutex unlock request");
+                        force_exit = true;
+                    }
                 }
             }
             else{
@@ -186,17 +201,19 @@ void bottom_up_handler(){
                 if(pthread_mutex_lock(&data_mutex) < 0){
                     response.response_code = UNABLE_TO_LOCK_MUTEX;
                 }
-                check_pending_complete(&response, &found, &is_complete, &solved_response);
-                if(pthread_mutex_unlock(&data_mutex) < 0){
-                    response.response_code = UNABLE_TO_UNLOCK_MUTEX;
-                    force_exit = true;
-                }                
+                else{
+                    check_pending_complete(&response, &found, &is_complete, &solved_response);
+                    if(pthread_mutex_unlock(&data_mutex) < 0){
+                        response.response_code = UNABLE_TO_UNLOCK_MUTEX;
+                        force_exit = true;
+                    }       
+                }         
                 if(found && is_complete && !force_exit){
                     if(IS_INFO(code)) {info_response(&response, &solved_response);}
                     else if(IS_SWITCH(code)) {switch_response(&response, &solved_response);}
                     else if(IS_DELETE(code)) {delete_response(&response, &solved_response);}
                     response.source = id;
-                    free_pending_response();
+                    free_pending_response(&solved_response);
                 }
             }
         }
@@ -209,7 +226,7 @@ void bottom_up_handler(){
 /**
  * It frees the space before allocated for the pending responses struct
  */
-void free_pending_response(){
+void free_pending_response(response_t *solved_response){
     free(pending_responses->pending_devices);
     if(pending_responses->next == NULL){
         free(pending_responses);
@@ -232,6 +249,7 @@ void handle_shutdown(error_code_t error) {
                 print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
                 break;
             }
+            current_child = find_direct_routing_data(routing_table, id, current_child);
         }
         if(!IS_ERROR(error_code)){
             remove_routing_data(routing_table, id, parent_id);
@@ -327,7 +345,7 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
     linked_list_t *current_pending = pending_responses;
     error_code_t error_code = OK;
 
-    while(current_pending->next != NULL){
+    while(current_pending != NULL){
         *is_complete = true;
         *found = false;
         if(current_pending->command_code == response->command_code){
@@ -446,7 +464,10 @@ error_code_t close_pipe(int fd){
 routing_data_t* find_direct_child(device_id_t child_id){
     routing_data_t *child = find_direct_routing_data(routing_table, id, NULL);
     while(child != NULL){
-        if(child->id == child_id) return child;
+        if(child->id == child_id){
+            return child;
+        }
+        child = find_direct_routing_data(routing_table, id, child);
     }
     return NULL;
 }
@@ -551,7 +572,7 @@ void write_pipe_response(response_t* response, char* buffer_write){
 }
 
 void write_pipe_request(request_t* request, char* buffer_write, int snd_request_fd){
-    error_code_t error_code = format_request(request, buffer_write, MAX_RESPONSE_SIZE);
+    error_code_t error_code = format_request(request, buffer_write, MAX_REQUEST_SIZE);
     if(IS_ERROR(error_code)){
         print_error(STDERR_FILENO, error_code, id, "while formatting request");
     }

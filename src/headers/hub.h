@@ -20,11 +20,6 @@
 #define ADDITIONAL_SWITCH_ARGUMENT 0
 #define ADDITIONAL_DELETE_ARGUMENT 0
 
-// - Macros -
-
-#define END_ALL_FIFOS end_device_fifos(id, rcv_requests_parent_fd, snd_responses_parent_fd, rcv_responses_children_fd)
-#define END_CHILDREN_FIFO end_device_fifos(id, NO_FILE_DESCRIPTOR, NO_FILE_DESCRIPTOR, rcv_responses_children_fd)
-
 typedef struct linked_list_t {
     command_code_t command_code;
     device_id_t *pending_devices;
