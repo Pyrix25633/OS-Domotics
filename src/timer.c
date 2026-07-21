@@ -25,6 +25,12 @@ device_id_t child_id;     //valid only if has_child is true
 device_type_t child_type; //needed to know which switch label to send to the child
 bool parent_changed = false; //set when a link changes the parent, so the child is replayed after the own response
 
+// - Mirroring data -
+
+bool awaiting_child_response = false; //shared: true while the timer waits for the child reply to its own request
+command_code_t awaited_command;       //shared: the command sent to the child, to match its reply in the bottom-up thread
+bool defer_response = false;          //main thread only: the response will come from the child reply, not from execute_command
+
 // - IPC data -
 
 int rcv_requests_fd;        //read is blocking       - pipe to receive requests from the parent or manual commands
@@ -193,8 +199,11 @@ void *child_responses_handler(void *arg){
         memcpy(parse_buffer, child_buffer, MAX_RESPONSE_SIZE);
         if(!IS_ERROR(parse_response(&child_response, parse_buffer, MAX_RESPONSE_SIZE))){
             acquire_child(&child_response);
+            //a reply to a request the timer sent for mirroring is turned into the timer own response, not forwarded
+            if(handle_own_reply(&child_response)){
+                continue;
+            }
         }
-        //TODO intercept the responses to the info and switch requests the timer sends to the child for mirroring
         //forward the child response to the parent; guarded because the main thread shares the parent pipe
         pthread_mutex_lock(&data_mutex);
         if(write(snd_responses_fd, child_buffer, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE){
@@ -203,6 +212,49 @@ void *child_responses_handler(void *arg){
         pthread_mutex_unlock(&data_mutex);
     }
     return NULL;
+}
+
+//if the child response is the reply to a request the timer made for mirroring, it is turned into the timer own
+//response (source set to the timer) and sent up, and true is returned so the caller does not forward it too
+bool handle_own_reply(response_t *child_response){
+    pthread_mutex_lock(&data_mutex);
+    bool ours = awaiting_child_response
+        && (child_response->command_code & COMMAND_MASK) == (awaited_command & COMMAND_MASK);
+    if(ours){
+        awaiting_child_response = false;
+    }
+    pthread_mutex_unlock(&data_mutex);
+    if(!ours){
+        return false;
+    }
+
+    child_response->source = id; //the parent gets the response from the timer, not from the child
+    if(IS_SWITCH(child_response->command_code)){
+        child_response->arguments_size = 0; //a switch response carries no arguments
+    }
+    else if(IS_INFO(child_response->command_code)){
+        //the child info reply already carries its live state in the first argument, the following positions
+        //(num, begin, end) are the timer own and replace whatever the child put after the state
+        pthread_mutex_lock(&data_mutex);
+        child_response->arguments[NUM_ARGUMENT] = 1; //the info is deferred only when the timer has a child
+        child_response->arguments[BEGIN_ARGUMENT] = begin;
+        child_response->arguments[END_ARGUMENT] = end;
+        pthread_mutex_unlock(&data_mutex);
+        child_response->arguments_size = MAX_TIMER_ARGUMENTS;
+    }
+
+    char buffer[MAX_RESPONSE_SIZE];
+    error_code_t error_code = format_response(child_response, buffer, MAX_RESPONSE_SIZE);
+    if(IS_ERROR(error_code)){
+        print_error(STDERR_FILENO, error_code, id, "while formatting the mirrored response");
+        return true;
+    }
+    pthread_mutex_lock(&data_mutex);
+    if(write(snd_responses_fd, buffer, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE){
+        print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending the mirrored response");
+    }
+    pthread_mutex_unlock(&data_mutex);
+    return true;
 }
 
 //builds the switch command for the child from its type and sends it down, the label depends on the child
@@ -289,6 +341,7 @@ error_code_t execute_command(){
     command_code_t code;
     response.command_code = NULL_COMMAND; //default, overwritten below when a valid request is parsed
     response.arguments_size = 0;
+    defer_response = false; //reset each command, set only when the response will come from the child reply
 
     error_code_t error_code = read_pipe();
     if(IS_ERROR(error_code)){
@@ -331,9 +384,12 @@ error_code_t execute_command(){
         }
     }
 
-    //the delay is applied before responding, for any command, error responses included
-    simulate_processing_time();
-    write_pipe();
+    //when deferred the response is sent by the child-responses thread on the child reply (delays overlap)
+    if(!defer_response){
+        //the delay is applied before responding, for any command, error responses included
+        simulate_processing_time();
+        write_pipe();
+    }
 
     //after the own change-parent response is sent, the child is replayed so the new parent rebuilds the branch
     if(parent_changed){
@@ -344,14 +400,38 @@ error_code_t execute_command(){
     return error_code;
 }
 
+//the child state can not be cached, so the info request is propagated to the child and its live state is
+//mirrored when it replies (in the bottom-up thread), which is what makes a manual override on the child visible
 void create_info_response(){
-    response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[BEGIN_ARGUMENT] = begin;
-    response.arguments[END_ARGUMENT] = end;
-    response.arguments_size = MAX_TIMER_ARGUMENTS;
-    //? the position 1 is not used by the timer, the positions of begin and end are shared with the fridge registry
-    response.arguments[1] = 0;
-    //TODO the state can not be cached, it has to be asked to the child to detect a manual override
+    //the child scalars are set by the child-responses thread, so they are snapshotted under the lock
+    pthread_mutex_lock(&data_mutex);
+    bool present = has_child;
+    int child_fd = snd_requests_child_fd;
+    device_id_t target = child_id;
+    pthread_mutex_unlock(&data_mutex);
+
+    if(!present){
+        //no child to query, the timer answers on its own with an undefined mirrored state, like the hub does
+        response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
+        response.arguments[NUM_ARGUMENT] = 0;
+        response.arguments[BEGIN_ARGUMENT] = begin;
+        response.arguments[END_ARGUMENT] = end;
+        response.arguments_size = MAX_TIMER_ARGUMENTS;
+        return;
+    }
+    //propagate the info down, rebuilt from the struct with the child as destination
+    request.destination = target;
+    error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
+    if(IS_ERROR(forward_code) || write(child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
+        response.response_code = UNABLE_TO_WRITE_PIPE;
+        return;
+    }
+    //the child reply is awaited: the info response is built and sent by the bottom-up thread, not here
+    pthread_mutex_lock(&data_mutex);
+    awaiting_child_response = true;
+    awaited_command = request.command_code;
+    pthread_mutex_unlock(&data_mutex);
+    defer_response = true;
 }
 
 void create_link_response(){
@@ -488,11 +568,48 @@ void create_registry_response(){
     }
 }
 
-//the timer mirrors the state of its child, so a switch is propagated down and it also clears a manual override
+//the timer mirrors the state of its child, so a switch is propagated down; the state becomes consistent after
+//the propagation, and the manual override is cleared because the mirrored state is set to the commanded one
 void create_switch_response(){
-    //TODO propagate the switch to the child, the label depends on its type
-    //(power for a bulb, open/close for a window or a fridge), so has_child and child_type are needed
-    response.response_code = UNEXPECTED_COMMAND; //temporary, until the child is handled
+    command_code_t code = request.command_code;
+    pthread_mutex_lock(&data_mutex);
+    bool present = has_child;
+    device_type_t type = child_type;
+    int child_fd = snd_requests_child_fd;
+    device_id_t target = child_id;
+    pthread_mutex_unlock(&data_mutex);
+    if(!present){
+        response.response_code = DEVICE_NOT_FOUND; //no child to mirror
+        return;
+    }
+    //the switch label must match the child type (power for a bulb, open or close for a window or a fridge)
+    bool valid = (IS_BULB_LIKE(type) && SWITCH_LABEL(code)==SWITCH_POWER)
+        || ((IS_WINDOW_LIKE(type) || IS_FRIDGE_LIKE(type))
+            && (SWITCH_LABEL(code)==SWITCH_OPEN || SWITCH_LABEL(code)==SWITCH_CLOSE));
+    if(!valid){
+        response.response_code = UNEXPECTED_COMMAND;
+        return;
+    }
+    //propagate the switch down, rebuilt from the struct with the child as destination
+    request.destination = target;
+    error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
+    if(IS_ERROR(forward_code) || write(child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
+        response.response_code = UNABLE_TO_WRITE_PIPE;
+        return;
+    }
+    //mirror the state the switch produces on the child; open/close in the off position is a no-op
+    pthread_mutex_lock(&data_mutex);
+    if(SWITCH_POSITION(code)==POSITION_ON){
+        state = (SWITCH_LABEL(code)==SWITCH_CLOSE) ? STATE_OFF : STATE_ON;
+    }
+    else if(SWITCH_LABEL(code)==SWITCH_POWER){
+        state = STATE_OFF;
+    }
+    //the child reply is awaited: the response is sent by the bottom-up thread, not here
+    awaiting_child_response = true;
+    awaited_command = code;
+    pthread_mutex_unlock(&data_mutex);
+    defer_response = true;
 }
 
 //opening in writing does not block because the child already opened its down pipe in reading at startup

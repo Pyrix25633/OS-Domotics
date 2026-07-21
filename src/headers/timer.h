@@ -18,7 +18,8 @@
 
 // Default values
 
-#define MAX_TIMER_ARGUMENTS     4    //state, begin and end, the position 1 is not used by the timer
+#define MAX_TIMER_ARGUMENTS     4    //state, num, begin and end
+#define NUM_ARGUMENT            1    //number of children (0 or 1), shares the position with the fridge autoclose delay
 #define MINUTES_IN_A_DAY        1440 //begin and end are minutes from midnight, so they must be less than this
 #define SECONDS_IN_A_DAY        (MINUTES_IN_A_DAY * 60) //used by the schedule thread to wait until the next day
 #define DEFAULT_BEGIN           0    //midnight, so any end is always greater than the default begin
@@ -78,6 +79,16 @@ void acquire_child(response_t *child_response);
  * @returns `NULL`
  */
 void *child_responses_handler(void *arg);
+
+/**
+ * Turns a child reply to a request the timer made for mirroring into the timer own response and sends it up
+ *
+ * @param child_response The response read from the child
+ *
+ * @returns `true` if the response was the awaited reply and has been handled (must not be forwarded),
+ * `false` otherwise
+ */
+bool handle_own_reply(response_t *child_response);
 
 /**
  * Builds the switch command for the child based on its type and sends it down the child requests pipe
