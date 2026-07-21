@@ -84,6 +84,14 @@ void acquire_child(response_t *child_response);
 void acquire_descendant(response_t *child_response);
 
 /**
+ * Removes a tracked descendant from the routing table when its delete response passes up, so the subtree
+ * replay does not re-announce deleted nodes, does nothing for a response that is not a delete of a descendant
+ *
+ * @param child_response The response read from the child
+ */
+void release_descendant(response_t *child_response);
+
+/**
  * Bottom-up thread body: reads the responses coming from the child and forwards them up to the parent
  * @param arg Unused
  * @returns `NULL`

@@ -223,6 +223,22 @@ void acquire_descendant(response_t *child_response){
     }
 }
 
+//a delete response of a tracked descendant means it (and its own subtree) is gone, so it is removed from the
+//routing table, keeping the subtree replay from re-announcing dead nodes to a new parent
+void release_descendant(response_t *child_response){
+    if(!(IS_DELETE(child_response->command_code))){
+        return;
+    }
+    pthread_mutex_lock(&data_mutex);
+    routing_data_t *node = find_routing_data(routing_table, child_response->source);
+    //only a deeper descendant is dropped here, the direct child lifecycle is handled by the remove-child link;
+    //remove_routing_data cascades, so removing the top of a deleted branch also drops all its descendants
+    if(node != NULL && child_response->source != child_id){
+        remove_routing_data(routing_table, child_response->source, node->parent_id);
+    }
+    pthread_mutex_unlock(&data_mutex);
+}
+
 //bottom-up thread: reads the responses coming from the child and forwards them up to the parent
 void *child_responses_handler(void *arg){
     (void)arg; //unused
@@ -243,6 +259,8 @@ void *child_responses_handler(void *arg){
             acquire_child(&child_response);
             //a change-parent response of a deeper descendant is recorded in the routing table for the subtree replay
             acquire_descendant(&child_response);
+            //a delete response of a tracked descendant drops it from the routing table
+            release_descendant(&child_response);
             //a reply to a request the timer sent for mirroring is turned into the timer own response, not forwarded
             if(handle_own_reply(&child_response)){
                 continue;
