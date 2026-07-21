@@ -80,6 +80,16 @@ void acquire_child(response_t *child_response);
 void *child_responses_handler(void *arg);
 
 /**
+ * Turns a child reply to a request the timer made for mirroring into the timer own response and sends it up
+ *
+ * @param child_response The response read from the child
+ *
+ * @returns `true` if the response was the awaited reply and has been handled (must not be forwarded),
+ * `false` otherwise
+ */
+bool handle_own_reply(response_t *child_response);
+
+/**
  * Builds the switch command for the child based on its type and sends it down the child requests pipe
  *
  * @param activate `true` to switch the child on (or open), `false` to switch it off (or close)
