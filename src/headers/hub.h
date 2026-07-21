@@ -18,9 +18,7 @@
 
 #define ADDITIONAL_INFO_ARGUMENT 2
 #define ADDITIONAL_SWITCH_ARGUMENT 0
-#define ADDITIONAL_DELETE_ARGUMENT 0 //TODO check
-
-#define CHILD_ERROR 0x11
+#define ADDITIONAL_DELETE_ARGUMENT 0
 
 // - Macros -
 
@@ -29,11 +27,11 @@
 
 typedef struct linked_list_t {
     command_code_t command_code;
-    device_id_t *requested;
-    size_t requested_size;
-    leaf_device_state_t state;
+    device_id_t *pending_devices;
+    size_t pending_devices_size;
+    control_device_state_t state;
     u_int16_t max_time;
-    linked_list_t *next;
+    struct linked_list_t *next;
     bool has_error;
 } linked_list_t;
 
@@ -129,7 +127,7 @@ void create_link(request_t *request, response_t *response, bool *parent_changed)
 
 
 /**
- * It's used to close a pipe to reach a direct child that has being moved 
+ * Closes a pipe used to reach a direct child that has being moved 
  *
  * @param child_id the id of the child
  * @returns
@@ -200,5 +198,100 @@ void write_pipe_response(response_t* response, char* buffer_write);
  * @param response_buffer the buffer to write the responses
  */
 void replay_history(response_t *response, char *response_buffer);
+
+/**
+ * It tries to find the child in the routing table, if it succeeds the routing information is removed,
+ * if it fails an error code is returned
+ * 
+ * @param child_id the child id to find its routing information
+ * @returns
+ *  - `OK` if it succeeds
+ * 
+ *  - `ROUTE_NOT_FOUND` if it fails
+ */
+error_code_t link_remove_child_received(device_id_t child_id);
+
+/**
+ * It adds the routing information of the new child, if it's a direct child it also open a pipe
+ * 
+ * @param response the received response, will be modified
+ */
+void add_child(response_t *response);
+
+/**
+ *  If a LINK_REMOVE_CHILD response arrives the routing table is changed otherwise it's a LINK_CHANGE_PARENT response
+ *  and new routing information need to be added to the routing table if it's a direct child a pipe is opened
+ * 
+ * @param response the received response, it will be modified
+ */
+void link_response(response_t *response);
+
+/**
+ * Checks if a response is still missing to complete a pending response, if it does the pending response is updated
+ * 
+ * If it's a delete response the routing table is also updated
+ * 
+ * If the response is from a control device the response code can be OK while the additional argument can provide an error
+ * so this is also checked
+ * 
+ * @param response the received response, it will be modified
+ * @param found it will be set as `true` if it was founded in the missing ones
+ * @param is_complete it will be set as `true` if the pending response is now complete and can be sent
+ * @param found_request it will be initialized with the pending response if it was missing
+ */
+void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *found_request);
+
+/**
+ * The pending response has be resolved and the arguments of the info response are set
+ * 
+ * @param response The response to modify in order to be sent later
+ * @param solved_response The solved pending response
+ */
+void info_response(response_t *response, linked_list_t *solved_response);
+
+/**
+ *  The pending response has be resolved and the arguments of the switch response are set
+ * 
+ * @param response The response to modify in order to be sent later
+ * @param solved_response The solved pending response
+ */
+void switch_response(response_t *response, linked_list_t *solved_response);
+
+/**
+ *  The pending response has be resolved and the arguments of the delete response are set
+ * 
+ * @param response The response to modify in order to be sent later
+ * @param solved_response The solved pending response
+ */
+void delete_response(response_t *response, linked_list_t *solved_response);
+
+/**
+ * It frees the space before allocated for the pending responses struct
+ */
+void free_pending_response();
+
+/**
+ * It receives the responses from the children and if the response given is not in the pending ones it will be forwarded upwards, otherwise
+ * it will be checked as arrived (`NO_ID`) and if all the children has given their response a cumulative response is done and sent upwards as the hub response
+ * 
+ */
+void bottom_up_handler();
+
+/**
+ * Handles the shutdown caused by a `SIGTERM` signal
+ */
+void sigterm_handler();
+
+/**
+ * Handles the shutdown caused by a `SIGPIPE` signal
+ */
+void sigpipe_handler();
+
+/**
+ * Handles the shutdown also cleaning up IPC files, best practice to do
+ * 
+ * @param error The error to handle
+ */
+void handle_shutdown(error_code_t error);
 
 #endif

@@ -5,41 +5,30 @@
 // - Explicit control device data -
 
 device_id_t id;
-control_device_state_t state; //to be determined, based on the children type (that has to be the same)
+device_type_t device_type; 
 
-//default it has to be hub
-//when i add the first child i do (device_type || device_leaf_type)
-device_type_t device_type; //to be determined at first add //TODO
-
-// mutex needed
 routing_table_t routing_table;
 u_int32_t children;
 bool has_children = false;
-linked_list_t *pending_requests = NULL;
+linked_list_t *pending_responses = NULL;
 
 // - Auxiliary device data -
 
 device_id_t parent_id = CONTROLLER_ID;
+volatile bool force_exit = false;
 
 // - IPC data -
 
 int rcv_requests_parent_fd;  //read is blocking       - pipe to receive requests from the parent or manual commands
 int snd_responses_parent_fd; //write is non blocking  - pipe to send responses to parent or manual commands
-
 //maybe the first write is blocking until one wants to read
 
 int rcv_responses_children_fd; // all the children write on a same pipe 
-
-volatile bool force_exit = false; //only the main thread can modify it
-bool eof = false;
 
 // - Thread -
 
 pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_t children_thread;
-
-//TODO when I have an end of file while reading i need to close the pipe and open another one
-//because reading continuously EOF cause some problems
 
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
@@ -48,12 +37,12 @@ int main(int argc, char *argv[]) {
     id = get_id_from_arguments(argc, argv);
     start_device_fifos(id,&rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
     srand(time(NULL));
-    init_routing_table(&routing_table);
+    init_routing_table(routing_table);
     device_type = HUB_DEVICE;
 
-    error_code_t error_code;
+    error_code_t error_code = OK;
 
-    if(pthread_create(&children_thread, NULL, bottom_up_handler, NULL) < 0){
+    if(pthread_create(&children_thread, NULL, bottom_up_handler, NULL) != 0){
         error_code = UNABLE_TO_CREATE_THREAD;
     }
     else{
@@ -84,9 +73,11 @@ error_code_t top_down_handler(){
 
     //trying to get the mutex
     if(pthread_mutex_lock(&data_mutex) < 0){
+        error_code = UNABLE_TO_LOCK_MUTEX;
         response.response_code = error_code;
         response.command_code = NULL_COMMAND;
         write_pipe_response(&response, response_buffer);
+        force_exit = true; //to force exit the other thread
     }
     else{//if i get it i will execute the critical section
         while(!force_exit){
@@ -147,13 +138,82 @@ error_code_t top_down_handler(){
             }  
         }
         if(pthread_mutex_unlock(&data_mutex) < 0){
-            response.response_code = UNABLE_TO_UNLOCK_MUTEX;
+            error_code = UNABLE_TO_UNLOCK_MUTEX;
+            response.response_code = error_code;
             write_pipe_response(&response, response_buffer);
-            //TODO
-            //I need to put force_exit for the other thread?
+            force_exit = true; //to force exit the other thread
         }
     }
     return error_code;
+}
+
+void bottom_up_handler(){
+    //can be used to read the responses from the children and to write 
+    //the responses up towards the parent of the hub
+    char response_buffer[MAX_REQUEST_SIZE];
+    response_t response;
+    command_code_t code;
+    error_code_t error_code;
+
+    linked_list_t solved_response;
+
+    bool found, is_complete;
+
+    while(!force_exit){
+        error_code = read_pipe(rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE);
+        if(!IS_ERROR(error_code)){
+            error_code = parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
+        }
+        if(IS_ERROR(error_code)){
+            response.command_code = NULL_COMMAND;
+            response.response_code = error_code;
+        }
+        else if(!IS_ERROR(response.response_code)){ //if the response has errors then it's just forwarded
+            code = response.command_code;
+
+            if(IS_LINK(code)){
+                if(pthread_mutex_lock(&data_mutex) < 0){
+                    response.response_code = UNABLE_TO_LOCK_MUTEX;
+                }
+                link_response(&response);
+                if(pthread_mutex_unlock(&data_mutex) < 0){
+                    print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing mutex unlock request");
+                    force_exit = true;
+                }
+            }
+            else{
+                //i need to check if it's a response that i was waiting for or not (forward up)
+                if(pthread_mutex_lock(&data_mutex) < 0){
+                    response.response_code = UNABLE_TO_LOCK_MUTEX;
+                }
+                check_pending_complete(&response, &found, &is_complete, &solved_response);
+                if(pthread_mutex_unlock(&data_mutex) < 0){
+                    response.response_code = UNABLE_TO_UNLOCK_MUTEX;
+                    force_exit = true;
+                }                
+                if(found && is_complete && !force_exit){
+                    if(IS_INFO(code)) {info_response(&response, &solved_response);}
+                    else if(IS_SWITCH(code)) {switch_response(&response, &solved_response);}
+                    else if(IS_DELETE(code)) {delete_response(&response, &solved_response);}
+                    response.source = id;
+                    free_pending_response();
+                }
+            }
+        }
+        simulate_processing_time();
+        write_pipe_response(&response, response_buffer);
+    }
+    pthread_exit(NULL);
+}
+
+/**
+ * It frees the space before allocated for the pending responses struct
+ */
+void free_pending_response(){
+    free(pending_responses->pending_devices);
+    if(pending_responses->next == NULL){
+        free(pending_responses);
+    }
 }
 
 void handle_shutdown(error_code_t error) {
@@ -197,56 +257,6 @@ void sigpipe_handler(){
     handle_shutdown(BROKEN_PIPE);
 }
 
-//TODO control
-void bottom_up_handler(){
-    //can be used to read the responses from the children and to write 
-    //the responses up towards the parent of the hub
-    char response_buffer[MAX_REQUEST_SIZE];
-    response_t response;
-
-    bool is_parent = false;
-    bool found, is_complete;
-    
-    linked_list_t found_request;
-    routing_data_t *last_child;
-    error_code_t additional_information; //to provide additional information, it's not the response_code
-
-    response.source = id;
-    response.arguments_size = 0;
-    last_child = NULL;
-
-    while(!force_exit){
-        command_code_t code;
-        error_code_t error_code = read_pipe(is_parent, rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE, NULL, &response);
-
-        if(IS_ERROR(error_code)){
-            create_response(&response, NULL, error_code, 0);
-            response.command_code = NULL_COMMAND;
-        }
-        else{
-            response.source = id;
-            //response.command_code --> not needed because it's already set in the response received
-            //registry needs just to be forwarded
-            if(IS_LINK(code)){
-                link_response(&response);
-            }
-            else{
-                //i need to check if it's a response that i was waiting for or not (forward up)
-                response.response_code = check_pending_complete(&response, &found, &is_complete, &found_request);
-
-                if(found && is_complete){
-                    if(IS_INFO(code)) {info_response(&response, &found_request);}
-                    else if(IS_SWITCH(code)) {switch_response(&response, &found_request);}
-                    else if(IS_DELETE(code)) {delete_response(&response, &found_request);}
-                }
-            }
-        }
-            simulate_processing_time();
-            write_pipe_response(&response, response_buffer);
-    }
-    //TODO pthread exit
-}
-
 error_code_t open_pipe(device_id_t device_id, int *rcv_child_responses){
     char name[PIPE_NAME_MAX_LENGTH];
     if(IS_ERROR(create_fifo_name(device_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
@@ -256,147 +266,128 @@ error_code_t open_pipe(device_id_t device_id, int *rcv_child_responses){
     return OK;
 }
 
-// parent changed
-// child removed
 void link_response(response_t *response){
-    response->source = id;
     if(LINK_SUBCOMMAND(response->command_code)==LINK_REMOVE_CHILD){
-        remove_child(response, response->arguments[CHILD_ID_ARGUMENT]); //TODO the function is too specific for other purpose, not use it here
+        response->response_code = link_remove_child_received(response->arguments[CHILD_ID_ARGUMENT]);
     }
     else{
-        //check if the device it was one of my child
-        routing_data_t *child = find_routing_data(routing_table, response->source);
-        if(child != NULL){
-            if(child->parent_id == id){
-                //pipe close
-                if(close(child->next_hop_fd) < 0){
-                    response->response_code = UNABLE_TO_CLOSE_PIPE;
-                }
-                else{
-                    response->command_code = OK;
-                }
-            }
-        }
-        else{
-            add_child(response);
-        }
+        add_child(response);
     }
 }
 
-error_code_t add_child(response_t *response){
+void add_child(response_t *response){
     error_code_t error_code = OK;
     int child_fd;
-
     //direct child
     if(response->arguments[PARENT_ID_ARGUMENT] == id){
         error_code = open_pipe(response->source, &child_fd);
         if(!IS_ERROR(error_code)){
             error_code = insert_direct_routing_data(routing_table, response->source, response->arguments[DEVICE_TYPE_ARGUMENT], id, child_fd);
+            if(!has_children) {
+                has_children = true;
+                device_type = HUB_DEVICE | response->arguments[DEVICE_TYPE_ARGUMENT];
+            }
             children++;
         }
     }
     else{
         error_code = insert_indirect_routing_data(routing_table, response->source, response->arguments[DEVICE_TYPE_ARGUMENT], response->arguments[PARENT_ID_ARGUMENT]);
     }
-
-    return error_code;
+    response->response_code = error_code;
 }
 
-//TODO if response type is control_device I need to check for the ADDITIONAL_INFO_ARGUMENT since the response_code is going to be OK
-void info_response(response_t *response, linked_list_t *found_request){
-    response->arguments[STATE_ARGUMENT] = found_request->state;
-    response->arguments[OPEN_SECONDS_ARGUMENT] = found_request->max_time;
+void info_response(response_t *response, linked_list_t *solved_response){
+    response->arguments[STATE_ARGUMENT] = solved_response->state;
+    response->arguments[OPEN_SECONDS_ARGUMENT] = solved_response->max_time; //it 
     response->arguments_size = 2;
-    if(found_request->has_error){
-        response->arguments[ADDITIONAL_INFO_ARGUMENT] = CHILD_ERROR; //TODO just a placeholder for now
+    if(solved_response->has_error){
+        response->arguments[ADDITIONAL_INFO_ARGUMENT] = CHILD_ERROR;
         response->arguments_size = 3;
     }
 }
 
-void switch_response(response_t *response, linked_list_t *found_request){
+void switch_response(response_t *response, linked_list_t *solved_response){
     response->arguments_size = 0;
-    if(found_request->has_error){
-        response->arguments[ADDITIONAL_SWITCH_ARGUMENT] = CHILD_ERROR; //TODO just a placeholder for now
+    if(solved_response->has_error){
+        response->arguments[ADDITIONAL_SWITCH_ARGUMENT] = CHILD_ERROR;
         response->arguments_size = 1;
     }
 }
 
-void delete_response(response_t *response, linked_list_t *found_request){
-    if(found_request->has_error){
-        response->arguments[ADDITIONAL_DELETE_ARGUMENT] = CHILD_ERROR; //TODO just a placeholder for now
+void delete_response(response_t *response, linked_list_t *solved_response){
+    if(solved_response->has_error){
+        response->arguments[ADDITIONAL_DELETE_ARGUMENT] = CHILD_ERROR;
         response->arguments_size = 1;
     }
 }
 
-//TODO take into account that a child can respond with an error_code
-//if it's not i have to send it up
-error_code_t check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *found_request){ //TODO create those boolean in the main function
-    if(pending_requests == NULL) return false;
-    linked_list_t *current_pending = pending_requests;
+void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *solved_response){
+    //no pending responses
+    if(pending_responses == NULL) return;
+    linked_list_t *current_pending = pending_responses;
+    error_code_t error_code = OK;
+
     while(current_pending->next != NULL){
+        *is_complete = true;
+        *found = false;
         if(current_pending->command_code == response->command_code){
-            *is_complete = true;
-            *found = false;
-            for(u_int32_t i = 0; i < current_pending->requested_size; i++){
-                if(current_pending->requested[i] != response->source && current_pending->requested[i] != NO_ID){
+            for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
+                //there is one or more that are missed
+                if((current_pending->pending_devices[i] != response->source) && (current_pending->pending_devices[i] != NO_ID)){
                     *is_complete = false;
                 }
-                else if(current_pending->requested[i] == response->source){ //founded
-                    current_pending->requested[i] = NO_ID;
-
-                    if(current_pending->state==NULL){
+                //founded
+                else if(current_pending->pending_devices[i] == response->source){
+                    current_pending->pending_devices[i] = NO_ID; //set it as found
+                    //if it's the first that arrives it sets the state as the one founded
+                    if(current_pending->state==UNDEFINED_STATE){
                         current_pending->state = response->arguments[STATE_ARGUMENT];
                     }
-                    else if(current_pending->state != response->arguments[STATE_ARGUMENT]){
-                            current_pending->state = STATE_MANUAL_OVERRIDE; //TODO control if it's correct
+                    //the state founded it's different from the others --> manual override
+                    else if(current_pending->state != response->arguments[STATE_ARGUMENT] && current_pending->state != STATE_MANUAL_OVERRIDE){
+                            current_pending->state = STATE_MANUAL_OVERRIDE;
                     }
-
-                    if(current_pending->max_time == 0){
-                        current_pending->max_time = response->arguments[OPEN_SECONDS_ARGUMENT]; //or ON_SECONDS_ARGUMENT
-                    }
-                    else if(response->arguments[OPEN_SECONDS_ARGUMENT] > current_pending->max_time){
+                    //updating the max_time
+                    if(response->arguments[OPEN_SECONDS_ARGUMENT] > current_pending->max_time){
                         current_pending->max_time = response->arguments[OPEN_SECONDS_ARGUMENT];
                     }
-
                     if(IS_DELETE(response->command_code)){
-                        error_code_t error_code = remove_child(response, NULL, response->source);
-                        if(error_code == OK){
+                        error_code = link_remove_child_received(response->arguments[CHILD_ID_ARGUMENT]);
+                        if(!IS_ERROR(error_code)){
                             children--;
+                            if(children == 0){
+                                has_children = false;
+                                device_type = HUB_DEVICE;
+                            }
                         }
                         else{
                             current_pending->has_error = true;
-                            return error_code;
                         }
                     }
-
-                    if(IS_ERROR(response->response_code)){
-                        current_pending->has_error = true;
-                    }
-                    else if(IS_CONTROL(response->arguments[DEVICE_TYPE_ARGUMENT])){
-                        if(IS_INFO(response->command_code) && response->arguments[ADDITIONAL_INFO_ARGUMENT] == CHILD_ERROR){
-                            current_pending->has_error = true;
-                        }
-                        else if(IS_SWITCH(response->command_code) && response->arguments[ADDITIONAL_SWITCH_ARGUMENT] == CHILD_ERROR){
-                            current_pending->has_error = true;
-                        }
-                        else if(IS_DELETE(response->command_code) && response->arguments[ADDITIONAL_DELETE_ARGUMENT] == CHILD_ERROR){
+                    //if it's a control device the response code can be OK while the additional argument can provide an error
+                    if(IS_CONTROL(response->arguments[DEVICE_TYPE_ARGUMENT])){
+                        if((IS_INFO(response->command_code) &&  response->arguments_size == 3 && response->arguments[ADDITIONAL_INFO_ARGUMENT] == CHILD_ERROR) || 
+                           (IS_SWITCH(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_SWITCH_ARGUMENT] == CHILD_ERROR) ||
+                           (IS_DELETE(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_DELETE_ARGUMENT] == CHILD_ERROR)){
                             current_pending->has_error = true;
                         }
                     }
                     *found = true;
-                    *found_request = *current_pending;
+                    *solved_response = *current_pending;
                 }
             }
-            if(*found) return OK; //i have to exit if i found the id otherwise i would complete other requests with only one response
+            response->response_code = error_code;
+            if(*found) return; //i have to exit if i found the id otherwise i would complete other requests with only one response
         }
         current_pending = current_pending->next;
     }
-    return OK;
 }
 
 void create_link(request_t *request, response_t *response, bool *parent_changed){
     if(LINK_SUBCOMMAND(request->command_code)==LINK_REMOVE_CHILD){
         response->response_code = link_remove_child(request->argument);
+        response->arguments[CHILD_ID_ARGUMENT] = request->argument;
+        response->arguments_size = 1;
     }   
     else{
         response->response_code = link_change_parent(request, response, parent_changed);
@@ -431,10 +422,6 @@ int send_to_child(response_t *response, device_id_t destination){
     return routing_information->next_hop_fd;
 }
 
-//search if a child is in pending and i received a delete request of the child put it as complete
-
-//the child has being moved
-
 error_code_t link_remove_child(device_id_t child_id){
     error_code_t error_code = OK;
     routing_data_t *routing_information = find_direct_child(child_id);
@@ -444,6 +431,11 @@ error_code_t link_remove_child(device_id_t child_id){
     else if(routing_information != NULL){
         error_code = close_pipe(routing_information->next_hop_fd);
     }
+    
+    if(!IS_ERROR(error_code)) {
+        remove_routing_data(routing_table, child_id, routing_information->parent_id);
+    }
+
     return error_code;
 }
 
@@ -459,34 +451,16 @@ routing_data_t* find_direct_child(device_id_t child_id){
     return NULL;
 }
 
-
-error_code_t remove_child(response_t *response, device_id_t child_id){
-    routing_data_t *child = find_routing_data(routing_table, child_id);
-    if(response != NULL && children == 0){
-        device_type = HUB_DEVICE;
-        create_response(response, ROUTE_NOT_FOUND, 1); //TODO what i need to do if i have no children?
-        response->arguments[DEVICE_TYPE_ARGUMENT] = device_type;
-        response->arguments[CHILD_ID_ARGUMENT] = child_id;
+error_code_t link_remove_child_received(device_id_t child_id){
+    error_code_t error_code = OK;
+    routing_data_t *routing_information = find_routing_data(routing_table,child_id);
+    if(routing_information == NULL){
+        error_code = ROUTE_NOT_FOUND;
     }
-    if(child == NULL){
-        if(response != NULL){
-            create_response(&response, ROUTE_NOT_FOUND, 1);
-            response->arguments[CHILD_ID_ARGUMENT] = child_id;
-        }
-        else{
-            return ROUTE_NOT_FOUND;
-        }
+    else{
+        remove_routing_data(routing_table, child_id, routing_information->parent_id);
     }
-    else if(close(child->next_hop_fd) < 0) { //TODO is it correct? i don't think so
-        if(response != NULL){
-            create_response(response, UNABLE_TO_CLOSE_PIPE, 0);
-        }
-        else{
-            return UNABLE_TO_CLOSE_PIPE;
-        }
-    }
-    remove_routing_data(routing_table, child->id, child->parent_id);
-    return OK;
+    return error_code;
 }
 
 void forward_request(request_t *request, bool *to_be_forwarded, char* buffer_write){
@@ -500,7 +474,7 @@ void forward_request(request_t *request, bool *to_be_forwarded, char* buffer_wri
         request->destination = direct_child->id;
         simulate_processing_time();
         write_pipe_request(request, buffer_write, direct_child->next_hop_fd);
-        pending->requested[i] = direct_child->id;
+        pending->pending_devices[i] = direct_child->id;
         direct_child = find_direct_routing_data(routing_table, id, direct_child);
         i++;
     }
@@ -513,8 +487,9 @@ linked_list_t* init_pending_requests(command_code_t command_code){
     pending->next = NULL;
     pending->max_time = 0;
     pending->has_error = false;
-    pending->requested_size = children;
-    pending->requested = malloc(sizeof(device_id_t)*pending->requested_size);
+    pending->state = UNDEFINED_STATE;
+    pending->pending_devices_size = children;
+    pending->pending_devices = malloc(sizeof(device_id_t)*pending->pending_devices_size);
     return pending;
 }
 
@@ -530,37 +505,17 @@ void replay_history(response_t *response, char *response_buffer){
     }
 }
 
-//it doesn't set the arguments
-void create_response(response_t *response, error_code_t error_code, size_t arguments_size){
-    response->response_code = error_code;
-    response->arguments_size = arguments_size;
-}//TODO see if it's useful
-
 void add_request(linked_list_t *pending){
-    if(pending_requests == NULL) {
-        pending_requests = pending;
+    if(pending_responses == NULL) {
+        pending_responses = pending;
         return;
     }
-    linked_list_t *current = pending_requests;
+    linked_list_t *current = pending_responses;
     while(current->next != NULL) {
         current = current->next;
     }
     current->next = pending;
 }
-
-void critical_section_handler(error_code_t (*function)(), response_t *response){
-    if(pthread_mutex_lock(&data_mutex) < 0){
-        response->response_code = UNABLE_TO_LOCK_MUTEX;
-        force_exit = true;
-    }
-
-    if(pthread_mutex_unlock(&data_mutex) < 0){
-        print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while processing mutex unlock request");
-        force_exit = true;
-    }
-}
-
-//TODO or when i add a child hub_type or device_type as my type
 
 void create_switch(request_t *request, response_t *response, bool* to_be_forwarded, char* buffer_write){
     if(((IS_BULB_LIKE(device_type) && SWITCH_LABEL(request->command_code)==SWITCH_POWER)) ||
@@ -580,33 +535,10 @@ error_code_t read_pipe(int fd, char* buffer, size_t buffer_size){
         force_exit = true;
         return UNEXPECTED_END_OF_FILE;
     }
-    if (size != buffer_size) return UNABLE_TO_READ_PIPE;
+    if (size != (ssize_t) buffer_size) return UNABLE_TO_READ_PIPE;
 
     return OK;
 }
-
-/**
-
-//EOF read --> no one can write anymore --> all the child have been linked to other parents
-//if isRequest then response will be NULL
-error_code_t read_pipe(bool is_parent, int fd, char* buffer, size_t buffer_size, request_t* request, response_t* response){
-    ssize_t size = read(fd, buffer, buffer_size);
-    if(size != buffer_size){
-        return UNABLE_TO_READ_PIPE;
-    }
-    if(size == 0){
-        if (is_parent){
-            force_exit = true;
-        }
-        else{
-            eof = true;
-        }
-        return UNEXPECTED_END_OF_FILE;
-    }
-    return (request==NULL ? parse_request(request, buffer, buffer_size) : parse_response(response, buffer, buffer_size));
-}
-
-*/
 
 void write_pipe_response(response_t* response, char* buffer_write){
     error_code_t error_code = format_response(response, buffer_write, MAX_RESPONSE_SIZE);
@@ -627,15 +559,3 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending request");
     }
 }
-
-
-error_code_t close_fifos(bool is_children_EOF){
-    error_code_t error_code = (is_children_EOF ? END_CHILDREN_FIFO : END_ALL_FIFOS); //TODO change this with if, not macro
-    //TODO the function does not support no_file_descriptor, i need to create a function for it
-    if(IS_ERROR(error_code)){
-        print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
-    }
-    return error_code;
-}
-
-//
