@@ -22,7 +22,6 @@ error_code_t insert_direct_routing_data_pid(routing_table_t table, device_id_t i
     data->parent_id = current_id;
     data->next_hop_fd = fd;
     data->pid = pid;
-    data->next = NULL;
     insert_routing_data_in_bucket(bucket, data);
     return OK;
 }
@@ -46,7 +45,6 @@ error_code_t insert_indirect_routing_data(routing_table_t table, device_id_t id,
     data->parent_id = parent_id;
     data->next_hop_fd = parent->next_hop_fd;
     // `pid` is not set here because this function is never used by the Controller
-    data->next = NULL;
     insert_routing_data_in_bucket(bucket, data);
     return OK;
 }
@@ -146,22 +144,27 @@ void insert_routing_data_in_bucket(routing_data_t **bucket, routing_data_t *data
         }
         if(current->id == data->id) { // Replace previous data
             data->next = current->next;
-            free(current);
-        }
-        else {
-            data->next = current; // Insert
-        }
-        if(previous == NULL) {
-            if(current->id < data->id) { // Put as second
-                current->next = data;
-                data->next = NULL;
-            }
-            else { // Put as first
+            if(previous == NULL) { // First
                 *bucket = data;
             }
+            else { // Not first
+                previous->next = data;
+            }
+            return;
         }
-        else { // Put in the middle or at the end
-            previous->next = data;
+        // Insert new data
+        if(current->id > data->id) { // Before
+            if(previous == NULL) { // First
+                *bucket = data;
+            }
+            else {
+                previous->next = data;
+            }
+            data->next = current;
+        }
+        else { // After
+            data->next = current->next;
+            current->next = data;
         }
     }
 }
