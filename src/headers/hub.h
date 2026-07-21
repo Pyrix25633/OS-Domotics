@@ -50,6 +50,30 @@ typedef struct linked_list_t {
 int main(int argc, char *argv[]);
 
 /**
+ * It manages the communication between the hub and the parent, receives the requests from the parent and write the responses back
+ * 
+ * Eventually it can forward the request to its children
+ * 
+ * @return An error code to do the exit
+ */
+error_code_t top_down_handler();
+
+/**
+ * It tries to read the pipe
+ * 
+ * @param fd The file descriptor linked to the pipe
+ * @param buffer The buffer in which the string read is put
+ * @param buffer_size The size of the buffer
+ * @return
+ *  - `OK` If no errors occurred
+ * 
+ *  - `UNEXPECTED_END_OF_FILE` If it was an end of file (EOF)
+ * 
+ *  - `UNABLE_TO_READ_PIPE` If errors occurred
+ */
+error_code_t read_pipe(int fd, char* buffer, size_t buffer_size);
+
+/**
  * A new pending request is created (linked_list_t), then for every direct child it forwards the request and inserts its id in a list to know which
  * responses are arrived and which are not
  * 
@@ -84,14 +108,6 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
 void add_request(linked_list_t *pending);
 
 /**
- * Finds the routing data information of a direct child given the child id
- * 
- * @param child_id The device id of the child
- * @return The routing data information found, can be NULL if the searched child has not be found
- */
-routing_data_t* find_direct_child(device_id_t child_id);
-
-/**
  * It manage what to do when a switch request occur, it can be forwarded if the device type 
  * it's correct otherwise it creates an error response to send back
  * 
@@ -103,6 +119,37 @@ routing_data_t* find_direct_child(device_id_t child_id);
 void create_switch(request_t *request, response_t *response, bool* to_be_forwarded, char* buffer_write);
 
 /**
+ * It checks the type of link request and performs the correct operation
+ * 
+ * @param request the request received from the parent
+ * @param response the response to send back
+ * @param parent_changed to set as true if the parent has changed to perform a replay history
+ */
+void create_link(request_t *request, response_t *response, bool *parent_changed);
+
+
+/**
+ * It's used to close a pipe to reach a direct child that has being moved 
+ *
+ * @param child_id the id of the child
+ * @returns
+ *  - `OK` if no errors occurred
+ * 
+ *  - `CHILD_NOT_FOUND` if it has no children or if it's not a direct child
+ * 
+ * - `UNABLE_TO_CLOSE_PIPE` if the pipe couldn't be close
+ */ 
+error_code_t link_remove_child(device_id_t child_id);
+
+/**
+ * Finds the routing data information of a direct child given the child id
+ * 
+ * @param child_id The device id of the child
+ * @return The routing data information found, can be NULL if the searched child has not be found
+ */
+routing_data_t* find_direct_child(device_id_t child_id);
+
+/**
  * Closes a pipe
  * 
  * @param fd the file descriptor of the pipe
@@ -112,5 +159,46 @@ void create_switch(request_t *request, response_t *response, bool* to_be_forward
  *  - `UNABLE_TO_CLOSE_PIPE` if the pipe cannot be closed due to errors
  */
 error_code_t close_pipe(int fd);
+
+/**
+ * It takes the new parent id from the request, if it's different the pipe to talk to the parent is changed
+ * and also the current parent id then a partial response is created by adding the parent id and the device type
+ * 
+ * @param request the request received from the parent
+ * @param response the response to send back
+ * @param parent_changed to set as true if the parent has changed to perform a replay history
+ * @return the error code to send in the response
+ */
+error_code_t link_change_parent(request_t *request, response_t *response, bool *parent_changed);
+
+/**
+ * It search if the child exists between its children, if not, an error response is created, otherwise it returns a file descriptor 
+ * to which send the request
+ * 
+ * @param response The response to send back
+ * @param destination The id of the child to search
+ * @return The file descriptor to which send the request or `-1` if no child was found
+ */
+int send_to_child(response_t *response, device_id_t destination);
+
+/**
+ * It formats the response and writes the string created in the pipe to send a response to the parent
+ * managing the errors that can occur
+ * 
+ * @param response The response to send
+ * @param buffer_write The buffer in which to write the string-formatted response
+ */
+void write_pipe_response(response_t* response, char* buffer_write);
+
+/**
+ * A response to the new parent is sent for every direct and indirect children that the hub has
+ * 
+ * The response includes the parent id of the child, its device type and the source is as the child id
+ * as if it was done by the child itself
+ * 
+ * @param response the response to send back
+ * @param response_buffer the buffer to write the responses
+ */
+void replay_history(response_t *response, char *response_buffer);
 
 #endif
