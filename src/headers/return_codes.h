@@ -30,7 +30,8 @@ typedef u_int8_t error_code_t;
 #define INVALID_COMMAND_ARGUMENT 0x13
 #define DEVICE_TYPE_MISMATCH     0x14
 #define DEVICE_NOT_FOUND         0x15
-#define UNEXPECTED_SHUTDOWN      0x16
+#define LINKING_PARENT_TO_CHILD  0x16
+#define UNEXPECTED_SHUTDOWN      0x17
 
 // - CAUSED BY THE APPLICATION - (should never happen)
 
@@ -52,6 +53,8 @@ typedef u_int8_t error_code_t;
 #define PROCESS_ERROR            0x30
 #define UNABLE_TO_ALLOCATE_HEAP  0x31
 #define UNABLE_TO_SET_SIGHANDLER 0x32
+#define UNABLE_TO_FORK           0x33
+#define UNABLE_TO_EXEC           0x34
 
 // - CAUSE RELATED TO THREADS -
 
@@ -88,6 +91,14 @@ typedef u_int8_t error_code_t;
 #define IS_RETURN_ERROR(ret)   ((ret) < 0) // Macro for error checking of negative return values
 #define ERROR_FROM_RETURN(ret) -ret // Macro for conversion from negative return value to corresponding error code
 
+// Constants
+
+#define ERROR_TYPE_SIZE   24
+#define ERROR_INFO_SIZE   32
+#define ERROR_CODE_SIZE   16
+#define ERROR_SOURCE_SIZE 32
+#define ERROR_MSG_SIZE    64
+
 /**
  * Prints user-friendly error message
  * 
@@ -103,9 +114,16 @@ typedef u_int8_t error_code_t;
  * can be used to state that the error was detected by the Manual Interaction Program
  * @param message Additional message, can state where the error was generated, can be NULL,
  * if not it must be terminated with `\0` (automatic in most cases)
- * 
- * TODO: Complete the printing for all possible errors
  */
 void print_error(int fd, int error_code, int device_id, char *message);
+
+/**
+ * Sets type and info strings for error printing
+ * 
+ * @param error_code Positive error code
+ * @param type String where to write the type, of size `ERROR_TYPE_SIZE`
+ * @param type String where to write the info, of size `ERROR_INFO_SIZE`
+ */
+void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], char info[ERROR_INFO_SIZE]);
 
 #endif

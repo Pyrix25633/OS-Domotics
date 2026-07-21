@@ -27,7 +27,7 @@ pthread_t autoclose_thread;
 
 int rcv_requests_fd;
 int snd_responses_fd;
-bool force_exit = false;
+volatile bool force_exit = false;
 char request_buffer[MAX_REQUEST_SIZE];
 char response_buffer[MAX_RESPONSE_SIZE];
 request_t request;

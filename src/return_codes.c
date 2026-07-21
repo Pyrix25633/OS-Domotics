@@ -8,7 +8,31 @@
 #include <unistd.h>
 
 void print_error(int fd, int error_code, int device_id, char *message) {
-    char type[24];
+    char type[ERROR_TYPE_SIZE];
+    char info[ERROR_INFO_SIZE];
+    set_error_type_info(error_code, type, info);
+    char code[16] = "";
+    if(error_code >= PROCESS_ERROR) {
+        sprintf(code, ", errno: %d", errno);
+    }
+    char source[ERROR_SOURCE_SIZE];
+    switch(device_id) {
+        case NO_ID:                 strcpy(source, "no ID");                      break;
+        case MANUAL_INTERACTION_ID: strcpy(source, "manual interaction program"); break;
+        case CONTROLLER_ID:         strcpy(source, "controller");                 break;
+        default:                    sprintf(source, "device %u", device_id);
+    }
+    char msg[ERROR_MSG_SIZE] = "";
+    if(message != NULL) {
+        sprintf(msg, ", %s", message);
+    }
+    if(error_code == UNABLE_TO_RESTORE_STDERR) {
+        fd = STDOUT_FILENO;
+    }
+    dprintf(fd, "%s error: 0x%2x %s%s, source: %s%s\n", type, error_code, info, code, source, msg);
+}
+
+void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], char info[ERROR_INFO_SIZE]) {
     if(IS_USER_ERROR(error_code)) {
         strcpy(type, "User");
     } else if(IS_APPLICATION_ERROR(error_code)) {
@@ -22,13 +46,13 @@ void print_error(int fd, int error_code, int device_id, char *message) {
     } else {
         strcpy(type, "Unknown");
     }
-    char info[32];
     switch(error_code) {
         case INVALID_TARGET_ID:        strcpy(info, "invalid target ID");            break;
         case INVALID_COMMAND:          strcpy(info, "invalid command");              break;
         case INVALID_COMMAND_ARGUMENT: strcpy(info, "invalid command argument");     break;
         case DEVICE_TYPE_MISMATCH:     strcpy(info, "device type mismatch");         break;
         case DEVICE_NOT_FOUND:         strcpy(info, "device not found");             break;
+        case LINKING_PARENT_TO_CHILD:  strcpy(info, "linking parent to child");      break;
         case UNEXPECTED_SHUTDOWN:      strcpy(info, "unexpected shutdown");          break;
 
         case MISSING_ID_ARGUMENT:      strcpy(info, "missing ID argument");          break;
@@ -45,6 +69,8 @@ void print_error(int fd, int error_code, int device_id, char *message) {
 
         case UNABLE_TO_ALLOCATE_HEAP:  strcpy(info, "unable to allocate heap");      break;
         case UNABLE_TO_SET_SIGHANDLER: strcpy(info, "unable to set signal handler"); break;
+        case UNABLE_TO_FORK:           strcpy(info, "unable to fork");               break;
+        case UNABLE_TO_EXEC:           strcpy(info, "unable to exec");               break;
 
         case UNABLE_TO_CREATE_THREAD:  strcpy(info, "unable to create thread");      break;
         case UNABLE_TO_CANCEL_THREAD:  strcpy(info, "unable to cancel thread");      break;
@@ -64,23 +90,4 @@ void print_error(int fd, int error_code, int device_id, char *message) {
 
         default:                       strcpy(info, "no additional information");
     }
-    char code[16] = "";
-    if(error_code >= PROCESS_ERROR) {
-        sprintf(code, ", errno: %d", errno);
-    }
-    char source[32];
-    switch(device_id) {
-        case NO_ID:                 strcpy(source, "no ID");                      break;
-        case MANUAL_INTERACTION_ID: strcpy(source, "manual interaction program"); break;
-        case CONTROLLER_ID:         strcpy(source, "controller");                 break;
-        default:                    sprintf(source, "device %u", device_id);
-    }
-    char msg[64] = "";
-    if(message != NULL) {
-        sprintf(msg, ", %s", message);
-    }
-    if(error_code == UNABLE_TO_RESTORE_STDERR) {
-        fd = STDOUT_FILENO;
-    }
-    dprintf(fd, "%s error: 0x%2x %s%s, source: %s%s\n", type, error_code, info, code, source, msg);
 }

@@ -153,3 +153,27 @@ int parse_time(char *time) {
     }
     return minutes + (hours * 60);
 }
+
+void create_executable_name(device_type_t type, char path[EXECUTABLE_NAME_MAX_LENGTH], char name[EXECUTABLE_NAME_MAX_LENGTH]) {
+    // No error should occur, the length is fixed and only constant strings are used
+    if(IS_CONTROL(type)) {
+        if(IS_HUB(type)) {
+            strcpy(name, "hub");
+        }
+        else {
+            strcpy(name, "timer");
+        }
+    }
+    else {
+        if(IS_BULB(type)) {
+            strcpy(name, "bulb");
+        }
+        else if(IS_WINDOW(type)) {
+            strcpy(name, "window");
+        }
+        else {
+            strcpy(name, "fridge");
+        }
+    }
+    snprintf(name, EXECUTABLE_NAME_MAX_LENGTH, "./bin/%s", name);
+}

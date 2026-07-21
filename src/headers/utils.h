@@ -14,9 +14,10 @@
 #include <sys/types.h>
 #include <string.h>
 
-#define PIPE_NAME_MAX_LENGTH 24
-#define PIPE_PERMISSIONS 0660
-#define NO_FILE_DESCRIPTOR -1
+#define PIPE_NAME_MAX_LENGTH       24
+#define EXECUTABLE_NAME_MAX_LENGTH 16
+#define PIPE_PERMISSIONS           0660
+#define NO_FILE_DESCRIPTOR         -1
 
 // Pipes
 
@@ -172,5 +173,14 @@ void simulate_processing_time();
  * `-CODE_FORMAT_ERROR` if the time is not correctly formatted
  */
 int parse_time(char *time);
+
+/**
+ * Creates the executable name for `exec`
+ * 
+ * @param type The device type
+ * @param path String where to put the full relative path, of size `EXECUTABLE_NAME_MAX_LENGTH`
+ * @param name String where to put the executable name, of size `EXECUTABLE_NAME_MAX_LENGTH`
+ */
+void create_executable_name(device_type_t type, char path[EXECUTABLE_NAME_MAX_LENGTH], char name[EXECUTABLE_NAME_MAX_LENGTH]);
 
 #endif

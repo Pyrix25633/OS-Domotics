@@ -4,6 +4,7 @@
 
 // - Device data -
 device_id_t id = CONTROLLER_ID;
+device_id_t last_device_id = CONTROLLER_ID + 1;
 
 // - Ncurses data -
 bool redirect;
@@ -22,7 +23,7 @@ char user_buffer[USER_BUFFER_SIZE];
 // - IPC data -
 
 int rcv_responses_fd;
-bool force_exit = false;
+volatile bool force_exit = false;
 char request_buffer[MAX_REQUEST_SIZE];
 char response_buffer[MAX_RESPONSE_SIZE];
 request_t request;
@@ -35,7 +36,7 @@ int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
     set_signal_handler(SIGINT, sigterm_handler);
     set_signal_handler(SIGPIPE, sigpipe_handler);
-    // ! must set `SIGCHLD` handler
+    // ! must set `SIGCHLD` handler, must access routing data, so must be run in a different thread, detached probably
 
     start_responses_fifo();
 
@@ -89,7 +90,6 @@ error_code_t parse_user_command(user_command_t *user_command, char *string) {
         return INVALID_COMMAND;
     }
     if(strcmp(token, "add") == 0) {
-        user_command->code = ADD_COMMAND;
         error_code = parse_add_command(user_command, &last);
     }
     else if(strcmp(token, "list") == 0) {
@@ -102,24 +102,18 @@ error_code_t parse_user_command(user_command_t *user_command, char *string) {
             user_command->message_code = INFO;
         }
         else if(strcmp(token, "switch") == 0) {
-            user_command->code = SWITCH_COMMAND;
-            user_command->message_code = SWITCH;
             if(IS_ERROR(error_code)) {
                 return error_code;
             }
             error_code = parse_switch_command(user_command, &last);
         }
         else if(strcmp(token, "set") == 0) {
-            user_command->code = SET_COMMAND;
-            user_command->message_code = REGISTRY;
             if(IS_ERROR(error_code)) {
                 return error_code;
             }
             error_code = parse_set_command(user_command, &last);
         }
         else if(strcmp(token, "link") == 0) {
-            user_command->code = LINK_COMMAND;
-            user_command->message_code = LINK | LINK_CHANGE_PARENT;
             if(IS_ERROR(error_code)) {
                 return error_code;
             }
@@ -161,6 +155,7 @@ error_code_t parse_add_command(user_command_t *user_command, char **last) {
     else {
         return INVALID_COMMAND_ARGUMENT;
     }
+    user_command->code = ADD_COMMAND;
     return OK;
 }
 
@@ -178,6 +173,8 @@ error_code_t parse_command_target(user_command_t *user_command, char **last) {
 }
 
 error_code_t parse_switch_command(user_command_t *user_command, char **last) {
+    user_command->code = SWITCH_COMMAND;
+    user_command->message_code = SWITCH;
     char *label = strtok_r(NULL, " ", last);
     if(label == NULL) {
         return INVALID_COMMAND_ARGUMENT;
@@ -211,6 +208,8 @@ error_code_t parse_switch_command(user_command_t *user_command, char **last) {
 }
 
 error_code_t parse_set_command(user_command_t *user_command, char **last) {
+    user_command->code = SET_COMMAND;
+    user_command->message_code = REGISTRY;
     char *label = strtok_r(NULL, " ", last);
     if(label == NULL) {
         return INVALID_COMMAND_ARGUMENT;
@@ -259,17 +258,22 @@ error_code_t parse_link_command(user_command_t *user_command, char **last) {
     if(IS_RETURN_ERROR(parsed)) {
         return INVALID_COMMAND_ARGUMENT;
     }
+    user_command->code = LINK_COMMAND;
+    user_command->message_code = LINK | LINK_CHANGE_PARENT;
     user_command->argument = parsed;
     return OK;
 }
 
 error_code_t check_user_command(user_command_t *user_command) {
     if(IS_MESSAGE(user_command->code)) { // Check that destination exists and eventually that the device type is compatible
+        if(IS_DELETE(user_command->message_code) && user_command->target == CONTROLLER_ID) { // Delete of everything
+            return OK;
+        }
         routing_data_t *target = find_routing_data(routing_table, user_command->target);
         if(target == NULL) { // Also covers messages where the destination is the Controller itself
             return DEVICE_NOT_FOUND;
         }
-        if(IS_SWITCH(user_command->message_code)) {
+        if(IS_SWITCH(user_command->message_code)) { // Checking type compatibility with label
             if(IS_BULB_LIKE(target->type)) {
                 if(SWITCH_LABEL(user_command->message_code) != SWITCH_POWER) {
                     return DEVICE_TYPE_MISMATCH;
@@ -284,7 +288,7 @@ error_code_t check_user_command(user_command_t *user_command) {
                 return DEVICE_TYPE_MISMATCH;
             }
         }
-        else if(IS_REGISTRY(user_command->message_code)) {
+        else if(IS_REGISTRY(user_command->message_code)) { // Checking device type compatibility with registry
             if(IS_TIMER(target->type)) {
                 if(REGISTRY_SUBCOMMAND(user_command->message_code) == REGISTRY_DELAY) {
                     return DEVICE_TYPE_MISMATCH;
@@ -300,28 +304,118 @@ error_code_t check_user_command(user_command_t *user_command) {
             }
         }
         else if(IS_LINK(user_command->message_code)) {
-            if(user_command->argument == CONTROLLER_ID) {
+            if(user_command->target == user_command->argument) { // Cannot link to itself
+                return LINKING_PARENT_TO_CHILD;
+            }
+            if(user_command->argument == CONTROLLER_ID) { // Controller is surely type compatible and not one of its children
                 return OK;
             }
             routing_data_t *parent = find_routing_data(routing_table, user_command->argument);
             if(parent == NULL) {
                 return DEVICE_NOT_FOUND;
             }
-            if(IS_LEAF(parent->type)) { // TODO: check type compatibility
+            if(IS_LEAF(parent->type)) { // Check that the parent is a control device
                 return DEVICE_TYPE_MISMATCH;
             }
-            //
-            // Check that the target is not currently a parent of its future parent (detect cycles)
-            routing_data_t *current = find_routing_data(routing_table, parent->parent_id);
-            while(current != NULL) {
-                if(current->parent_id == user_command->target) {
-                    return DEVICE_TYPE_MISMATCH; // ! create another error
+            // Check that the target is not currently a parent of its future parent (detect cycles) and type compatibility
+            while(parent != NULL) { // From here they are surely all control devices
+                if(parent->parent_id == user_command->target) {
+                    return LINKING_PARENT_TO_CHILD;
                 }
-                current = find_routing_data(routing_table, current->parent_id);
+                if(!IS_EMPTY(target->type) && !IS_EMPTY(parent->type) && CHILD_TYPE(target->type) != CHILD_TYPE(parent->type)) {
+                    return DEVICE_TYPE_MISMATCH;
+                }
+                parent = find_routing_data(routing_table, parent->parent_id);
             }
         }
     }
     return OK;
+}
+
+error_code_t execute_user_command(user_command_t *user_command) {
+    if(IS_MESSAGE(user_command->code)) {
+        request.command_code = user_command->message_code;
+        request.argument = user_command->argument;
+        if(user_command->code == DELETE_COMMAND && user_command->target == CONTROLLER_ID) { // Request delete of all direct children
+            
+        }
+        else { // Forward request to destination
+            request.destination = user_command->target;
+
+        }
+    }
+    else {
+        if(user_command->code == LIST_COMMAND) { // List device information
+            execute_list_command();
+        }
+        else { // Add device
+            execute_add_command(user_command->argument);
+        }
+    }
+}
+
+void execute_list_command() {
+    routing_data_t *current = find_all_routing_data(routing_table, id, NULL);
+    u_int16_t count = 0;
+    output("Active devices:");
+    while(current != NULL) { // Loop all devices
+        if(current->parent_id == CONTROLLER_ID) { // Count as direct child
+            count++;
+        }
+        output_device(current);
+        current = find_all_routing_data(routing_table, id, current);
+    }
+    output("Total number of devices directly connected to the Controller: %d", count);
+}
+
+error_code_t execute_add_command(device_type_t type) {
+    char pipe_name[PIPE_NAME_MAX_LENGTH];
+    device_id_t new_id = last_device_id + 1;
+    if(IS_ERROR(create_fifo_name(new_id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
+        || mkfifo(pipe_name, PIPE_PERMISSIONS) < 0) {
+        return UNABLE_TO_CREATE_PIPE;
+    }
+    pid_t pid = fork();
+    if(pid != 0) { // Controller
+        if(pid < 0) {
+            return UNABLE_TO_FORK;
+        }
+        int fd = open(pipe_name, O_WRONLY); // Blocks until the device opens it in read mode
+        if(fd < 0) {
+            return UNABLE_TO_OPEN_PIPE;
+        }
+        if(pthread_mutex_lock(&data_mutex) < 0) {
+            return UNABLE_TO_LOCK_MUTEX;
+        }
+        error_code_t error_code = insert_direct_routing_data_pid(routing_table, new_id, pid, type, id, fd);
+        if(pthread_mutex_unlock(&data_mutex) < 0) {
+            force_exit = true;
+            return UNABLE_TO_UNLOCK_MUTEX;
+        }
+        last_device_id = new_id;
+        return error_code;
+    }
+    else { // New device
+        char executable_name[EXECUTABLE_NAME_MAX_LENGTH];
+        char full_path[EXECUTABLE_NAME_MAX_LENGTH];
+        char id_string[8];
+        snprintf(id_string, 8, "%u", new_id);
+        create_executable_name(type, full_path, executable_name);
+        char *arguments[3]; // Executable name and ID, must be a NULL-terminated array
+        arguments[0] = executable_name;
+        arguments[1] = id_string;
+        arguments[2] = NULL;
+        execv(full_path, arguments);
+        // If here the exec failed
+        print_error(STDERR_FILENO, UNABLE_TO_EXEC, new_id, "after fork");
+        exit(UNABLE_TO_EXEC);
+    }
+}
+
+void output_device(routing_data_t *device) {
+    char type[DEVICE_TYPE_SIZE];
+    format_device_type(device->type, type);
+    output("%s, ID: %d, Parent ID: %d, PID: %d", type, device->id, device->parent_id, device->pid);
 }
 
 void start_responses_fifo() {
