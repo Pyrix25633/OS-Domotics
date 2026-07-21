@@ -45,11 +45,24 @@ int main(int argc, char *argv[]);
 
 /**
  * Handles the shutdown also cleaning up IPC files, best practice to do
+ * 
+ * @param error The error to handle
  */
-void handle_shutdown();
+void handle_shutdown(error_code_t error);
+
+/**
+ * Handles the shutdown caused by a `SIGTERM` signal
+ */
+void sigterm_handler();
+
+/**
+ * Handles the shutdown caused by a `SIGPIPE` signal
+ */
+void sigpipe_handler();
 
 /**
  * Reads the pipe and identifies the command
+ * 
  * @returns The error code to handle for the response
  */
 error_code_t read_pipe();
@@ -61,8 +74,9 @@ void write_pipe();
 
 /**
  * Executes the command received from the pipe
+ * @returns An error code to do the exit
  */
-void execute_command();
+error_code_t execute_command();
 
 /**
  * Sets the attributes for the info response
