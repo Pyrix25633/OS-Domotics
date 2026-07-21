@@ -23,6 +23,7 @@ char user_buffer[USER_BUFFER_SIZE];
 // - IPC data -
 
 int rcv_responses_fd;
+int next_hop_fd;
 volatile bool force_exit = false;
 char request_buffer[MAX_REQUEST_SIZE];
 char response_buffer[MAX_RESPONSE_SIZE];
@@ -74,8 +75,7 @@ int main(int argc, char *argv[]) {
             print_error(STDERR_FILENO, error_code, id, "while parsing user command");
             continue;
         }
-        // TODO: check for further errors
-        // TODO: execute user command
+        // TODO: check that it actually works, need to create the responses thread first
         output("Command code: %d, target: %d, argument: %d", user_command.code, user_command.target, user_command.argument);
     }
 
@@ -265,71 +265,82 @@ error_code_t parse_link_command(user_command_t *user_command, char **last) {
 }
 
 error_code_t check_user_command(user_command_t *user_command) {
-    if(IS_MESSAGE(user_command->code)) { // Check that destination exists and eventually that the device type is compatible
-        if(IS_DELETE(user_command->message_code) && user_command->target == CONTROLLER_ID) { // Delete of everything
-            return OK;
-        }
-        routing_data_t *target = find_routing_data(routing_table, user_command->target);
-        if(target == NULL) { // Also covers messages where the destination is the Controller itself
-            return DEVICE_NOT_FOUND;
-        }
-        if(IS_SWITCH(user_command->message_code)) { // Checking type compatibility with label
-            if(IS_BULB_LIKE(target->type)) {
-                if(SWITCH_LABEL(user_command->message_code) != SWITCH_POWER) {
-                    return DEVICE_TYPE_MISMATCH;
-                }
-            }
-            else if(IS_WINDOW_LIKE(target->type) || IS_FRIDGE_LIKE(target->type)) {
-                if(SWITCH_LABEL(user_command->message_code) == SWITCH_POWER) {
-                    return DEVICE_TYPE_MISMATCH;
-                }
-            }
-            else {
-                return DEVICE_TYPE_MISMATCH;
+    if(!IS_MESSAGE(user_command->code)) { // Nothing else to check
+        return OK;
+    }
+    if(IS_DELETE(user_command->message_code) && user_command->target == CONTROLLER_ID) { // Delete of everything
+        return OK;
+    }
+    // Check that destination exists and eventually that the device type is compatible
+    if(pthread_mutex_lock(&data_mutex) < 0) {
+        return UNABLE_TO_LOCK_MUTEX;
+    }
+    error_code_t error_code = OK;
+    routing_data_t *target = find_routing_data(routing_table, user_command->target);
+    if(target == NULL) { // Also covers messages where the destination is the Controller itself
+        error_code = DEVICE_NOT_FOUND;
+    }
+    else if(IS_SWITCH(user_command->message_code)) { // Checking type compatibility with label
+        if(IS_BULB_LIKE(target->type)) {
+            if(SWITCH_LABEL(user_command->message_code) != SWITCH_POWER) {
+                error_code = DEVICE_TYPE_MISMATCH;
             }
         }
-        else if(IS_REGISTRY(user_command->message_code)) { // Checking device type compatibility with registry
-            if(IS_TIMER(target->type)) {
-                if(REGISTRY_SUBCOMMAND(user_command->message_code) == REGISTRY_DELAY) {
-                    return DEVICE_TYPE_MISMATCH;
-                }
-            }
-            else if(IS_FRIDGE(target->type)) {
-                if(REGISTRY_SUBCOMMAND(user_command->message_code) != REGISTRY_DELAY) {
-                    return DEVICE_TYPE_MISMATCH;
-                }
-            }
-            else {
-                return DEVICE_TYPE_MISMATCH;
+        else if(IS_WINDOW_LIKE(target->type) || IS_FRIDGE_LIKE(target->type)) {
+            if(SWITCH_LABEL(user_command->message_code) == SWITCH_POWER) {
+                error_code = DEVICE_TYPE_MISMATCH;
             }
         }
-        else if(IS_LINK(user_command->message_code)) {
-            if(user_command->target == user_command->argument) { // Cannot link to itself
-                return LINKING_PARENT_TO_CHILD;
-            }
-            if(user_command->argument == CONTROLLER_ID) { // Controller is surely type compatible and not one of its children
-                return OK;
-            }
-            routing_data_t *parent = find_routing_data(routing_table, user_command->argument);
-            if(parent == NULL) {
-                return DEVICE_NOT_FOUND;
-            }
-            if(IS_LEAF(parent->type)) { // Check that the parent is a control device
-                return DEVICE_TYPE_MISMATCH;
-            }
-            // Check that the target is not currently a parent of its future parent (detect cycles) and type compatibility
-            while(parent != NULL) { // From here they are surely all control devices
-                if(parent->parent_id == user_command->target) {
-                    return LINKING_PARENT_TO_CHILD;
-                }
-                if(!IS_EMPTY(target->type) && !IS_EMPTY(parent->type) && CHILD_TYPE(target->type) != CHILD_TYPE(parent->type)) {
-                    return DEVICE_TYPE_MISMATCH;
-                }
-                parent = find_routing_data(routing_table, parent->parent_id);
-            }
+        else {
+            error_code = DEVICE_TYPE_MISMATCH;
         }
     }
-    return OK;
+    else if(IS_REGISTRY(user_command->message_code)) { // Checking device type compatibility with registry
+        if(IS_TIMER(target->type)) {
+            if(REGISTRY_SUBCOMMAND(user_command->message_code) == REGISTRY_DELAY) {
+                error_code = DEVICE_TYPE_MISMATCH;
+            }
+        }
+        else if(IS_FRIDGE(target->type)) {
+            if(REGISTRY_SUBCOMMAND(user_command->message_code) != REGISTRY_DELAY) {
+                error_code = DEVICE_TYPE_MISMATCH;
+            }
+        }
+        else {
+            error_code = DEVICE_TYPE_MISMATCH;
+        }
+    }
+    else if(IS_LINK(user_command->message_code)) {
+        if(user_command->target == user_command->argument) { // Cannot link to itself
+            error_code = LINKING_PARENT_TO_CHILD;
+        }
+        if(user_command->argument == CONTROLLER_ID) { // Controller is surely type compatible and not one of its children
+            error_code = OK;
+        }
+        routing_data_t *parent = find_routing_data(routing_table, user_command->argument);
+        if(parent == NULL) {
+            error_code = DEVICE_NOT_FOUND;
+        }
+        if(IS_LEAF(parent->type)) { // Check that the parent is a control device
+            error_code = DEVICE_TYPE_MISMATCH;
+        }
+        // Check that the target is not currently a parent of its future parent (detect cycles) and type compatibility
+        while(parent != NULL) { // From here they are surely all control devices
+            if(parent->parent_id == user_command->target) {
+                error_code = LINKING_PARENT_TO_CHILD;
+            }
+            if(!IS_EMPTY(target->type) && !IS_EMPTY(parent->type) && CHILD_TYPE(target->type) != CHILD_TYPE(parent->type)) {
+                error_code = DEVICE_TYPE_MISMATCH;
+            }
+            parent = find_routing_data(routing_table, parent->parent_id);
+        }
+    }
+    next_hop_fd = target->next_hop_fd;
+    if(pthread_mutex_unlock(&data_mutex) < 0) {
+        force_exit = true;
+        return UNABLE_TO_LOCK_MUTEX;
+    }
+    return error_code;
 }
 
 error_code_t execute_user_command(user_command_t *user_command) {
@@ -337,11 +348,11 @@ error_code_t execute_user_command(user_command_t *user_command) {
         request.command_code = user_command->message_code;
         request.argument = user_command->argument;
         if(user_command->code == DELETE_COMMAND && user_command->target == CONTROLLER_ID) { // Request delete of all direct children
-            
+            return execute_delete_command();
         }
         else { // Forward request to destination
             request.destination = user_command->target;
-
+            return write_pipe();
         }
     }
     else {
@@ -349,9 +360,10 @@ error_code_t execute_user_command(user_command_t *user_command) {
             execute_list_command();
         }
         else { // Add device
-            execute_add_command(user_command->argument);
+            return execute_add_command(user_command->argument);
         }
     }
+    return OK;
 }
 
 void execute_list_command() {
@@ -412,10 +424,41 @@ error_code_t execute_add_command(device_type_t type) {
     }
 }
 
+error_code_t execute_delete_command() {
+    if(pthread_mutex_lock(&data_mutex) < 0) {
+        return UNABLE_TO_LOCK_MUTEX;
+    }
+    // Loop all direct children
+    routing_data_t *direct = find_direct_routing_data(routing_table, id, NULL);
+    error_code_t error_code;
+    while(direct != NULL) {
+        request.destination = direct->id;
+        next_hop_fd = direct->next_hop_fd;
+        error_code = write_pipe(); // Send delete request to all direct children
+        direct = find_direct_routing_data(routing_table, id, direct);
+    }
+    if(pthread_mutex_unlock(&data_mutex) < 0) {
+        force_exit = true;
+        return UNABLE_TO_LOCK_MUTEX;
+    }
+    return error_code;
+}
+
 void output_device(routing_data_t *device) {
     char type[DEVICE_TYPE_SIZE];
     format_device_type(device->type, type);
     output("%s, ID: %d, Parent ID: %d, PID: %d", type, device->id, device->parent_id, device->pid);
+}
+
+error_code_t write_pipe() {
+    error_code_t error_code = format_request(&request, request_buffer, MAX_REQUEST_SIZE);
+    if(IS_ERROR(error_code)) {
+        return error_code;
+    }
+    if(write(next_hop_fd, request_buffer, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE) {
+        return UNABLE_TO_WRITE_PIPE;
+    }
+    return OK;
 }
 
 void start_responses_fifo() {

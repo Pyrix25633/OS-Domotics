@@ -115,11 +115,15 @@ error_code_t parse_link_command(user_command_t *user_command, char **last);
 /**
  * Checks the user command for semantic (not syntactic) errors
  * 
+ * Also sets `next_hop_fd` then used to send the message
+ * 
  * @param user_command The parsed user command
  * 
- * @returns `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
+ * @returns `UNABLE_TO_LOCK_MUTEX` if data mutex could not be locked,
+ * `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
  * `DEVICE_TYPE_MISMATCH` if the command is not compatible with the target device,
- * `LINKING_PARENT_TO_CHILD` if the link would create cycles
+ * `LINKING_PARENT_TO_CHILD` if the link would create cycles,
+ * `UNABLE_TO_UNLOCK_MUTEX` if data mutex could not be locked,
  * `OK` otherwise
  */
 error_code_t check_user_command(user_command_t *user_command);
@@ -129,7 +133,15 @@ error_code_t check_user_command(user_command_t *user_command);
  * 
  * @param user_command The parsed use command
  * 
- * TODO
+ * @returns `BUFFER_TOO_SHORT` if the formatted request does not fit in the buffer,
+ * `REQUEST_FORMAT_ERROR` if there was an error formatting the request,
+ * `UNABLE_TO_WRITE_PIPE` if the write failed,
+ * `UNABLE_TO_CREATE_PIPE` if the pipe where the device will receive commands could not be created,
+ * `UNABLE_TO_OPEN_PIPE` if the pipe could not be opened in write mode,
+ * `UNABLE_TO_LOCK_MUTEX` if the data mutex could not be locked to update routing information,
+ * `UNABLE_TO_ALLOCATE_HEAP` if the routing information could not be inserted,
+ * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
+ * `OK` otherwise
  */
 error_code_t execute_user_command(user_command_t *user_command);
 
@@ -153,11 +165,33 @@ void execute_list_command();
 error_code_t execute_add_command(device_type_t type);
 
 /**
+ * Sends delete messages to all direct children
+ * 
+ * @returns `UNABLE_TO_LOCK_MUTEX` if the data mutex could not be locked to get routing information,
+ * `BUFFER_TOO_SHORT` if the formatted request does not fit in the buffer,
+ * `REQUEST_FORMAT_ERROR` if there was an error formatting the request,
+ * `UNABLE_TO_WRITE_PIPE` if the write failed,
+ * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
+ * `OK` otherwise
+ */
+error_code_t execute_delete_command();
+
+/**
  * Outputs device data
  * 
  * @param device Pointer to the device data
  */
 void output_device(routing_data_t *device);
+
+/**
+ * Sends command to device using the correct pipe, accessing routing information
+ * 
+ * @returns `BUFFER_TOO_SHORT` if the formatted request does not fit in the buffer,
+ * `REQUEST_FORMAT_ERROR` if there was an error formatting the request,
+ * `UNABLE_TO_WRITE_PIPE` if the write failed,
+ * `OK` otherwise
+ */
+error_code_t write_pipe();
 
 /**
  * Creates and opens `"./ipc/<controller_id>_up.fifo"` in read-write mode, this way
