@@ -110,14 +110,17 @@ void bottom_up_handler(){
     //the responses up towards the parent of the hub
     char response_buffer[MAX_REQUEST_SIZE];
     response_t response;
-    response.source = id;
-    response.arguments_size = 0;
 
     bool is_parent = false;
     bool found, is_complete;
     
     linked_list_t found_request;
-    error_code_t error_code; //to provide additional information, it's not the response_code
+    routing_data_t *last_child;
+    error_code_t additional_information; //to provide additional information, it's not the response_code
+
+    response.source = id;
+    response.arguments_size = 0;
+    last_child = NULL;
 
     while(!force_exit){
         command_code_t code;
@@ -130,11 +133,9 @@ void bottom_up_handler(){
         else{
             response.source = id;
             //response.command_code --> not needed because it's already set in the response received
-            if(IS_REGISTRY(response.command_code)){
-                //forward up or check for manual override
-            }
-            else if(IS_LINK(response.command_code)){
-                
+            //registry needs just to be forwarded
+            if(IS_LINK(code)){
+                link_response(&response);
             }
             else{
                 //i need to check if it's a response that i was waiting for or not (forward up)
@@ -151,6 +152,61 @@ void bottom_up_handler(){
             write_pipe_response(&response, response_buffer);
     }
     //TODO pthread exit
+}
+
+error_code_t open_pipe(device_id_t device_id, int *rcv_child_responses){
+    char name[PIPE_NAME_MAX_LENGTH];
+    if(IS_ERROR(create_fifo_name(device_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
+        || (*rcv_child_responses = open(name, O_WRONLY)) < 0) {
+        return UNABLE_TO_OPEN_PIPE;
+    }
+    return OK;
+}
+
+// parent changed
+// child removed
+void link_response(response_t *response){
+    response->source = id;
+    if(LINK_SUBCOMMAND(response->command_code)==LINK_REMOVE_CHILD){
+        remove_child(response, response->arguments[CHILD_ID_ARGUMENT]); //TODO the function is too specific for other purpose, not use it here
+    }
+    else{
+        //check if the device it was one of my child
+        routing_data_t *child = find_routing_data(routing_table, response->source);
+        if(child != NULL){
+            if(child->parent_id == id){
+                //pipe close
+                if(close(child->next_hop_fd) < 0){
+                    response->response_code = UNABLE_TO_CLOSE_PIPE;
+                }
+                else{
+                    response->command_code = OK;
+                }
+            }
+        }
+        else{
+            add_child(response);
+        }
+    }
+}
+
+error_code_t add_child(response_t *response){
+    error_code_t error_code = OK;
+    int child_fd;
+
+    //direct child
+    if(response->arguments[PARENT_ID_ARGUMENT] == id){
+        error_code = open_pipe(response->source, &child_fd);
+        if(!IS_ERROR(error_code)){
+            error_code = insert_direct_routing_data(routing_table, response->source, response->arguments[DEVICE_TYPE_ARGUMENT], id, child_fd);
+            children++;
+        }
+    }
+    else{
+        error_code = insert_indirect_routing_data(routing_table, response->source, response->arguments[DEVICE_TYPE_ARGUMENT], response->arguments[PARENT_ID_ARGUMENT]);
+    }
+
+    return error_code;
 }
 
 //TODO if response type is control_device I need to check for the ADDITIONAL_INFO_ARGUMENT since the response_code is going to be OK
@@ -256,7 +312,11 @@ void top_down_handler(){
     request_t request;
     response_t response;
     command_code_t code;
-    bool is_parent = true, has_children = false, is_request = false, has_parent_changed = false, is_forward_request = false;
+    bool is_parent = true;
+    bool has_children = false;
+    bool is_request;
+    bool has_parent_changed = false;
+    bool to_be_forwarded = false;
     int child_fd;
 
     response.source = id;
@@ -264,10 +324,11 @@ void top_down_handler(){
     while(!force_exit){
         //read the request received from the parent
         error_code_t error_code = read_pipe(is_parent, rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE, &request, NULL);
+        is_request = false;
 
         if(IS_ERROR(error_code)){
             response.command_code = NULL_COMMAND;
-            create_response(&response, is_request, error_code, 0);
+            create_response(&response, error_code, 0);
         }
         else{//no errors occurred
             code = request.command_code;
@@ -275,28 +336,28 @@ void top_down_handler(){
             
             if (has_children){
                 if(request.destination == id){ //the destination is the parent
-                    if(IS_INFO(code)) {forward_request(&request, is_forward_request, request_buffer);}
-                    else if(IS_SWITCH(code)) { create_switch(&request, &response, &is_request, is_forward_request, request_buffer); }
-                    else if(IS_LINK(code)) { create_link(&request, &response, &is_request, code, &has_parent_changed); }
-                    else if(IS_DELETE(code)) { create_delete(&request, &response,is_forward_request, &is_request, request_buffer);}
-                    else if(IS_REGISTRY(code)) { create_response(&response, &is_request, UNEXPECTED_COMMAND, 0); }
+                    if(IS_INFO(code)) {forward_request(&request, &to_be_forwarded, request_buffer);}
+                    else if(IS_SWITCH(code)) { create_switch(&request, &response, &to_be_forwarded, request_buffer); }
+                    else if(IS_LINK(code)) { create_link(&request, &response, code, &has_parent_changed); }
+                    else if(IS_DELETE(code)) { create_delete(&request, &response,&to_be_forwarded, request_buffer);}
+                    else if(IS_REGISTRY(code)) { create_response(&response, UNEXPECTED_COMMAND, 0); }
                 }
                 else{
-                    send_to_child(&response, request.destination, &is_request, &child_fd);
+                    send_to_child(&response, request.destination, &child_fd);
+                    is_request = true;
                 }
             }
             else{
                 if(request.destination == id && IS_INFO(code)){
-                    create_response(&response, is_request, OK, 1);
+                    create_response(&response, OK, 1);
                     response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
                 }
                 else{
-                    create_response(&response, is_request, CHILD_NOT_FOUND, 0);
+                    create_response(&response, CHILD_NOT_FOUND, 0);
                 }
             }
-        }
         //TODO
-        if(!is_forward_request){
+        if(!to_be_forwarded){
             simulate_processing_time();
             (is_request ? write_pipe_request(&request, request_buffer, child_fd) : write_pipe_response(&response, response_buffer));
         }
@@ -305,16 +366,14 @@ void top_down_handler(){
             replay_history(&response, response_buffer);
             has_parent_changed = false;
         }
-    }  
+        }  
+    }
 }
 
-//TODO if i'm not the destination i need to modify these
-
-//change parent
-//remove child
-void create_link(request_t *request, response_t *response, bool *is_request, command_code_t command_code,
+void create_link(request_t *request, response_t *response, command_code_t command_code,
                  bool *has_parent_changed){
     if(LINK_SUBCOMMAND(command_code)==LINK_REMOVE_CHILD){
+        //if the destination is me i need to remove only the direct child
         remove_child(response, command_code, request->argument);
     }
     else{
@@ -330,55 +389,91 @@ void create_link(request_t *request, response_t *response, bool *is_request, com
                 *has_parent_changed = true;
             }
         }
-        create_response(response, is_request, error_code, 2);
+        create_response(response, error_code, 2);
     }
 }
 
-void send_to_child(response_t *response, device_id_t destination, bool *is_request, int *child_fd){
+void send_to_child(response_t *response, device_id_t destination, int *child_fd){
     routing_data_t *child = find_routing_data(routing_table, destination);
     if(child == NULL){
-        create_response(&response, is_request, ROUTE_NOT_FOUND, 1);
+        create_response(&response, ROUTE_NOT_FOUND, 1);
         response->arguments[CHILD_ID_ARGUMENT] = destination;
     }
     else{
-        is_request = true;
         *child_fd = child->next_hop_fd;
     }
 }
 
-void create_delete(request_t *request, response_t *response, bool *is_forward_request, bool *is_request, char* buffer_write){
+void create_delete(request_t *request, response_t *response, bool *to_be_forwarded, char* buffer_write){
     if(children > 0){
-        forward_request(request, is_forward_request, buffer_write);
+        forward_request(request, to_be_forwarded, buffer_write);
     }
     else{
-        create_response(response,is_request, OK, 0);
+        create_response(response, OK, 0);
         force_exit = true;
     }
 }
 
 //search if a child is in pending and i received a delete request of the child put it as complete
 
+//the child has being moved
 
-error_code_t remove_child(response_t *response, bool *is_request, device_id_t child_id){
+/**
+ * It's used to close a pipe to reach a direct child that has being moved 
+ *
+ * @param child_id the id of the child
+ * @returns
+ *  - `OK` if no errors occurred
+ * 
+ *  - `CHILD_NOT_FOUND` if it has no children or if it's not a direct child
+ * 
+ * - `UNABLE_TO_CLOSE_PIPE` //TODO
+ */ 
+error_code_t link_remove_child(device_id_t child_id){
+    error_code_t error_code = OK;
+    routing_data_t *routing_information = find_direct_child(child_id);
+    if(children == 0 || routing_information == NULL){
+        error_code = CHILD_NOT_FOUND;
+    }
+    else if(routing_information != NULL){
+        error_code = close_pipe(routing_information->next_hop_fd);
+    }
+    return error_code;
+}
+
+error_code_t close_pipe(int fd){
+    return (close(fd) < 0 ? UNABLE_TO_CLOSE_PIPE : OK);
+}
+
+routing_data_t* find_direct_child(device_id_t child_id){
+    routing_data_t *child = find_direct_routing_data(routing_table, id, NULL);
+    while(child != NULL){
+        if(child->id == child_id) return child;
+    }
+    return NULL;
+}
+
+
+error_code_t remove_child(response_t *response, device_id_t child_id){
     routing_data_t *child = find_routing_data(routing_table, child_id);
     if(response != NULL && children == 0){
         device_type = HUB_DEVICE;
-        create_response(response, is_request, ROUTE_NOT_FOUND, 1); //TODO what i need to do if i have no children?
+        create_response(response, ROUTE_NOT_FOUND, 1); //TODO what i need to do if i have no children?
         response->arguments[DEVICE_TYPE_ARGUMENT] = device_type;
         response->arguments[CHILD_ID_ARGUMENT] = child_id;
     }
     if(child == NULL){
         if(response != NULL){
-            create_response(&response, is_request, ROUTE_NOT_FOUND, 1);
+            create_response(&response, ROUTE_NOT_FOUND, 1);
             response->arguments[CHILD_ID_ARGUMENT] = child_id;
         }
         else{
             return ROUTE_NOT_FOUND;
         }
     }
-    else if(close(child->next_hop_fd) < 0) {
+    else if(close(child->next_hop_fd) < 0) { //TODO is it correct? i don't think so
         if(response != NULL){
-            create_response(response, is_request, UNABLE_TO_CLOSE_PIPE, 0);
+            create_response(response, UNABLE_TO_CLOSE_PIPE, 0);
         }
         else{
             return UNABLE_TO_CLOSE_PIPE;
@@ -388,16 +483,12 @@ error_code_t remove_child(response_t *response, bool *is_request, device_id_t ch
     return OK;
 }
 
-//the child ids are putted in the array and then when a child has responded its id is deleted from the array and set NO_ID
-void forward_request(request_t *request, bool *is_forward_request, char* buffer_write){
+void forward_request(request_t *request, bool *to_be_forwarded, char* buffer_write){
     routing_data_t *direct_child = find_direct_routing_data(routing_table, id, NULL);
-    linked_list_t *pending = malloc(sizeof(linked_list_t));
+    linked_list_t *pending = init_pending_requests(request->command_code);
     u_int32_t i = 0;
-
-    pending->has_error = false;
-    pending->requested_size = children;
-    pending->requested = malloc(sizeof(device_id_t)*pending->requested_size);
-    *is_forward_request = true; //nothing to send
+    
+    *to_be_forwarded = true; //nothing to send
 
     while(direct_child != NULL) {
         request->destination = direct_child->id;
@@ -407,7 +498,18 @@ void forward_request(request_t *request, bool *is_forward_request, char* buffer_
         direct_child = find_direct_routing_data(routing_table, id, direct_child);
         i++;
     }
-    add_request(request->command_code, pending);
+    add_request(pending);
+}
+
+linked_list_t* init_pending_requests(command_code_t command_code){
+    linked_list_t *pending = malloc(sizeof(linked_list_t));
+    pending->command_code = command_code;
+    pending->next = NULL;
+    pending->max_time = 0;
+    pending->has_error = false;
+    pending->requested_size = children;
+    pending->requested = malloc(sizeof(device_id_t)*pending->requested_size);
+    return pending;
 }
 
 void replay_history(response_t *response, char *response_buffer){
@@ -424,17 +526,12 @@ void replay_history(response_t *response, char *response_buffer){
 }
 
 //it doesn't set the arguments
-void create_response(response_t *response, bool *is_request, error_code_t error_code, size_t arguments_size){
+void create_response(response_t *response, error_code_t error_code, size_t arguments_size){
     response->response_code = error_code;
     response->arguments_size = arguments_size;
-    if(is_request!=NULL) is_request = false; //TODO see if this is useful or not
-}
+}//TODO see if it's useful
 
-void add_request(command_code_t command_code, linked_list_t *pending){
-    pending->command_code = command_code;
-    pending->next = NULL;
-    
-    pending->max_time = 0;
+void add_request(linked_list_t *pending){
     if(pending_requests == NULL) {
         pending_requests = pending;
         return;
@@ -459,15 +556,17 @@ void critical_section_handler(int (*function)(int, char), response_t *response){
 }
 */
 
-void create_switch(request_t *request, response_t *response, bool *isrequest, bool* is_forward_request, char* buffer_write){
+//TODO or when i add a child hub_type or device_type as my type
+
+void create_switch(request_t *request, response_t *response, bool* to_be_forwarded, char* buffer_write){
     if(((IS_BULB_LIKE(device_type) && SWITCH_LABEL(request->command_code)==SWITCH_POWER)) ||
         ((IS_FRIDGE_LIKE(device_type) || IS_WINDOW_LIKE(device_type)) &&
         (SWITCH_LABEL(request->command_code)==SWITCH_OPEN || SWITCH_LABEL(request->command_code)==SWITCH_CLOSE))){
 
-        forward_request(request, is_forward_request, buffer_write);
+        forward_request(request, to_be_forwarded, buffer_write);
     }
     else{
-        create_response(response, isrequest, UNEXPECTED_COMMAND, 0);
+        create_response(response, UNEXPECTED_COMMAND, 0);
     }
 }
 
@@ -489,7 +588,11 @@ error_code_t read_pipe(bool is_parent, int fd, char* buffer, size_t buffer_size,
     }
     return (request==NULL ? parse_request(request, buffer, buffer_size) : parse_response(response, buffer, buffer_size));
 }
-
+/**
+ * @brief 
+ * @param response 
+ * @param buffer_write 
+ */
 void write_pipe_response(response_t* response, char* buffer_write){
     error_code_t error_code = format_response(response, buffer_write, MAX_RESPONSE_SIZE);
     if(IS_ERROR(error_code)){
@@ -500,12 +603,12 @@ void write_pipe_response(response_t* response, char* buffer_write){
     }
 }
 
-void write_pipe_request(request_t* request, char* buffer_write, int snd_request_child_fd){
+void write_pipe_request(request_t* request, char* buffer_write, int snd_request_fd){
     error_code_t error_code = format_request(request, buffer_write, MAX_RESPONSE_SIZE);
     if(IS_ERROR(error_code)){
         print_error(STDERR_FILENO, error_code, id, "while formatting request");
     }
-    else if(write(snd_request_child_fd, buffer_write, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
+    else if(write(snd_request_fd, buffer_write, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending request");
     }
 }

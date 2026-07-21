@@ -50,7 +50,7 @@ void handle_shutdown();
 
 /**
  * Reads the pipe and identifies the command
- * @returns the error code to handle for the response
+ * @returns The error code to handle for the response
  */
 error_code_t read_pipe();
 

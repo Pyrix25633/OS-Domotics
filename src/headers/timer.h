@@ -20,6 +20,7 @@
 
 #define MAX_TIMER_ARGUMENTS     4    //state, begin and end, the position 1 is not used by the timer
 #define MINUTES_IN_A_DAY        1440 //begin and end are minutes from midnight, so they must be less than this
+#define SECONDS_IN_A_DAY        (MINUTES_IN_A_DAY * 60) //used by the schedule thread to wait until the next day
 #define DEFAULT_BEGIN           0    //midnight, so any end is always greater than the default begin
 #define DEFAULT_END             (MINUTES_IN_A_DAY - 1) //23:59, so any begin is always smaller than the default end
 
@@ -79,6 +80,28 @@ void acquire_child(response_t *child_response);
 void *child_responses_handler(void *arg);
 
 /**
+ * Builds the switch command for the child based on its type and sends it down the child requests pipe
+ *
+ * @param activate `true` to switch the child on (or open), `false` to switch it off (or close)
+ *
+ * @returns `CHILD_NOT_FOUND` if there is no child, `UNABLE_TO_WRITE_PIPE` if the request could not be sent,
+ * a format error code if the request could not be formatted, `OK` otherwise
+ */
+error_code_t send_child_switch(bool activate);
+
+/**
+ * Schedule thread body: sleeps until the next begin or end time and switches the child on or off, each day
+ * @param arg Unused
+ * @returns `NULL`
+ */
+void *schedule_handler(void *arg);
+
+/**
+ * Cancels the schedule thread and starts a new one, so it re-reads the current begin and end times
+ */
+void reschedule();
+
+/**
  * Executes the command received from the pipe
  * @returns the error code that occurred while reading the request, `OK` otherwise
  */
@@ -93,6 +116,13 @@ void create_info_response();
  * Sets the attributes for the link response and performs actions if needed
  */
 void create_link_response();
+
+/**
+ * Sends a faked change-parent response on behalf of the child, so a new parent rebuilds the branch
+ *
+ * Does nothing if the timer has no child
+ */
+void replay_child_add();
 
 /**
  * Sets the attributes for the registry response and performs actions if needed
