@@ -6,7 +6,8 @@ LFLAGS = -lpthread -lncurses
 # Name of the file to be compiled and run
 EXEC_NAME = bin/$(FILE)
 # All devices source files for complete compilation
-DEVICES_FILES = bulb.c window.c fridge.c controller.c hub.c timer.c manual_interaction.c
+# TODO: add back hub.c and timer.c
+DEVICES_FILES = bulb.c window.c fridge.c controller.c manual_interaction.c
 DEVICES_SRCS = $(addprefix src/, $(DEVICES_FILES))
 # Their object files
 DEVICES_OBJS = $(DEVICES_SRCS:src/%.c=bin/%.o)
@@ -53,6 +54,6 @@ clean:
 	rm -f bin/*
 	rm -f ipc/*
 
-# TODO: execute a scenario
-run:
-	echo "Not implemented yet"
+# Executes scenario, runs Controller which then reads if present the `./commands.scenario` file
+run: | clean build
+	./bin/controller
