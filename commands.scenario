@@ -1,1 +1,5 @@
 add bulb
+sleep 1
+add window
+sleep 1
+add fridge

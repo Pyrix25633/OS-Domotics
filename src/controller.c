@@ -59,6 +59,7 @@ int main(int argc, char *argv[]) {
     output("Available commands:");
     output("- add <type>");
     output("- list");
+    output("- sleep <seconds>");
     output("- info <id>");
     output("- switch <id> <label> <position>");
     output("- set <id> <label> <value>");
@@ -111,6 +112,9 @@ error_code_t parse_user_command(user_command_t *user_command, char *string) {
     }
     else if(strcmp(token, "list") == 0) {
         user_command->code = LIST_COMMAND;
+    }
+    else if(strcmp(token, "sleep") == 0) {
+        error_code = parse_sleep_command(user_command, &last);
     }
     else {
         error_code = parse_command_target(user_command, &last);
@@ -174,6 +178,20 @@ error_code_t parse_add_command(user_command_t *user_command, char **last) {
         return INVALID_COMMAND_ARGUMENT;
     }
     user_command->code = ADD_COMMAND;
+    return OK;
+}
+
+error_code_t parse_sleep_command(user_command_t *user_command, char **last) {
+    char *seconds = strtok_r(NULL, " ", last);
+    if(seconds == NULL) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    int parsed = string_to_unsigned(seconds);
+    if(IS_RETURN_ERROR(parsed)) {
+        return INVALID_COMMAND_ARGUMENT;
+    }
+    user_command->code = SLEEP_COMMAND;
+    user_command->argument = parsed;
     return OK;
 }
 
@@ -378,6 +396,9 @@ error_code_t execute_user_command(user_command_t *user_command) {
     else {
         if(user_command->code == LIST_COMMAND) { // List device information
             execute_list_command();
+        }
+        else if(user_command->code == SLEEP_COMMAND) { // Sleep specified seconds
+            sleep(user_command->argument);
         }
         else { // Add device
             return execute_add_command(user_command->argument);

@@ -100,6 +100,17 @@ error_code_t parse_user_command(user_command_t *user_command, char *string);
 error_code_t parse_add_command(user_command_t *user_command, char **last);
 
 /**
+ * Parses a sleep command
+ * 
+ * @param user_command Struct where command data will be put
+ * @param last Last parsing position the parsing
+ * 
+ * @returns `INVALID_COMMAND_ARGUMENT` if the seconds argument is missing or invalid,
+ * `OK` otherwise
+ */
+error_code_t parse_sleep_command(user_command_t *user_command, char **last);
+
+/**
  * Parses command target ID
  * 
  * @param user_command Struct where command data will be put
