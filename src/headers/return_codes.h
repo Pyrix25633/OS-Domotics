@@ -46,7 +46,8 @@ typedef u_int8_t error_code_t;
 #define UNEXPECTED_COMMAND       0x28
 #define ROUTE_NOT_FOUND          0x29
 #define CHILD_NOT_FOUND          0x2a
-#define UNABLE_TO_CREATE_WINDOWS 0x2b
+#define CHILD_ERROR              0x2b
+#define UNABLE_TO_CREATE_WINDOWS 0x2c
 
 // - CAUSE RELATED TO PROCESSES -
 
@@ -80,6 +81,11 @@ typedef u_int8_t error_code_t;
 #define UNABLE_TO_SET_FD_ATTR    0x59
 #define UNABLE_TO_RESTORE_STDERR 0x5a // Impossible to print to stderr
 
+// - CAUSE RELATED TO FILES -
+#define FILE_ERROR               0x60
+#define UNABLE_TO_OPEN_FILE      0x61
+#define UNABLE_TO_CLOSE_FILE     0x62
+
 // Macros for error checking
 
 #define IS_ERROR(e)              (e & ERROR_MASK) != OK
@@ -88,6 +94,7 @@ typedef u_int8_t error_code_t;
 #define IS_PROCESS_ERROR(e)      (e & ERROR_MASK) == PROCESS_ERROR
 #define IS_THREAD_ERROR(e)       (e & ERROR_MASK) == THREAD_ERROR
 #define IS_IPC_ERROR(e)          (e & ERROR_MASK) == IPC_ERROR
+#define IS_FILE_ERROR(e)         (e & ERROR_MASK) == FILE_ERROR
 
 #define IS_RETURN_ERROR(ret)   ((ret) < 0) // Macro for error checking of negative return values
 #define ERROR_FROM_RETURN(ret) -ret // Macro for conversion from negative return value to corresponding error code

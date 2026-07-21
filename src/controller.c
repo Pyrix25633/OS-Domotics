@@ -65,17 +65,23 @@ int main(int argc, char *argv[]) {
     output("- link <id1> to <id2>");
     output("- del <id>");
 
+    error_code = execute_scenario();
+    if(IS_ERROR(error_code)) {
+        print_error(STDERR_FILENO, error_code, id, "while executing scenario");
+    }
+
     while(!force_exit) {
         input(user_buffer, USER_BUFFER_SIZE);
         error_code = process_user_command(&user_command, user_buffer);
-        // TODO: check that it actually works, need to create the responses thread first
-        output("Command code: %d, target: %d, argument: %d", user_command.code, user_command.target, user_command.argument);
     }
 
     handle_shutdown(error_code, false);
 }
 
 error_code_t process_user_command(user_command_t *user_command, char *string) {
+    if(strlen(string) == 0) { // Accept no-op commands, empty lines
+        return OK;
+    }
     error_code_t error_code = parse_user_command(user_command, string);
     if(IS_ERROR(error_code)) {
         print_error(STDERR_FILENO, error_code, id, "while parsing user command");
@@ -468,6 +474,31 @@ error_code_t execute_delete_command() {
         return UNABLE_TO_LOCK_MUTEX;
     }
     return error_code;
+}
+
+error_code_t execute_scenario() {
+    FILE *scenario_file = fopen(SCENARIO_FILE_NAME, "r");
+    if(scenario_file == NULL) {
+        if(errno == ENOENT) { // File does not exist, just don't execute scenario
+            return OK;
+        }
+        return UNABLE_TO_OPEN_FILE; // Other error
+    }
+
+    int last;
+    while(fgets(user_buffer, USER_BUFFER_SIZE, scenario_file) != NULL && !force_exit) {
+        last = strlen(user_buffer) - 1;
+        if(user_buffer[last] == '\n') {
+            user_buffer[last] = '\0'; // Remove new line, which not read in normal user input
+        }
+        process_user_command(&user_command, user_buffer); // Errors are only printed
+        // TODO: decide if to use sleep
+    }
+
+    if(fclose(scenario_file) != 0) {
+        return UNABLE_TO_CLOSE_FILE;
+    }
+    return OK;
 }
 
 void output_device(routing_data_t *device) {

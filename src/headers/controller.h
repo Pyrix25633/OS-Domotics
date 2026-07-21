@@ -27,6 +27,8 @@
 #define STDERR_BUFFER_SIZE 512
 #define USER_BUFFER_SIZE 64
 
+#define SCENARIO_FILE_NAME "./commands.scenario"
+
 #define CHECK_NO_OTHER_ARGUMENTS(last) strtok_r(NULL, " ", &last) == NULL ? OK : INVALID_COMMAND_ARGUMENT
 
 /**
@@ -204,6 +206,15 @@ error_code_t execute_add_command(device_type_t type);
  * `OK` otherwise
  */
 error_code_t execute_delete_command();
+
+/**
+ * Executes scenario, reads `commands.scenario` file and parses each line
+ * 
+ * @returns `UNABLE_TO_OPEN_FILE` if the scenario file exists and could not be opened,
+ * `UNABLE_TO_CLOSE_FILE` if the scenario file could not be closed,
+ * `OK` otherwise
+ */
+error_code_t execute_scenario();
 
 /**
  * Outputs device data

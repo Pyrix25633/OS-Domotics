@@ -43,6 +43,8 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         strcpy(type, "Thread related");
     } else if(IS_IPC_ERROR(error_code)) {
         strcpy(type, "IPC related");
+    } else if(IS_FILE_ERROR(error_code)) {
+        strcpy(type, "File related");
     } else {
         strcpy(type, "Unknown");
     }
@@ -65,6 +67,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         case UNEXPECTED_COMMAND:       strcpy(info, "unexpected command");           break;
         case ROUTE_NOT_FOUND:          strcpy(info, "route not found");              break;
         case CHILD_NOT_FOUND:          strcpy(info, "child not found");              break;
+        case CHILD_ERROR:              strcpy(info, "child error");                  break;
         case UNABLE_TO_CREATE_WINDOWS: strcpy(info, "unable to create windows");     break;
 
         case UNABLE_TO_ALLOCATE_HEAP:  strcpy(info, "unable to allocate heap");      break;
@@ -88,6 +91,9 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         case UNEXPECTED_END_OF_FILE:   strcpy(info, "unexpected end of file");       break;
         case UNABLE_TO_SET_FD_ATTR:    strcpy(info, "unable to set fd attributes");  break;
         case UNABLE_TO_RESTORE_STDERR: strcpy(info, "unable to restore stderr");     break;
+
+        case UNABLE_TO_OPEN_FILE:      strcpy(info, "unable to open file");          break;
+        case UNABLE_TO_CLOSE_FILE:     strcpy(info, "unable to close file");         break;
 
         default:                       strcpy(info, "no additional information");
     }
