@@ -207,11 +207,13 @@ void acquire_descendant(response_t *child_response){
     device_type_t descendant_type = child_response->arguments[DEVICE_TYPE_ARGUMENT];
     device_id_t descendant_parent = child_response->arguments[PARENT_ID_ARGUMENT];
 
-    //insert_indirect_routing_data returns ROUTE_NOT_FOUND when the parent is not in the table, that is the device
-    //is not part of the timer subtree, so it is simply not tracked (this also covers the leaf-child case)
+    //insert_indirect_routing_data looks up the parent in the table first: if it is missing it returns
+    //ROUTE_NOT_FOUND and inserts nothing, meaning the device is not part of the timer subtree, so it is skipped.
+    //In the correct top-down replay the parent is always inserted before its children, so this is defensive
     pthread_mutex_lock(&data_mutex);
     error_code_t error_code = insert_indirect_routing_data(routing_table, descendant_id, descendant_type, descendant_parent);
     pthread_mutex_unlock(&data_mutex);
+    //ROUTE_NOT_FOUND is the expected "not in the subtree" outcome and is ignored, only real errors are printed
     if(IS_ERROR(error_code) && error_code != ROUTE_NOT_FOUND){
         print_error(STDERR_FILENO, error_code, id, "while adding a descendant to the routing table");
     }
@@ -434,9 +436,14 @@ error_code_t execute_command(){
         write_pipe();
     }
 
-    //after the own change-parent response is sent, the child is replayed so the new parent rebuilds the branch
+    //after the own change-parent response is sent, the branch is replayed so the new parent rebuilds it: a
+    //control-device child has its whole subtree in the table, a leaf child (no descendants) is replayed alone
     if(parent_changed){
-        replay_child_add();
+        pthread_mutex_lock(&data_mutex);
+        bool control_child = has_child && (IS_CONTROL(child_type));
+        pthread_mutex_unlock(&data_mutex);
+        if(control_child){ replay_subtree(); }
+        else{ replay_child_add(); }
         parent_changed = false;
     }
 
@@ -554,6 +561,33 @@ void replay_child_add(){
     pthread_mutex_lock(&data_mutex);
     if(write(snd_responses_fd, buffer, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending the child replay");
+    }
+    pthread_mutex_unlock(&data_mutex);
+}
+
+//re-announces the whole tracked subtree to the new parent, one faked change-parent response per node, each with
+//the node own parent and type, so the new parent and the chain above rebuild every branch; used when the child is
+//a control device, find_all_routing_data returns a node always after its parent so the branch is rebuilt top-down
+void replay_subtree(){
+    response_t node_add;
+    node_add.command_code = LINK | LINK_CHANGE_PARENT; //looks like the node own change-parent response
+    node_add.response_code = OK;
+    node_add.arguments_size = 2;
+    char buffer[MAX_RESPONSE_SIZE];
+
+    //the table and snd_responses_fd are shared with the child-responses thread, so the whole traversal is guarded:
+    //the node pointer is the cursor for the next find_all_routing_data call and must stay valid until the end
+    pthread_mutex_lock(&data_mutex);
+    routing_data_t *node = find_all_routing_data(routing_table, id, NULL);
+    while(node != NULL){
+        node_add.source = node->id;
+        node_add.arguments[PARENT_ID_ARGUMENT] = node->parent_id;
+        node_add.arguments[DEVICE_TYPE_ARGUMENT] = node->type;
+        if(IS_ERROR(format_response(&node_add, buffer, MAX_RESPONSE_SIZE))
+            || write(snd_responses_fd, buffer, MAX_RESPONSE_SIZE) != MAX_RESPONSE_SIZE){
+            print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while replaying the subtree");
+        }
+        node = find_all_routing_data(routing_table, id, node);
     }
     pthread_mutex_unlock(&data_mutex);
 }

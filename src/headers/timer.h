@@ -146,6 +146,14 @@ void create_link_response();
 void replay_child_add();
 
 /**
+ * Replays the whole tracked subtree to the new parent, sending a faked change-parent response for each node
+ * (top to bottom, a node always after its parent), so the new parent rebuilds every branch below the timer
+ *
+ * Used when the child is a control device, the leaf-child case is handled by `replay_child_add`
+ */
+void replay_subtree();
+
+/**
  * Sets the attributes for the registry response and performs actions if needed
  */
 void create_registry_response();
