@@ -18,7 +18,8 @@
 
 // Default values
 
-#define MAX_TIMER_ARGUMENTS     4    //state, begin and end, the position 1 is not used by the timer
+#define MAX_TIMER_ARGUMENTS     4    //state, num, begin and end
+#define NUM_ARGUMENT            1    //number of children (0 or 1), shares the position with the fridge autoclose delay
 #define MINUTES_IN_A_DAY        1440 //begin and end are minutes from midnight, so they must be less than this
 #define SECONDS_IN_A_DAY        (MINUTES_IN_A_DAY * 60) //used by the schedule thread to wait until the next day
 #define DEFAULT_BEGIN           0    //midnight, so any end is always greater than the default begin

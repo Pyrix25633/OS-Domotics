@@ -232,7 +232,16 @@ bool handle_own_reply(response_t *child_response){
     if(IS_SWITCH(child_response->command_code)){
         child_response->arguments_size = 0; //a switch response carries no arguments
     }
-    //TODO an info reply builds [state, num, begin, end] here from the child state
+    else if(IS_INFO(child_response->command_code)){
+        //the child info reply already carries its live state in the first argument, the following positions
+        //(num, begin, end) are the timer own and replace whatever the child put after the state
+        pthread_mutex_lock(&data_mutex);
+        child_response->arguments[NUM_ARGUMENT] = 1; //the info is deferred only when the timer has a child
+        child_response->arguments[BEGIN_ARGUMENT] = begin;
+        child_response->arguments[END_ARGUMENT] = end;
+        pthread_mutex_unlock(&data_mutex);
+        child_response->arguments_size = MAX_TIMER_ARGUMENTS;
+    }
 
     char buffer[MAX_RESPONSE_SIZE];
     error_code_t error_code = format_response(child_response, buffer, MAX_RESPONSE_SIZE);
@@ -391,14 +400,38 @@ error_code_t execute_command(){
     return error_code;
 }
 
+//the child state can not be cached, so the info request is propagated to the child and its live state is
+//mirrored when it replies (in the bottom-up thread), which is what makes a manual override on the child visible
 void create_info_response(){
-    response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[BEGIN_ARGUMENT] = begin;
-    response.arguments[END_ARGUMENT] = end;
-    response.arguments_size = MAX_TIMER_ARGUMENTS;
-    //? the position 1 is not used by the timer, the positions of begin and end are shared with the fridge registry
-    response.arguments[1] = 0;
-    //TODO the state can not be cached, it has to be asked to the child to detect a manual override
+    //the child scalars are set by the child-responses thread, so they are snapshotted under the lock
+    pthread_mutex_lock(&data_mutex);
+    bool present = has_child;
+    int child_fd = snd_requests_child_fd;
+    device_id_t target = child_id;
+    pthread_mutex_unlock(&data_mutex);
+
+    if(!present){
+        //no child to query, the timer answers on its own with an undefined mirrored state, like the hub does
+        response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
+        response.arguments[NUM_ARGUMENT] = 0;
+        response.arguments[BEGIN_ARGUMENT] = begin;
+        response.arguments[END_ARGUMENT] = end;
+        response.arguments_size = MAX_TIMER_ARGUMENTS;
+        return;
+    }
+    //propagate the info down, rebuilt from the struct with the child as destination
+    request.destination = target;
+    error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
+    if(IS_ERROR(forward_code) || write(child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
+        response.response_code = UNABLE_TO_WRITE_PIPE;
+        return;
+    }
+    //the child reply is awaited: the info response is built and sent by the bottom-up thread, not here
+    pthread_mutex_lock(&data_mutex);
+    awaiting_child_response = true;
+    awaited_command = request.command_code;
+    pthread_mutex_unlock(&data_mutex);
+    defer_response = true;
 }
 
 void create_link_response(){
