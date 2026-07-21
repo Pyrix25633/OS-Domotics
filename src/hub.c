@@ -96,18 +96,20 @@ error_code_t top_down_handler(){
                 else{
                     if (has_children){
                         if(request.destination == id){ //the destination is the parent
-                            if(IS_INFO(code)) {forward_request(&request, &to_be_forwarded, request_buffer);}
+                            if(IS_INFO(code)) {forward_request(&request, &response, &to_be_forwarded, request_buffer);}
                             else if(IS_SWITCH(code)) { create_switch(&request, &response, &to_be_forwarded, request_buffer); }
                             else if(IS_LINK(code)) { create_link(&request, &response, &parent_changed); }
-                            else if(IS_DELETE(code)) { forward_request(&request, &to_be_forwarded, request_buffer); }
+                            else if(IS_DELETE(code)) { forward_request(&request, &response, &to_be_forwarded, request_buffer); }
                             else{
                                 response.response_code = UNEXPECTED_COMMAND;
                             }
                         }
                         else{
                             int temp = send_to_child(&response, request.destination);
-                            if(temp >= 0) child_fd = temp;
-                            is_request = true;
+                            if(temp >= 0){
+                                child_fd = temp;
+                                is_request = true;
+                            }
                         }
                     }
                     else{
@@ -163,16 +165,21 @@ error_code_t top_down_handler(){
 void bottom_up_handler(){
     //can be used to read the responses from the children and to write 
     //the responses up towards the parent of the hub
-    char response_buffer[MAX_REQUEST_SIZE];
+    char response_buffer[MAX_RESPONSE_SIZE];
     response_t response;
     command_code_t code;
     error_code_t error_code;
 
-    linked_list_t solved_response;
+    linked_list_t *solved_response = NULL;
+    linked_list_t *before_response = NULL;
 
     bool found, is_complete;
 
     while(!force_exit){
+
+        found = false;
+        is_complete = false;
+
         error_code = read_pipe(rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE);
         if(!IS_ERROR(error_code)){
             error_code = parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
@@ -202,7 +209,7 @@ void bottom_up_handler(){
                     response.response_code = UNABLE_TO_LOCK_MUTEX;
                 }
                 else{
-                    check_pending_complete(&response, &found, &is_complete, &solved_response);
+                    check_pending_complete(&response, &found, &is_complete, solved_response, before_response);
                     if(pthread_mutex_unlock(&data_mutex) < 0){
                         response.response_code = UNABLE_TO_UNLOCK_MUTEX;
                         force_exit = true;
@@ -213,7 +220,9 @@ void bottom_up_handler(){
                     else if(IS_SWITCH(code)) {switch_response(&response, &solved_response);}
                     else if(IS_DELETE(code)) {delete_response(&response, &solved_response);}
                     response.source = id;
-                    free_pending_response(&solved_response);
+                    before_response->next = pending_responses->next;
+                    free(solved_response->pending_devices);
+                    free(solved_response);
                 }
             }
         }
@@ -221,16 +230,6 @@ void bottom_up_handler(){
         write_pipe_response(&response, response_buffer);
     }
     pthread_exit(NULL);
-}
-
-/**
- * It frees the space before allocated for the pending responses struct
- */
-void free_pending_response(response_t *solved_response){
-    free(pending_responses->pending_devices);
-    if(pending_responses->next == NULL){
-        free(pending_responses);
-    }
 }
 
 void handle_shutdown(error_code_t error) {
@@ -339,11 +338,12 @@ void delete_response(response_t *response, linked_list_t *solved_response){
     }
 }
 
-void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *solved_response){
+void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *solved_response, linked_list_t *before_response){
     //no pending responses
     if(pending_responses == NULL) return;
     linked_list_t *current_pending = pending_responses;
     error_code_t error_code = OK;
+    before_response = NULL;
 
     while(current_pending != NULL){
         *is_complete = true;
@@ -391,12 +391,14 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
                         }
                     }
                     *found = true;
-                    *solved_response = *current_pending;
+                    //TODO check if its correct
+                    solved_response = current_pending;
                 }
             }
             response->response_code = error_code;
             if(*found) return; //i have to exit if i found the id otherwise i would complete other requests with only one response
         }
+        before_response = current_pending;
         current_pending = current_pending->next;
     }
 }
@@ -484,9 +486,11 @@ error_code_t link_remove_child_received(device_id_t child_id){
     return error_code;
 }
 
-void forward_request(request_t *request, bool *to_be_forwarded, char* buffer_write){
+void forward_request(request_t *request, response_t *response, bool *to_be_forwarded, char* buffer_write){
     routing_data_t *direct_child = find_direct_routing_data(routing_table, id, NULL);
-    linked_list_t *pending = init_pending_requests(request->command_code);
+    linked_list_t *pending = init_pending_requests(request->command_code, response);
+    if(response->response_code != OK) return;
+    
     u_int32_t i = 0;
     
     *to_be_forwarded = true; //nothing to send
@@ -502,15 +506,23 @@ void forward_request(request_t *request, bool *to_be_forwarded, char* buffer_wri
     add_request(pending);
 }
 
-linked_list_t* init_pending_requests(command_code_t command_code){
+linked_list_t* init_pending_requests(command_code_t command_code, response_t *response){
     linked_list_t *pending = malloc(sizeof(linked_list_t));
+    if(pending == NULL){
+        response->response_code = UNABLE_TO_ALLOCATE_HEAP;
+        return;
+    }
+    pending->pending_devices_size = children;
+    pending->pending_devices = malloc(sizeof(device_id_t)*pending->pending_devices_size);
+    if(pending->pending_devices == NULL){
+        response->response_code = UNABLE_TO_ALLOCATE_HEAP;
+        return;
+    }
     pending->command_code = command_code;
     pending->next = NULL;
     pending->max_time = 0;
     pending->has_error = false;
     pending->state = UNDEFINED_STATE;
-    pending->pending_devices_size = children;
-    pending->pending_devices = malloc(sizeof(device_id_t)*pending->pending_devices_size);
     return pending;
 }
 
@@ -543,7 +555,7 @@ void create_switch(request_t *request, response_t *response, bool* to_be_forward
         ((IS_FRIDGE_LIKE(device_type) || IS_WINDOW_LIKE(device_type)) &&
         (SWITCH_LABEL(request->command_code)==SWITCH_OPEN || SWITCH_LABEL(request->command_code)==SWITCH_CLOSE))){
 
-        forward_request(request, to_be_forwarded, buffer_write);
+        forward_request(request, response, to_be_forwarded, buffer_write);
     }
     else{
         response->response_code = UNEXPECTED_COMMAND;

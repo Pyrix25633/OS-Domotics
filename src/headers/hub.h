@@ -68,21 +68,23 @@ error_code_t read_pipe(int fd, char* buffer, size_t buffer_size);
 
 /**
  * A new pending request is created (linked_list_t), then for every direct child it forwards the request and inserts its id in a list to know which
- * responses are arrived and which are not
+ * responses are arrived and which are not, it can fail and an error is set in the response
  * 
  * @param request the request received that has to be modified to be forwarded
+ * @param response the response to send back
  * @param is_forward_request it will be set as true in order to not send a request or a response yet
  * @param buffer_write used to write the response to forward
  */
-void forward_request(request_t *request, bool *is_forward_request, char* buffer_write);
+void forward_request(request_t *request, response_t *response, bool *is_forward_request, char* buffer_write);
 
 /**
- * It creates and initialize with default values the pending requests list
+ * It creates and initialize with default values the pending requests list, it can fail
  * 
  * @param command_code the command_code of the pending request
+ * @param response if the malloc fails an error must be set in the response
  * @return the initialized pending requests list
  */
-linked_list_t* init_pending_requests(command_code_t command_code);
+linked_list_t* init_pending_requests(command_code_t command_code, response_t *response);
 
 /**
  * It formats the request and writes the string created in the pipe managing the errors that can occur
@@ -105,7 +107,7 @@ void add_request(linked_list_t *pending);
  * it's correct otherwise it creates an error response to send back
  * 
  * @param request the request received from the parent
- * @param response the response to create to send send it back
+ * @param response the response to create to send back
  * @param to_be_forwarded true if no response or request need to be send immediately, when the request is forwarded
  * @param buffer_write the buffer to write the request for the children
  */ 
@@ -233,8 +235,9 @@ void link_response(response_t *response);
  * @param found it will be set as `true` if it was founded in the missing ones
  * @param is_complete it will be set as `true` if the pending response is now complete and can be sent
  * @param found_request it will be initialized with the pending response if it was missing
+ * @param before_response it will be initialized with the response before the pending response
  */
-void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *found_request);
+void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *found_request, linked_list_t *before_response);
 
 /**
  * The pending response has be resolved and the arguments of the info response are set
@@ -259,11 +262,6 @@ void switch_response(response_t *response, linked_list_t *solved_response);
  * @param solved_response The solved pending response
  */
 void delete_response(response_t *response, linked_list_t *solved_response);
-
-/**
- * It frees the space before allocated for the pending responses struct
- */
-void free_pending_response();
 
 /**
  * It receives the responses from the children and if the response given is not in the pending ones it will be forwarded upwards, otherwise
