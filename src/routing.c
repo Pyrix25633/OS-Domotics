@@ -151,6 +151,7 @@ void insert_routing_data_in_bucket(routing_data_t **bucket, routing_data_t *data
             else { // Not first
                 previous->next = data;
             }
+            free(data);
             return;
         }
         // Insert new data

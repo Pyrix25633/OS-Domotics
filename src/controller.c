@@ -3,7 +3,7 @@
 #include "controller.h"
 
 // - Device data -
-device_id_t id = CONTROLLER_ID;
+const device_id_t id = CONTROLLER_ID;
 device_id_t last_device_id = CONTROLLER_ID;
 
 // - Ncurses data -
@@ -15,6 +15,7 @@ WINDOW *input_win;
 
 pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely // ! check if used
 pthread_t stderr_thread; // Used for reading from redirected `stderr`
+pthread_t responses_thread; // Used for reading device responses from pipe
 
 // - User input -
 user_command_t user_command;
@@ -48,7 +49,11 @@ int main(int argc, char *argv[]) {
         print_error(STDERR_FILENO, error_code, id, "while starting ncurses");
     }
 
-    // TODO: start read responses thread
+    if(pthread_create(&responses_thread, NULL, responses_routine, NULL) < 0) {
+        error_code = UNABLE_TO_CREATE_THREAD;
+        print_error(STDERR_FILENO, error_code, id, "while creating responses thread");
+        force_exit = true; // Fatal error
+    }
 
     output("Controller ID: %d", id);
     output("Available commands:");
@@ -67,7 +72,7 @@ int main(int argc, char *argv[]) {
         output("Command code: %d, target: %d, argument: %d", user_command.code, user_command.target, user_command.argument);
     }
 
-    handle_shutdown(error_code);
+    handle_shutdown(error_code, false);
 }
 
 error_code_t process_user_command(user_command_t *user_command, char *string) {
@@ -278,7 +283,6 @@ error_code_t check_user_command(user_command_t *user_command) {
     if(IS_DELETE(user_command->message_code) && user_command->target == CONTROLLER_ID) { // Delete of everything
         return OK;
     }
-    output("Non delete");
     // Check that destination exists and eventually that the device type is compatible
     if(pthread_mutex_lock(&data_mutex) < 0) {
         return UNABLE_TO_LOCK_MUTEX;
@@ -421,6 +425,9 @@ error_code_t execute_add_command(device_type_t type) {
             return UNABLE_TO_UNLOCK_MUTEX;
         }
         last_device_id = new_id;
+        char device_type[DEVICE_TYPE_SIZE];
+        format_device_type(type, device_type);
+        output("Successfully created %s with ID: %u, PID: %u", device_type, new_id, pid);
         return error_code;
     }
     else { // New device
@@ -480,6 +487,28 @@ error_code_t write_pipe() {
     return OK;
 }
 
+void* responses_routine(void *arg) {
+    (void)arg; // Unused parameter
+
+    int err;
+    error_code_t error_code = OK;
+    while(!force_exit) {
+        err = read(rcv_responses_fd, response_buffer, MAX_RESPONSE_SIZE);
+        if(err != MAX_RESPONSE_SIZE) {
+            error_code = UNABLE_TO_READ_PIPE;
+            print_error(STDERR_FILENO, error_code, id, "in responses thread");
+            force_exit = true;
+            break; // Fatal error, cannot receive responses from devices
+        }
+        // TODO: better printing for user, also use received data in some occasions
+        output(response_buffer);
+    }
+    
+    // Then this thread makes the entire Controller exit
+    handle_shutdown(OK, true); // TODO: Change
+    pthread_exit(NULL); // Not really used, just to suppress compiler warning
+}
+
 void start_responses_fifo() {
     char name[PIPE_NAME_MAX_LENGTH];
     /*
@@ -507,7 +536,7 @@ error_code_t end_responses_fifo() {
     return error_code;
 }
 
-void handle_shutdown(error_code_t error) {
+void handle_shutdown(error_code_t error, bool in_responses_thread) {
     error_code_t error_code = end_responses_fifo();
     error_code_t tmp;
     if(IS_ERROR(error_code)) {
@@ -519,6 +548,10 @@ void handle_shutdown(error_code_t error) {
             error_code = tmp;
             print_error(STDERR_FILENO, error_code, id, "while closing ncurses");
         }
+    }
+    if(!in_responses_thread && pthread_cancel(responses_thread) < 0) {
+        error_code = UNABLE_TO_CANCEL_THREAD;
+        print_error(STDERR_FILENO, error_code, id, "while canceling responses thread");
     }
     tmp = shutdown_devices();
     if(IS_ERROR(tmp)) {
@@ -554,11 +587,11 @@ error_code_t shutdown_devices() {
 }
 
 void sigterm_handler() {
-    handle_shutdown(UNEXPECTED_SHUTDOWN);
+    handle_shutdown(UNEXPECTED_SHUTDOWN, false);
 }
 
 void sigpipe_handler() {
-    handle_shutdown(BROKEN_PIPE);
+    handle_shutdown(BROKEN_PIPE, false);
 }
 
 error_code_t start_ncurses(int argc, char *argv[]) {
@@ -573,7 +606,6 @@ error_code_t start_ncurses(int argc, char *argv[]) {
     }
 
     initscr();
-    cbreak(); // TODO: check if needed
 
     error_code_t error_code = redirect_stderr();
     if(IS_ERROR(error_code)) { // Restore original streams

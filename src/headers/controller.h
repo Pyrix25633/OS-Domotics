@@ -223,6 +223,17 @@ void output_device(routing_data_t *device);
 error_code_t write_pipe();
 
 /**
+ * Function that the responses thread executes
+ * 
+ * It reads from the responses pipe
+ * 
+ * @param arg Not used
+ * 
+ * @returns `NULL`
+ */
+void* responses_routine(void *arg);
+
+/**
  * Creates and opens `"./ipc/<controller_id>_up.fifo"` in read-write mode, this way
  * the open doesn't block and no end of file is returned to the read when the controller is empty
  * 
@@ -243,8 +254,9 @@ error_code_t end_responses_fifo();
  * Handles the shutdown
  * 
  * @param error Error that caused the shutdown, if not `OK`
+ * @param in_responses_thread If the function is called from the responses thread, so it should not cancel itself
  */
-void handle_shutdown(error_code_t error);
+void handle_shutdown(error_code_t error, bool in_responses_thread);
 
 /**
  * Sends `SIGTERM` to all devices and cleans their pipes
@@ -317,7 +329,7 @@ error_code_t create_windows();
  * 
  * If something fails there is not much that can be done as
  * the input-output interface itself is being manipulated,
- * so this function doesn't check for errors // TODO
+ * so this function doesn't check for all errors
  * 
  * @param arg Not used
  * 
