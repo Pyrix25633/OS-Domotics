@@ -513,7 +513,6 @@ error_code_t execute_scenario() {
             user_buffer[last] = '\0'; // Remove new line, which not read in normal user input
         }
         process_user_command(&user_command, user_buffer); // Errors are only printed
-        // TODO: decide if to use sleep
     }
 
     if(fclose(scenario_file) != 0) {
@@ -549,9 +548,12 @@ void output_response(response_t *response) {
         strcpy(response_status, "successful");
     }
     if(IS_SWITCH(code)) {
-        snprintf(user_message, USER_MESSAGE_SIZE, "switch %s %s",
+        char child_error[CHILD_ERROR_SIZE];
+        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
+        snprintf(user_message, USER_MESSAGE_SIZE, "switch %s %s%s",
             SWITCH_LABEL(code) == SWITCH_POWER ? "power" : (SWITCH_LABEL(code) == SWITCH_OPEN ? "open" : "close"),
-            SWITCH_POSITION(code) == POSITION_ON ? "on" : "off");
+            SWITCH_POSITION(code) == POSITION_ON ? "on" : "off",
+            response->arguments_size == 1 ? child_error : "");
     }
     else if(IS_INFO(code)) {
         if(IS_ERROR(response->response_code)) {
@@ -563,7 +565,9 @@ void output_response(response_t *response) {
         }
     }
     else if(IS_DELETE(code)) {
-        strcpy(user_message, "delete");
+        char child_error[CHILD_ERROR_SIZE];
+        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
+        snprintf(user_message, USER_MESSAGE_SIZE, "delete%s", response->arguments_size == 1 ? child_error : "");
     }
     else if(IS_LINK(code)) {
         if(LINK_SUBCOMMAND(code) == LINK_CHANGE_PARENT) {
@@ -580,6 +584,27 @@ void output_response(response_t *response) {
         strcpy(user_message, "unknown command");
     }
     output("%s with ID %u: %s %s", device_type, source->id, user_message, response_status);
+}
+
+error_code_t update_with_response(response_t *response) {
+    if(IS_ERROR(response->response_code)) { // Nothing to update
+        return OK;
+    }
+    if(IS_LINK(response->command_code)) {
+        if(LINK_SUBCOMMAND(response->command_code) == LINK_CHANGE_PARENT) {
+            // TODO: send link remove child
+            // TODO: update routing information
+        }
+        else {
+            // TODO: child removed, remove from routing data
+            // TODO: or maybe not, maybe useless since it's gonna remain a child of the Controller
+        }
+    }
+    else if(IS_DELETE(response->command_code)) {
+        // TODO: delete pipe
+        // TODO: remove from routing data
+        // TODO: check if it was del 0 and if it was the last
+    }
 }
 
 void format_info_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE], device_type_t type) {
@@ -634,8 +659,8 @@ void format_info_user_message(response_t *response, char user_message[USER_MESSA
             snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s", state_string);
         }
         if(IS_HUB(type)) {
-            char child_error[8];
-            snprintf(child_error, 8, "0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
+            char child_error[CHILD_ERROR_SIZE];
+            snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
             snprintf(user_message, RESPONSE_STATUS_SIZE, "%s%s", intermediate,
                 response->arguments_size == 3 ? child_error : "");
         }
@@ -715,7 +740,10 @@ void* responses_routine(void *arg) {
             print_error(STDERR_FILENO, error_code, id, "after receiving response");
             continue;
         }
-        // TODO: use received data to update routing
+        error_code = update_with_response(&response);
+        if(IS_ERROR(error_code)) {
+            print_error(STDERR_FILENO, error_code, id, "while parsing response");
+        }
         output_response(&response);
         if(pthread_mutex_lock(&data_mutex) < 0) {
             error_code = UNABLE_TO_UNLOCK_MUTEX;

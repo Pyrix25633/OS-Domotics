@@ -28,6 +28,7 @@
 #define USER_BUFFER_SIZE     64
 #define RESPONSE_STATUS_SIZE 128
 #define USER_MESSAGE_SIZE    256
+#define CHILD_ERROR_SIZE     32
 #define SCENARIO_FILE_NAME   "./commands.scenario"
 
 #define CHECK_NO_OTHER_ARGUMENTS(last) strtok_r(NULL, " ", &last) == NULL ? OK : INVALID_COMMAND_ARGUMENT
@@ -241,6 +242,15 @@ void output_device(routing_data_t *device);
  * @param response Response to be printed
  */
 void output_response(response_t *response);
+
+/**
+ * Uses received response mainly to update routing data
+ * 
+ * @param response The received response
+ * 
+ * @returns // TODO
+ */
+error_code_t update_with_response(response_t *response);
 
 /**
  * Formats user message for received info response
