@@ -23,6 +23,7 @@ device_id_t parent_id = CONTROLLER_ID;
 bool has_child = false;   //the timer controls a single device, but it can also have none
 device_id_t child_id;     //valid only if has_child is true
 device_type_t child_type; //needed to know which switch label to send to the child
+routing_table_t routing_table; //tracks the subtree below a control-device child, to replay it on re-parent
 bool parent_changed = false; //set when a link changes the parent, so the child is replayed after the own response
 
 // - Mirroring data -
@@ -59,6 +60,7 @@ int main(int argc, char *argv[]) {
     response.source = id;
     //the last argument is not NULL because the timer is a control device, so the pipe for the child is created too
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, &rcv_responses_child_fd);
+    init_routing_table(routing_table); //empty until a control-device child is acquired, a leaf child never uses it
 
     set_signal_handler(SIGTERM, sigterm_handler);
     set_signal_handler(SIGPIPE, sigpipe_handler);
@@ -177,6 +179,12 @@ void acquire_child(response_t *child_response){
     child_type = new_child_type;
     snd_requests_child_fd = new_child_fd;
     device_type = TIMER_DEVICE | new_child_type; //the declared type keeps the child leaf bits for the switch label
+    //a control-device child brings its own subtree: it is tracked in the routing table so the whole branch can be
+    //replayed to a new parent, a leaf child has no descendants and needs only the scalars above (hybrid approach)
+    if((IS_CONTROL(new_child_type))
+        && IS_ERROR(insert_direct_routing_data(routing_table, new_child_id, new_child_type, id, new_child_fd))){
+        print_error(STDERR_FILENO, UNABLE_TO_ALLOCATE_HEAP, id, "while adding the child to the routing table");
+    }
     has_child = true; //set last, the main thread checks it before using the other child scalars
     pthread_mutex_unlock(&data_mutex);
 }

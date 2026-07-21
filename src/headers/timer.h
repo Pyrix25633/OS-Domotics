@@ -8,6 +8,7 @@
 #include "return_codes.h"
 #include "messages.h"
 #include "utils.h"
+#include "routing.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
