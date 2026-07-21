@@ -75,6 +75,15 @@ void write_pipe();
 void acquire_child(response_t *child_response);
 
 /**
+ * Records a deeper descendant (whose parent is not the timer) in the routing table under its own parent,
+ * so the whole subtree can be replayed to a new parent, does nothing for a response that is not a descendant
+ * change-parent or for a device that is not part of the timer subtree
+ *
+ * @param child_response The response read from the child
+ */
+void acquire_descendant(response_t *child_response);
+
+/**
  * Bottom-up thread body: reads the responses coming from the child and forwards them up to the parent
  * @param arg Unused
  * @returns `NULL`

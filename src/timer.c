@@ -179,14 +179,42 @@ void acquire_child(response_t *child_response){
     child_type = new_child_type;
     snd_requests_child_fd = new_child_fd;
     device_type = TIMER_DEVICE | new_child_type; //the declared type keeps the child leaf bits for the switch label
+    
     //a control-device child brings its own subtree: it is tracked in the routing table so the whole branch can be
     //replayed to a new parent, a leaf child has no descendants and needs only the scalars above (hybrid approach)
+    
+    //the && short-circuits: for a leaf child, IS_CONTROL is false and the insert is never evaluated
     if((IS_CONTROL(new_child_type))
         && IS_ERROR(insert_direct_routing_data(routing_table, new_child_id, new_child_type, id, new_child_fd))){
         print_error(STDERR_FILENO, UNABLE_TO_ALLOCATE_HEAP, id, "while adding the child to the routing table");
     }
     has_child = true; //set last, the main thread checks it before using the other child scalars
     pthread_mutex_unlock(&data_mutex);
+}
+
+//a replayed change-parent response of a deeper descendant (its parent is not the timer) is recorded in the
+//routing table under its own parent, so later the whole subtree can be replayed to a new parent
+void acquire_descendant(response_t *child_response){
+    command_code_t code = child_response->command_code;
+    if(!((IS_LINK(code)) && LINK_SUBCOMMAND(code) == LINK_CHANGE_PARENT)){
+        return;
+    }
+    //a failed response is ignored, the direct child is not a descendant and is handled by acquire_child
+    if(child_response->response_code != OK || child_response->arguments[PARENT_ID_ARGUMENT] == id){
+        return;
+    }
+    device_id_t descendant_id = child_response->source;
+    device_type_t descendant_type = child_response->arguments[DEVICE_TYPE_ARGUMENT];
+    device_id_t descendant_parent = child_response->arguments[PARENT_ID_ARGUMENT];
+
+    //insert_indirect_routing_data returns ROUTE_NOT_FOUND when the parent is not in the table, that is the device
+    //is not part of the timer subtree, so it is simply not tracked (this also covers the leaf-child case)
+    pthread_mutex_lock(&data_mutex);
+    error_code_t error_code = insert_indirect_routing_data(routing_table, descendant_id, descendant_type, descendant_parent);
+    pthread_mutex_unlock(&data_mutex);
+    if(IS_ERROR(error_code) && error_code != ROUTE_NOT_FOUND){
+        print_error(STDERR_FILENO, error_code, id, "while adding a descendant to the routing table");
+    }
 }
 
 //bottom-up thread: reads the responses coming from the child and forwards them up to the parent
@@ -207,6 +235,8 @@ void *child_responses_handler(void *arg){
         memcpy(parse_buffer, child_buffer, MAX_RESPONSE_SIZE);
         if(!IS_ERROR(parse_response(&child_response, parse_buffer, MAX_RESPONSE_SIZE))){
             acquire_child(&child_response);
+            //a change-parent response of a deeper descendant is recorded in the routing table for the subtree replay
+            acquire_descendant(&child_response);
             //a reply to a request the timer sent for mirroring is turned into the timer own response, not forwarded
             if(handle_own_reply(&child_response)){
                 continue;
