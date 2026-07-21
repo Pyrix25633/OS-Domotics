@@ -104,8 +104,12 @@ void handle_shutdown(error_code_t error) {
         schedule_thread_running = false;
     }
     //the child down pipe is only opened for writing, the child owns it, so it is just closed and not deleted
-    if(has_child && close(snd_requests_child_fd) < 0){
-        print_error(STDERR_FILENO, UNABLE_TO_CLOSE_PIPE, id, "while closing the child requests pipe");
+    if(has_child){
+        if(close(snd_requests_child_fd) < 0){
+            print_error(STDERR_FILENO, UNABLE_TO_CLOSE_PIPE, id, "while closing the child requests pipe");
+        }
+        //free the routing table nodes of a control-device child subtree, the threads are already joined so no lock
+        remove_routing_data(routing_table, child_id, id);
     }
     //control device: the last argument is the child pipe and not NO_FILE_DESCRIPTOR, so it is closed and deleted too
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, rcv_responses_child_fd);
@@ -513,6 +517,9 @@ void create_link_response(){
         //the child scalars are shared with the child-responses thread, so they are accessed under the lock
         pthread_mutex_lock(&data_mutex);
         if(has_child && request.argument == child_id){
+            //the whole subtree leaves with the child, so it is removed from the table (cascades to all
+            //descendants, a leaf child was never tracked and this is a no-op)
+            remove_routing_data(routing_table, child_id, id);
             if(close(snd_requests_child_fd) < 0){
                 response.response_code = UNABLE_TO_CLOSE_PIPE;
             }
