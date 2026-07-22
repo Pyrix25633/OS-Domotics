@@ -600,6 +600,7 @@ error_code_t update_with_link_response(response_t *response) {
         update_type_to_empty(device);
         return OK;
     }
+    // Link change parent
     routing_data_t *source = find_routing_data(routing_table, response->source);
     if(source == NULL) {
         return CHILD_NOT_FOUND;
@@ -619,7 +620,7 @@ error_code_t update_with_link_response(response_t *response) {
         return IS_ERROR(tmp) ? tmp : error_code;
     }
 
-    // TODO: work here
+    update_type_to_not_empty(source);
 
     if(source->parent_id == id) { // Controller is the old parent
         if(close(source->next_hop_fd) < 0) {
@@ -673,9 +674,9 @@ error_code_t update_with_delete_response(response_t *response) {
 
 void update_type_to_empty(routing_data_t *device) {
     routing_data_t *current = device;
-    while(current != NULL) { // Recalculate types up to topmost parent
+    while(current != NULL) { // Recalculate types up to topmost parent if necessary
         if(IS_EMPTY(current->type)) {
-            return OK;
+            return;
         }
 
         routing_data_t *child = find_direct_routing_data(routing_table, current->id, NULL);
@@ -697,7 +698,22 @@ void update_type_to_empty(routing_data_t *device) {
 }
 
 void update_type_to_not_empty(routing_data_t *device) {
-
+    device_type_t child_type = device->type;
+    if(IS_EMPTY(child_type)) {
+        return; // Nothing to update
+    }
+    child_type &= LEAF_DEVICE_MASK; // Get children type
+    routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
+    while(parent != NULL) { // Recalculate types up to topmost parent if necessary
+        if(!IS_EMPTY(parent->type)) {
+            // Already has a type, it shouldn't happen that it is incompatible, anyways nothing could be done
+            break;
+        }
+        // Parent is always a control device, just set children type
+        parent->type = (parent->type & CONTROL_DEVICE_MASK) | child_type;
+        parent = find_routing_data(routing_table, parent->parent_id);
+    }
+    return;
 }
 
 void format_info_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE], device_type_t type) {
