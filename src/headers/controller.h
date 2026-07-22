@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
 #include <pthread.h>
@@ -350,6 +351,16 @@ void start_responses_fifo();
 error_code_t end_responses_fifo();
 
 /**
+ * Closes and removes device fifos
+ * 
+ * @param device Device to cleanup
+ * 
+ * @returns `UNABLE_TO_REMOVE_PIPE` if the pipes could not be removed,
+ * `OK` otherwise
+ */
+error_code_t end_device_fifos(routing_data_t *device);
+
+/**
  * Handles the shutdown
  * 
  * @param error Error that caused the shutdown, if not `OK`
@@ -358,11 +369,15 @@ error_code_t end_responses_fifo();
 void handle_shutdown(error_code_t error, bool in_responses_thread);
 
 /**
- * Sends `SIGTERM` to all devices and cleans their pipes
+ * Sends `SIGTERM` to all devices that have the specified parent ID and their children, and cleans up their pipes
  * 
- * @returns
+ * @param parent_id The parent ID
+ * 
+ * @returns `UNABLE_TO_SEND_SIGNAL` if the `SIGTERM` signal could not be sent,
+ * `UNABLE_TO_REMOVE_PIPE` if a pipe could not be removed and not because the file didn't exist,
+ * `OK` otherwise
  */
-error_code_t shutdown_devices();
+error_code_t shutdown_devices(device_id_t parent_id);
 
 /**
  * Handles the shutdown caused by a `SIGTERM` signal
@@ -373,6 +388,20 @@ void sigterm_handler();
  * Handles the shutdown caused by a `SIGPIPE` signal
  */
 void sigpipe_handler();
+
+/**
+ * Handles the shutdown of a child process, logical direct or indirect child device
+ * 
+ * It creates a detached thread that locks the mutex to safely access data
+ */
+void sigchld_handler();
+
+/**
+ * Handles the shutdown of a child process, logical direct or indirect child device
+ * 
+ * It locks the mutex to safely access data
+ */
+void* sigchld_routine(void *arg);
 
 /**
  * Initializes the ncurses library, creates the windows and redirects the `stdout` and `stderr` threads,

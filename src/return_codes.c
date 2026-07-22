@@ -76,6 +76,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         case UNABLE_TO_FORK:           strcpy(info, "unable to fork");               break;
         case UNABLE_TO_EXEC:           strcpy(info, "unable to exec");               break;
         case UNABLE_TO_SEND_SIGNAL:    strcpy(info, "unable to send signal");        break;
+        case UNABLE_TO_WAIT:           strcpy(info, "unable to wait");               break;
 
         case UNABLE_TO_CREATE_THREAD:  strcpy(info, "unable to create thread");      break;
         case UNABLE_TO_CANCEL_THREAD:  strcpy(info, "unable to cancel thread");      break;

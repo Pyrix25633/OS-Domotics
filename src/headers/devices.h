@@ -15,7 +15,7 @@ typedef u_int8_t device_type_t;
 
 // Fixed IDS
 
-#define NO_ID                 -2 // Special case, the ID is missing, used for error printing
+#define NO_ID                 0xFFFF // Special case, the ID is missing
 #define MANUAL_INTERACTION_ID -1 // Special case, it is not really a device with an ID, used for error printing
 #define CONTROLLER_ID         0
 

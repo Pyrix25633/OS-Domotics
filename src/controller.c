@@ -39,7 +39,7 @@ int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
     set_signal_handler(SIGINT, sigterm_handler);
     set_signal_handler(SIGPIPE, sigpipe_handler);
-    // ! must set `SIGCHLD` handler, must access routing data, so must be run in a different thread, detached probably
+    set_signal_handler(SIGCHLD, sigchld_handler);
 
     start_responses_fifo();
 
@@ -910,6 +910,24 @@ error_code_t end_responses_fifo() {
     return error_code;
 }
 
+error_code_t end_device_fifos(routing_data_t *device) {
+    error_code_t error_code;
+    char pipe_name[PIPE_NAME_MAX_LENGTH];
+    if(IS_ERROR(create_fifo_name(device->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
+        || (remove(pipe_name) < 0 && errno != ENOENT)) {
+        // Could not remove, not because the file doesn't exist
+        error_code = UNABLE_TO_REMOVE_PIPE;
+    }
+    if(IS_CONTROL(device->type)) {
+        if(IS_ERROR(create_fifo_name(device->id, DIRECTION_UP, pipe_name, PIPE_NAME_MAX_LENGTH))
+            || (remove(pipe_name) < 0 && errno != ENOENT)) {
+            // Could not remove, not because the file doesn't exist
+            error_code = UNABLE_TO_REMOVE_PIPE;
+        }
+    }
+    return error_code;
+}
+
 void handle_shutdown(error_code_t error, bool in_responses_thread) {
     error_code_t error_code = end_responses_fifo();
     error_code_t tmp;
@@ -927,7 +945,7 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
         error_code = UNABLE_TO_CANCEL_THREAD;
         print_error(STDERR_FILENO, error_code, id, "while canceling responses thread");
     }
-    tmp = shutdown_devices();
+    tmp = shutdown_devices(id);
     if(IS_ERROR(tmp)) {
         error_code = tmp;
         print_error(STDERR_FILENO, error_code, id, "while cleaning up devices");
@@ -938,31 +956,25 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
     exit(error_code);
 }
 
-error_code_t shutdown_devices() {
+error_code_t shutdown_devices(device_id_t parent_id) {
     // About to shutdown, mutex not used to read data as it may be locked and/or not working
-    routing_data_t *device = find_all_routing_data(routing_table, id, NULL);
-    char pipe_name[PIPE_NAME_MAX_LENGTH];
+    routing_data_t *device = find_all_routing_data(routing_table, parent_id, NULL);
     error_code_t error_code = OK;
+    error_code_t tmp;
     while(device != NULL) {
         if(kill(device->pid, SIGTERM) < 0) {
             error_code = UNABLE_TO_SEND_SIGNAL;
         }
 
-        close(device->next_hop_fd); // Not checking for errors, could be already closed
-        if(IS_ERROR(create_fifo_name(device->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
-            || (remove(pipe_name) < 0 && errno != ENOENT)) {
-            // Could not remove, not because the file doesn't exist
-            error_code = UNABLE_TO_REMOVE_PIPE;
+        if(device->parent_id == id) {
+            close(device->next_hop_fd); // Not checking for errors, could be already closed
         }
-        if(IS_CONTROL(device->type)) {
-            if(IS_ERROR(create_fifo_name(device->id, DIRECTION_UP, pipe_name, PIPE_NAME_MAX_LENGTH))
-                || (remove(pipe_name) < 0 && errno != ENOENT)) {
-                // Could not remove, not because the file doesn't exist
-                error_code = UNABLE_TO_REMOVE_PIPE;
-            }
+        tmp = end_device_fifos(device);
+        if(IS_ERROR(tmp)) {
+            error_code = tmp;
         }
 
-        device = find_all_routing_data(routing_table, id, device);
+        device = find_all_routing_data(routing_table, parent_id, device);
     }
     return error_code;
 }
@@ -973,6 +985,60 @@ void sigterm_handler() {
 
 void sigpipe_handler() {
     handle_shutdown(BROKEN_PIPE, false);
+}
+
+void sigchld_handler() {
+    pthread_t sigchld_thread;
+    pthread_attr_t sigchld_attributes;
+    if(pthread_attr_init(&sigchld_attributes) < 0
+        || pthread_attr_setdetachstate(&sigchld_attributes, PTHREAD_CREATE_DETACHED) < 0
+        || pthread_create(&sigchld_thread, &sigchld_attributes, sigchld_routine, NULL) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating thread to handle SIGCHLD");
+    }
+}
+
+void* sigchld_routine(void *arg) {
+    if(pthread_mutex_lock(&data_mutex) < 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "acquiring mutex to handle SIGCHLD");
+        pthread_exit(NULL);
+    }
+    // Determine which child/children caused the signal and cleanup
+    routing_data_t *current = find_all_routing_data(routing_table, id, NULL);
+    int exit_code;
+    int status;
+    error_code_t error_code = OK;
+    error_code_t tmp;
+    /*
+     It's no longer possible to send requests and receive responses to the children of the dead device/s
+     So they are terminated using `SIGTERM`
+    */
+    while(current != NULL) {
+        if((status = waitpid(current->pid, &exit_code, WNOHANG) < 0)) {
+            print_error(STDERR_FILENO, UNABLE_TO_WAIT, id, "while checking child process status");
+        }
+        if(status > 0 && WIFEXITED(exit_code)) { // Terminated, handle termination of children
+            // Remove pipes and shutdown children
+            tmp = end_device_fifos(current->id);
+            if(IS_ERROR(tmp)) {
+                error_code = tmp;
+                print_error(STDERR_FILENO, error_code, id, "while cleaning pipes of dead device");
+            }
+            tmp = shutdown_devices(current->id);
+            if(IS_ERROR(tmp)) {
+                error_code = tmp;
+                print_error(STDERR_FILENO, error_code, id, "while terminating dead device children");
+            }
+            // Remove data
+            remove_routing_data(routing_table, current->id, current->parent_id);
+        }
+        current = find_all_routing_data(routing_table, id, current);
+    }
+    if(pthread_mutex_unlock(&data_mutex) < 0) {
+        error_code_t error_code = UNABLE_TO_UNLOCK_MUTEX;
+        print_error(STDERR_FILENO, error_code, id, "releasing mutex to handle SIGCHLD");
+        handle_shutdown(error_code, false);
+    }
+    pthread_exit(NULL);
 }
 
 error_code_t start_ncurses(int argc, char *argv[]) {
