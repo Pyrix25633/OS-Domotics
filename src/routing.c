@@ -3,7 +3,6 @@
 #include "routing.h"
 
 #include <stdlib.h>
-#include <stdio.h> // ! remove
 
 void init_routing_table(routing_table_t table) {
     for(id_hash_t b = 0; b < UNIQUE_ID_HASHES; b++) {
@@ -186,24 +185,5 @@ void remove_routing_data_from_bucket(routing_data_t **bucket, device_id_t id) {
             previous->next = current->next;
         }
         free(current);
-    }
-}
-
-void print_routing_table(routing_table_t table) {
-    for(id_hash_t b = 0; b < UNIQUE_ID_HASHES; b++) {
-        routing_data_t *current = table[b];
-        while(current != NULL) {
-            print_routing_data(current);
-            current = current->next;
-        }
-    }
-}
-
-void print_routing_data(routing_data_t *data) {
-    if(data != NULL) {
-        printf("Id: 0x%x, type: %1x, parent id: 0x%x, next hop fd: %d\n", data->id, data->type, data->parent_id, data->next_hop_fd);
-    }
-    else {
-        printf("Not found\n");
     }
 }

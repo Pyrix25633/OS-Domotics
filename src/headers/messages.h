@@ -72,17 +72,17 @@ typedef struct response_t {
 
 // Command checking macros
 
-#define IS_INFO(c)                (c & COMMAND_MASK) == INFO
-#define IS_LINK(c)                (c & COMMAND_MASK) == LINK
+#define IS_INFO(c)                ((c & COMMAND_MASK) == INFO)
+#define IS_LINK(c)                ((c & COMMAND_MASK) == LINK)
 #define LINK_SUBCOMMAND(c)        (c & LINK_MASK)
-#define IS_SWITCH(c)              (c & COMMAND_MASK) == SWITCH
+#define IS_SWITCH(c)              ((c & COMMAND_MASK) == SWITCH)
 #define SWITCH_LABEL(c)           (c & SWITCH_MASK)
 #define SWITCH_POSITION(c)        (c & POSITION_MASK)
-#define IS_REGISTRY(c)            (c & COMMAND_MASK) == REGISTRY
+#define IS_REGISTRY(c)            ((c & COMMAND_MASK) == REGISTRY)
 #define REGISTRY_SUBCOMMAND(c)    (c & REGISTRY_MASK)
-#define IS_DELETE(c)              (c & COMMAND_MASK) == DELETE
-#define HAS_REQUEST_ARGUMENT(c)   (c & REQUEST_ARGUMENT_FLAG) == REQUEST_ARGUMENT_FLAG
-#define HAS_RESPONSE_ARGUMENTS(c) (c & RESPONSE_ARGUMENTS_FLAG) == RESPONSE_ARGUMENTS_FLAG
+#define IS_DELETE(c)              ((c & COMMAND_MASK) == DELETE)
+#define HAS_REQUEST_ARGUMENT(c)   ((c & REQUEST_ARGUMENT_FLAG) == REQUEST_ARGUMENT_FLAG)
+#define HAS_RESPONSE_ARGUMENTS(c) ((c & RESPONSE_ARGUMENTS_FLAG) == RESPONSE_ARGUMENTS_FLAG)
 
 // Response argument positions
 

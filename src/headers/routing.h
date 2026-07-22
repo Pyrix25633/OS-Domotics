@@ -156,18 +156,4 @@ void insert_routing_data_in_bucket(routing_data_t **bucket, routing_data_t *data
  */
 void remove_routing_data_from_bucket(routing_data_t **bucket, device_id_t id);
 
-/**
- * Prints the routing table for testing
- * 
- * @param table Routing table to display
- */
-void print_routing_table(routing_table_t table);
-
-/**
- * Prints routing data for testing
- * 
- * @param data Pointer to the data to display
- */
-void print_routing_data(routing_data_t *data);
-
 #endif

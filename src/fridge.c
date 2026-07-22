@@ -226,7 +226,7 @@ error_code_t set_state(leaf_device_state_t new_state, bool automatic) {
             last_opened = time(NULL);
             pthread_attr_t attributes;
             if(pthread_attr_init(&attributes) != 0
-                || pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_JOINABLE) != 0
+                || pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED) != 0
                 || pthread_create(&autoclose_thread, &attributes, autoclose_routine, NULL) != 0) {
                 return UNABLE_TO_CREATE_THREAD;
             }

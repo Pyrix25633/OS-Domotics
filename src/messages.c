@@ -112,6 +112,7 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
     response->source = source;
     response->command_code = command_code;
     response->response_code = response_code;
+    response->arguments_size = 0;
 
     // Parse arguments if it's a successful response and should have arguments
     if(HAS_RESPONSE_ARGUMENTS(command_code) && response->response_code == OK) {

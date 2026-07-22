@@ -104,7 +104,7 @@ error_code_t process_user_command(user_command_t *user_command, char *string) {
 error_code_t parse_user_command(user_command_t *user_command, char *string) {
     char *last;
     char *token = strtok_r(string, " ", &last);
-    error_code_t error_code;
+    error_code_t error_code = OK;
     if(token == NULL) {
         return INVALID_COMMAND;
     }
@@ -451,7 +451,7 @@ error_code_t execute_add_command(device_type_t type) {
         */
         int fd;
         if((fd = open(pipe_name, O_RDWR)) < 0
-            || fcntl(fd, F_SETFD, O_WRONLY | O_CLOEXEC)) {
+            || fcntl(fd, F_SETFD, FD_CLOEXEC)) {
             return UNABLE_TO_OPEN_PIPE;
         }
         if(pthread_mutex_lock(&data_mutex) < 0) {
@@ -618,7 +618,28 @@ error_code_t update_with_link_response(response_t *response) {
     if(source->parent_id == response->arguments[PARENT_ID_ARGUMENT]) { // Parent didn't change
         return OK;
     }
+    
+    update_type_to_not_empty(source);
+
+    if(source->parent_id == id) { // Controller is the old parent
+        if(close(source->next_hop_fd) < 0) {
+            return UNABLE_TO_CLOSE_PIPE;
+        }
+        return OK;
+    }
+
     error_code_t error_code = OK;
+    request_t request;
+    char request_buffer[MAX_REQUEST_SIZE];
+    request.destination = source->parent_id;
+    request.command_code = LINK | LINK_REMOVE_CHILD;
+    request.argument = source->id;
+    
+    routing_data_t *old_parent = find_routing_data(routing_table, source->parent_id);
+    if(old_parent == NULL) {
+        return ROUTE_NOT_FOUND;
+    }
+
     if(response->arguments[PARENT_ID_ARGUMENT] == id) { // Controller is the new parent
         char pipe_name[PIPE_NAME_MAX_LENGTH];
         int fd;
@@ -627,28 +648,14 @@ error_code_t update_with_link_response(response_t *response) {
             error_code = UNABLE_TO_OPEN_PIPE;
         }
         error_code_t tmp = insert_direct_routing_data(routing_table, source->id, source->type, id, fd);
-        return IS_ERROR(tmp) ? tmp : error_code;
-    }
-
-    update_type_to_not_empty(source);
-
-    if(source->parent_id == id) { // Controller is the old parent
-        if(close(source->next_hop_fd) < 0) {
-            error_code = UNABLE_TO_CLOSE_PIPE;
+        if(IS_ERROR(tmp)) {
+            error_code = tmp;
         }
     }
-    request_t request;
-    char request_buffer[MAX_REQUEST_SIZE];
-    request.destination = source->parent_id;
-    request.command_code = LINK | LINK_REMOVE_CHILD;
-    request.argument = source->id;
-    error_code = insert_indirect_routing_data(routing_table, source->id, source->type, response->arguments[PARENT_ID_ARGUMENT]);
-    
-    routing_data_t *old_parent = find_routing_data(routing_table, source->parent_id);
-    if(old_parent == NULL) {
-        return ROUTE_NOT_FOUND;
+    else {
+        error_code = insert_indirect_routing_data(routing_table, source->id, source->type, response->arguments[PARENT_ID_ARGUMENT]);
     }
-
+    
     error_code_t tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, old_parent->next_hop_fd);
     return IS_ERROR(tmp) ? tmp : error_code;
 }
@@ -1016,7 +1023,8 @@ void* sigchld_routine(void *arg) {
         if((status = waitpid(current->pid, &exit_code, WNOHANG) < 0)) {
             print_error(STDERR_FILENO, UNABLE_TO_WAIT, id, "while checking child process status");
         }
-        if(status > 0 && WIFEXITED(exit_code)) { // Terminated, handle termination of children
+        if(status > 0 && (WIFEXITED(exit_code) || WIFSIGNALED(exit_code))) { // Terminated, handle termination of children
+            // TODO: send LINK_REMOVE_CHILD to parent
             // Remove pipes and shutdown children
             tmp = end_device_fifos(current->id);
             if(IS_ERROR(tmp)) {

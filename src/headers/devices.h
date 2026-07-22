@@ -32,17 +32,17 @@ typedef u_int8_t device_type_t;
 
 // Macros for type checking
 
-#define IS_LEAF(t)        (t & CONTROL_DEVICE_FLAG) == 0b0000
+#define IS_LEAF(t)        ((t & CONTROL_DEVICE_FLAG) == 0b0000)
 #define IS_BULB(t)        (t == BULB_DEVICE)
 #define IS_WINDOW(t)      (t == WINDOW_DEVICE)
 #define IS_FRIDGE(t)      (t == FRIDGE_DEVICE)
-#define IS_CONTROL(t)     (t & CONTROL_DEVICE_FLAG) == CONTROL_DEVICE_FLAG
-#define IS_BULB_LIKE(t)   (t & LEAF_DEVICE_MASK) == BULB_DEVICE
-#define IS_WINDOW_LIKE(t) (t & LEAF_DEVICE_MASK) == WINDOW_DEVICE
-#define IS_FRIDGE_LIKE(t) (t & LEAF_DEVICE_MASK) == FRIDGE_DEVICE
-#define IS_HUB(t)         (t & CONTROL_DEVICE_MASK) == HUB_DEVICE
-#define IS_TIMER(t)       (t & CONTROL_DEVICE_MASK) == TIMER_DEVICE
-#define IS_EMPTY(t)       (t & LEAF_DEVICE_MASK) == 0b0000
+#define IS_CONTROL(t)     ((t & CONTROL_DEVICE_FLAG) == CONTROL_DEVICE_FLAG)
+#define IS_BULB_LIKE(t)   ((t & LEAF_DEVICE_MASK) == BULB_DEVICE)
+#define IS_WINDOW_LIKE(t) ((t & LEAF_DEVICE_MASK) == WINDOW_DEVICE)
+#define IS_FRIDGE_LIKE(t) ((t & LEAF_DEVICE_MASK) == FRIDGE_DEVICE)
+#define IS_HUB(t)         ((t & CONTROL_DEVICE_MASK) == HUB_DEVICE)
+#define IS_TIMER(t)       ((t & CONTROL_DEVICE_MASK) == TIMER_DEVICE)
+#define IS_EMPTY(t)       ((t & LEAF_DEVICE_MASK) == 0b0000)
 #define CHILD_TYPE(t)     (t & LEAF_DEVICE_MASK)
 
 // Constants for device states
