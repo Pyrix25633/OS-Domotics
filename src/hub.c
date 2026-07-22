@@ -162,7 +162,9 @@ error_code_t top_down_handler(){
     return error_code;
 }
 
-void bottom_up_handler(){
+void* bottom_up_handler(void* arg){
+    (void)arg; //to avoid a warning
+
     //can be used to read the responses from the children and to write 
     //the responses up towards the parent of the hub
     char response_buffer[MAX_RESPONSE_SIZE];
@@ -171,7 +173,7 @@ void bottom_up_handler(){
     error_code_t error_code;
 
     linked_list_t *solved_response = NULL;
-    linked_list_t *before_response = NULL;
+    linked_list_t *previous_response = NULL;
 
     bool found, is_complete;
 
@@ -208,19 +210,19 @@ void bottom_up_handler(){
                 if(pthread_mutex_lock(&data_mutex) < 0){
                     response.response_code = UNABLE_TO_LOCK_MUTEX;
                 }
-                else{
-                    check_pending_complete(&response, &found, &is_complete, solved_response, before_response);
+                else{                                                       //double pointers
+                    check_pending_complete(&response, &found, &is_complete, &solved_response, &previous_response);
                     if(pthread_mutex_unlock(&data_mutex) < 0){
                         response.response_code = UNABLE_TO_UNLOCK_MUTEX;
                         force_exit = true;
                     }       
                 }         
                 if(found && is_complete && !force_exit){
-                    if(IS_INFO(code)) {info_response(&response, &solved_response);}
-                    else if(IS_SWITCH(code)) {switch_response(&response, &solved_response);}
-                    else if(IS_DELETE(code)) {delete_response(&response, &solved_response);}
+                    if(IS_INFO(code)) {info_response(&response, solved_response);}
+                    else if(IS_SWITCH(code)) {switch_response(&response, solved_response);}
+                    else if(IS_DELETE(code)) {delete_response(&response, solved_response);}
                     response.source = id;
-                    before_response->next = pending_responses->next;
+                    previous_response->next = pending_responses->next;
                     free(solved_response->pending_devices);
                     free(solved_response);
                 }
@@ -230,6 +232,8 @@ void bottom_up_handler(){
         write_pipe_response(&response, response_buffer);
     }
     pthread_exit(NULL);
+
+    return NULL;
 }
 
 void handle_shutdown(error_code_t error) {
@@ -338,12 +342,12 @@ void delete_response(response_t *response, linked_list_t *solved_response){
     }
 }
 
-void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *solved_response, linked_list_t *before_response){
+void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t **solved_response, linked_list_t **previous_response){
     //no pending responses
     if(pending_responses == NULL) return;
     linked_list_t *current_pending = pending_responses;
     error_code_t error_code = OK;
-    before_response = NULL;
+    previous_response = NULL;
 
     while(current_pending != NULL){
         *is_complete = true;
@@ -391,14 +395,13 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
                         }
                     }
                     *found = true;
-                    //TODO check if its correct
-                    solved_response = current_pending;
+                    *solved_response = current_pending;
                 }
             }
             response->response_code = error_code;
             if(*found) return; //i have to exit if i found the id otherwise i would complete other requests with only one response
         }
-        before_response = current_pending;
+        *previous_response = current_pending;
         current_pending = current_pending->next;
     }
 }
@@ -489,7 +492,7 @@ error_code_t link_remove_child_received(device_id_t child_id){
 void forward_request(request_t *request, response_t *response, bool *to_be_forwarded, char* buffer_write){
     routing_data_t *direct_child = find_direct_routing_data(routing_table, id, NULL);
     linked_list_t *pending = init_pending_requests(request->command_code, response);
-    if(response->response_code != OK) return;
+    if(pending == NULL) return;
     
     u_int32_t i = 0;
     
@@ -510,13 +513,13 @@ linked_list_t* init_pending_requests(command_code_t command_code, response_t *re
     linked_list_t *pending = malloc(sizeof(linked_list_t));
     if(pending == NULL){
         response->response_code = UNABLE_TO_ALLOCATE_HEAP;
-        return;
+        return NULL;
     }
     pending->pending_devices_size = children;
     pending->pending_devices = malloc(sizeof(device_id_t)*pending->pending_devices_size);
     if(pending->pending_devices == NULL){
         response->response_code = UNABLE_TO_ALLOCATE_HEAP;
-        return;
+        return NULL;
     }
     pending->command_code = command_code;
     pending->next = NULL;

@@ -237,7 +237,7 @@ void link_response(response_t *response);
  * @param found_request it will be initialized with the pending response if it was missing
  * @param before_response it will be initialized with the response before the pending response
  */
-void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t *found_request, linked_list_t *before_response);
+void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t **found_request, linked_list_t **before_response);
 
 /**
  * The pending response has be resolved and the arguments of the info response are set
@@ -267,8 +267,12 @@ void delete_response(response_t *response, linked_list_t *solved_response);
  * It receives the responses from the children and if the response given is not in the pending ones it will be forwarded upwards, otherwise
  * it will be checked as arrived (`NO_ID`) and if all the children has given their response a cumulative response is done and sent upwards as the hub response
  * 
+ * @param arg Not used
+ * 
+ * @returns `NULL`
+ * 
  */
-void bottom_up_handler();
+void* bottom_up_handler(void* arg);
 
 /**
  * Handles the shutdown caused by a `SIGTERM` signal
