@@ -73,7 +73,7 @@ void handle_shutdown(error_code_t error) {
 }
 
 void sigterm_handler(){
-    handle_shutdown(UNEXPECTED_COMMAND);
+    handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
 void sigpipe_handler(){

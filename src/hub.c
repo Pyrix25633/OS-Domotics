@@ -252,10 +252,10 @@ void handle_shutdown(error_code_t error) {
                 print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
                 break;
             }
+            if(!IS_ERROR(error_code)){
+                remove_routing_data(routing_table, current_child->id, id);
+            }
             current_child = find_direct_routing_data(routing_table, id, current_child);
-        }
-        if(!IS_ERROR(error_code)){
-            remove_routing_data(routing_table, id, parent_id);
         }
     }
 
@@ -271,7 +271,7 @@ void handle_shutdown(error_code_t error) {
 }
 
 void sigterm_handler(){
-    handle_shutdown(UNEXPECTED_COMMAND);
+    handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
 void sigpipe_handler(){
