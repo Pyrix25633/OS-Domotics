@@ -347,7 +347,8 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
     if(pending_responses == NULL) return;
     linked_list_t *current_pending = pending_responses;
     error_code_t error_code = OK;
-    previous_response = NULL;
+    *previous_response = NULL;
+    *solved_response = NULL;
 
     while(current_pending != NULL){
         *is_complete = true;
