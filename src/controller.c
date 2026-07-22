@@ -351,25 +351,35 @@ error_code_t check_user_command(user_command_t *user_command) {
         if(user_command->target == user_command->argument) { // Cannot link to itself
             error_code = LINKING_PARENT_TO_CHILD;
         }
-        if(user_command->argument == id) { // Controller is surely type compatible and not one of its children
+        else if(target->parent_id == user_command->argument) { // The new parent is the old parent, avoid useless requests
+            error_code = CANNOT_ADD_TO_PARENT;
+        }
+        else if(user_command->argument == id) { // Controller is surely type compatible and not one of its children
             error_code = OK;
         }
-        routing_data_t *parent = find_routing_data(routing_table, user_command->argument);
-        if(parent == NULL) {
-            error_code = DEVICE_NOT_FOUND;
-        }
-        if(IS_LEAF(parent->type)) { // Check that the parent is a control device
-            error_code = DEVICE_TYPE_MISMATCH;
-        }
-        // Check that the target is not currently a parent of its future parent (detect cycles) and type compatibility
-        while(parent != NULL) { // From here they are surely all control devices
-            if(parent->parent_id == user_command->target) {
-                error_code = LINKING_PARENT_TO_CHILD;
+        else {
+            routing_data_t *parent = find_routing_data(routing_table, user_command->argument);
+            if(parent == NULL) {
+                error_code = DEVICE_NOT_FOUND;
             }
-            if(!IS_EMPTY(target->type) && !IS_EMPTY(parent->type) && CHILD_TYPE(target->type) != CHILD_TYPE(parent->type)) {
+            else if(IS_LEAF(parent->type)) { // Check that the parent is a control device
                 error_code = DEVICE_TYPE_MISMATCH;
             }
-            parent = find_routing_data(routing_table, parent->parent_id);
+            else if(IS_TIMER(parent->type) && find_direct_routing_data(routing_table, parent->id, NULL) != NULL) {
+                // The parent is a timer it already has a child
+                error_code = CANNOT_ADD_TO_PARENT;
+            }
+            else { // Check that the target is not currently a parent of its future parent (detect cycles) and type compatibility
+                while(parent != NULL) { // From here they are surely all control devices
+                    if(parent->parent_id == user_command->target) {
+                        error_code = LINKING_PARENT_TO_CHILD;
+                    }
+                    if(!IS_EMPTY(target->type) && !IS_EMPTY(parent->type) && CHILD_TYPE(target->type) != CHILD_TYPE(parent->type)) {
+                        error_code = DEVICE_TYPE_MISMATCH;
+                    }
+                    parent = find_routing_data(routing_table, parent->parent_id);
+                }
+            }
         }
     }
     if(!IS_ERROR(error_code)) {

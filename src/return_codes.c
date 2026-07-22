@@ -55,6 +55,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         case DEVICE_TYPE_MISMATCH:     strcpy(info, "device type mismatch");         break;
         case DEVICE_NOT_FOUND:         strcpy(info, "device not found");             break;
         case LINKING_PARENT_TO_CHILD:  strcpy(info, "linking parent to child");      break;
+        case CANNOT_ADD_TO_PARENT:     strcpy(info, "cannot add to parent");         break;
         case UNEXPECTED_SHUTDOWN:      strcpy(info, "unexpected shutdown");          break;
 
         case MISSING_ID_ARGUMENT:      strcpy(info, "missing ID argument");          break;
