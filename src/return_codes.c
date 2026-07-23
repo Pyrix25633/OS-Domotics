@@ -82,6 +82,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
 
         case UNABLE_TO_CREATE_THREAD:  strcpy(info, "unable to create thread");      break;
         case UNABLE_TO_CANCEL_THREAD:  strcpy(info, "unable to cancel thread");      break;
+        case UNABLE_TO_JOIN_THREAD:    strcpy(info, "unable to join thread");        break;
         case UNABLE_TO_LOCK_MUTEX:     strcpy(info, "unable to lock mutex");         break;
         case UNABLE_TO_UNLOCK_MUTEX:   strcpy(info, "unable to unlock mutex");       break;
 

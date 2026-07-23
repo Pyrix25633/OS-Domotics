@@ -21,10 +21,10 @@ error_code_t insert_direct_routing_data_pid(routing_table_t table, device_id_t i
         return UNABLE_TO_ALLOCATE_HEAP;
     }
     data->id = id;
+    data->pid = pid;
     data->type = type;
     data->parent_id = current_id;
     data->next_hop_fd = fd;
-    data->pid = pid;
     insert_routing_data_in_bucket(bucket, data);
     return OK;
 }
@@ -33,7 +33,7 @@ error_code_t insert_direct_routing_data(routing_table_t table, device_id_t id, d
     return insert_direct_routing_data_pid(table, id, NO_PID, type, current_id, fd);
 }
 
-error_code_t insert_indirect_routing_data(routing_table_t table, device_id_t id, device_type_t type, device_id_t parent_id) {
+error_code_t insert_indirect_routing_data_pid(routing_table_t table, device_id_t id, pid_t pid, device_type_t type, device_id_t parent_id) {
     routing_data_t *parent = find_routing_data(table, parent_id);
     if(parent == NULL) {
         return ROUTE_NOT_FOUND;
@@ -44,12 +44,17 @@ error_code_t insert_indirect_routing_data(routing_table_t table, device_id_t id,
         return UNABLE_TO_ALLOCATE_HEAP;
     }
     data->id = id;
+    data->pid = pid;
     data->type = type;
     data->parent_id = parent_id;
     data->next_hop_fd = parent->next_hop_fd;
     // `pid` is not set here because this function is never used by the Controller
     insert_routing_data_in_bucket(bucket, data);
     return OK;
+}
+
+error_code_t insert_indirect_routing_data(routing_table_t table, device_id_t id, device_type_t type, device_id_t parent_id) {
+    insert_indirect_routing_data_pid(table, id, NO_PID, type, parent_id);
 }
 
 routing_data_t* find_routing_data(routing_table_t table, device_id_t id) {

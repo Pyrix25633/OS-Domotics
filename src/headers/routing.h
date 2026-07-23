@@ -85,6 +85,23 @@ error_code_t insert_direct_routing_data(routing_table_t table, device_id_t id, d
  * 
  * @param table Routing table where to insert the data
  * @param id New device ID
+ * @param pid New device PID
+ * @param type Its type
+ * @param parent_id Its parent ID
+ * 
+ * @returns `UNABLE_TO_ALLOCATE_HEAP` if `malloc` failed,
+ * `ROUTE_NOT_FOUND` if a device with the specified parent ID was not found,
+ * `OK` otherwise
+ */
+error_code_t insert_indirect_routing_data_pid(routing_table_t table, device_id_t id, pid_t pid, device_type_t type, device_id_t parent_id);
+
+/**
+ * Inserts, or replaces, routing data for an indirect child
+ * 
+ * Automatically allocates needed space in the heap
+ * 
+ * @param table Routing table where to insert the data
+ * @param id New device ID
  * @param type Its type
  * @param parent_id Its parent ID
  * 

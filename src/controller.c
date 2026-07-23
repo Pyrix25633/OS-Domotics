@@ -15,6 +15,7 @@ WINDOW *input_win;
 // - Concurrency management data -
 
 pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely
+pthread_mutex_t shutdown_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to ensure shutdown is not called concurrently to avoid remove, close, join an cancel errors
 pthread_t stderr_thread; // Used for reading from redirected `stderr`
 pthread_t responses_thread; // Used for reading device responses from pipe
 
@@ -670,7 +671,7 @@ error_code_t update_with_link_response(response_t *response) {
         if(close(source->next_hop_fd) < 0) {
             return UNABLE_TO_CLOSE_PIPE;
         }
-        insert_indirect_routing_data(routing_table, source->id, source->type, response->arguments[PARENT_ID_ARGUMENT]);
+        insert_indirect_routing_data_pid(routing_table, source->id, source->pid, source->type, response->arguments[PARENT_ID_ARGUMENT]);
         source = find_routing_data(routing_table, response->source); // Replaced, need to find the new instance
         if(source == NULL) {
             return CHILD_NOT_FOUND;
@@ -702,13 +703,13 @@ error_code_t update_with_link_response(response_t *response) {
             || (fd = open(pipe_name, O_WRONLY | O_CLOEXEC)) < 0) { // Shouldn't block because already open by child
             return UNABLE_TO_OPEN_PIPE;
         }
-        error_code_t tmp = insert_direct_routing_data(routing_table, source->id, source->type, id, fd);
+        error_code_t tmp = insert_direct_routing_data_pid(routing_table, source->id, source->pid, source->type, id, fd);
         if(IS_ERROR(tmp)) {
             error_code = tmp;
         }
     }
     else {
-        error_code = insert_indirect_routing_data(routing_table, source->id, source->type, response->arguments[PARENT_ID_ARGUMENT]);
+        error_code = insert_indirect_routing_data_pid(routing_table, source->id, source->pid, source->type, response->arguments[PARENT_ID_ARGUMENT]);
     }
 
     source = find_routing_data(routing_table, response->source); // Replaced, need to find the new instance
@@ -741,14 +742,14 @@ error_code_t update_with_delete_response(response_t *response) {
     // Remove pipe
     char pipe_name[PIPE_NAME_MAX_LENGTH];
     if(IS_ERROR(create_fifo_name(device->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
-        || remove(pipe_name) < 0) {
+        || (remove(pipe_name) < 0 && errno != ENOENT)) {
         error_code = UNABLE_TO_REMOVE_PIPE;
     }
     routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
+    remove_routing_data(routing_table, device->id, device->parent_id);
     if(parent != NULL) {
         update_type_to_empty(parent);
     }
-    remove_routing_data(routing_table, device->id, device->parent_id);
     if(pending_shutdown && find_direct_routing_data(routing_table, id, NULL) == NULL) { // Pending Controller delete and no more children
         force_exit = true;
     }
@@ -1009,9 +1010,14 @@ error_code_t end_child_device_fifos(routing_data_t *device) {
 }
 
 void handle_shutdown(error_code_t error, bool in_responses_thread) {
-    error_code_t error_code = end_responses_fifo();
-    error_code_t tmp;
-    if(IS_ERROR(error_code)) {
+    error_code_t error_code = OK;
+    if(pthread_mutex_lock(&shutdown_mutex) != 0) {
+        error_code = UNABLE_TO_LOCK_MUTEX;
+        print_error(STDERR_FILENO, error_code, id, "while acquiring shutdown mutex");
+    }
+    error_code_t tmp = end_responses_fifo();
+    if(IS_ERROR(tmp)) {
+        error_code = tmp;
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
     if(redirect) {
@@ -1329,12 +1335,14 @@ int input(char *buffer, size_t size) {
 error_code_t end_ncurses() {
     error_code_t error_code = OK;
 
-    if(close(stderr_read_fd) < 0 || close(STDERR_FILENO)) {
+    if((close(stderr_read_fd) < 0 || close(STDERR_FILENO) < 0)) {
         error_code = UNABLE_TO_CLOSE_PIPE;
     }
     /*
      The thread is canceled because it is very likely blocked on a read call
      It's not a problem since it has nothing else to do and doesn't modify data
+     Since the handle shutdown function can be called multiple times this function
+     might also be called multiple times, so cancel and join ignore some errors
     */
     if(pthread_cancel(stderr_thread) != 0) {
         error_code = UNABLE_TO_CANCEL_THREAD;
