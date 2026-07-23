@@ -31,6 +31,8 @@
 #define USER_MESSAGE_SIZE    256
 #define CHILD_ERROR_SIZE     32
 #define SCENARIO_FILE_NAME   "./commands.scenario"
+#define MAIN_OFF             0
+#define MAIN_ON              1
 
 #define CHECK_NO_OTHER_ARGUMENTS(last) strtok_r(NULL, " ", &last) == NULL ? OK : INVALID_COMMAND_ARGUMENT
 
@@ -65,6 +67,7 @@ int main(int argc, char *argv[]);
  * `UNABLE_TO_LOCK_MUTEX` if data mutex could not be locked,
  * `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
  * `DEVICE_TYPE_MISMATCH` if the command is not compatible with the target device,
+ * `SYSTEM_OFF` if the system is off and the command is not a switch main,
  * `CANNOT_ADD_TO_PARENT` if the parent wouldn't change or is a Timer already with a child,
  * `LINKING_PARENT_TO_CHILD` if the link would create cycles,
  * `UNABLE_TO_UNLOCK_MUTEX` if data mutex could not be locked,
@@ -168,7 +171,8 @@ error_code_t parse_link_command(user_command_t *user_command, char **last);
  * @returns `UNABLE_TO_LOCK_MUTEX` if data mutex could not be locked,
  * `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
  * `DEVICE_TYPE_MISMATCH` if the command is not compatible with the target device,
- * `CANNOT_ADD_TO_PARENT` if the parent wouldn't change or it's a Timero already with a child,
+ * `SYSTEM_OFF` if the system is off and the command is not a switch main,
+ * `CANNOT_ADD_TO_PARENT` if the parent wouldn't change or it's a Timer already with a child,
  * `LINKING_PARENT_TO_CHILD` if the link would create cycles,
  * `UNABLE_TO_UNLOCK_MUTEX` if data mutex could not be locked,
  * `OK` otherwise

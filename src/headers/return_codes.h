@@ -33,6 +33,7 @@ typedef u_int8_t error_code_t;
 #define LINKING_PARENT_TO_CHILD  0x16
 #define CANNOT_ADD_TO_PARENT     0x17
 #define UNEXPECTED_SHUTDOWN      0x18
+#define SYSTEM_OFF               0x19
 
 // - CAUSED BY THE APPLICATION - (should never happen)
 

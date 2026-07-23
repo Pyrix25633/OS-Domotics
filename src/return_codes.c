@@ -57,6 +57,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         case LINKING_PARENT_TO_CHILD:  strcpy(info, "linking parent to child");      break;
         case CANNOT_ADD_TO_PARENT:     strcpy(info, "cannot add to parent");         break;
         case UNEXPECTED_SHUTDOWN:      strcpy(info, "unexpected shutdown");          break;
+        case SYSTEM_OFF:               strcpy(info, "system off");                   break;
 
         case MISSING_ID_ARGUMENT:      strcpy(info, "missing ID argument");          break;
         case CODE_FORMAT_ERROR:        strcpy(info, "code format error");            break;

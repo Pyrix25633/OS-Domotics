@@ -5,6 +5,7 @@
 // - Device data -
 const device_id_t id = CONTROLLER_ID;
 device_id_t last_device_id = CONTROLLER_ID;
+leaf_device_state_t state = STATE_ON;
 
 // - Ncurses data -
 bool redirect;
@@ -225,6 +226,10 @@ error_code_t parse_switch_command(user_command_t *user_command, char **last) {
     else if(strcmp(label, "close") == 0) {
         user_command->message_code |= SWITCH_CLOSE;
     }
+    else if(strcmp(label, "main") == 0) {
+        user_command->code = SWITCH_MAIN_COMMAND;
+        user_command->argument = MAIN_OFF;
+    }
     else {
         return INVALID_COMMAND_ARGUMENT;
     }
@@ -233,6 +238,9 @@ error_code_t parse_switch_command(user_command_t *user_command, char **last) {
         return INVALID_COMMAND_ARGUMENT;
     }
     if(strcmp(position, "on") == 0) {
+        if(user_command->code == SWITCH_MAIN_COMMAND) {
+            user_command->argument = MAIN_ON;
+        }
         user_command->message_code |= POSITION_ON;
     }
     else if(strcmp(position, "off") == 0) {
@@ -302,10 +310,22 @@ error_code_t parse_link_command(user_command_t *user_command, char **last) {
 }
 
 error_code_t check_user_command(user_command_t *user_command) {
+    if(user_command->code == SWITCH_MAIN_COMMAND && user_command->target != id) { // Switch main not of Controller
+        return DEVICE_TYPE_MISMATCH;
+    }
+    if(state == STATE_OFF) { // Limit the possible commands to switch main, list, info 0
+        switch(user_command->code) {
+            case LIST_COMMAND: return OK;
+            case INFO_COMMAND: if(user_command->target == id) return OK; break;
+            case SWITCH_MAIN_COMMAND: return OK;
+        }
+        return SYSTEM_OFF;
+    }
     if(!IS_MESSAGE(user_command->code)) { // Nothing else to check
         return OK;
     }
-    if(IS_DELETE(user_command->message_code) && user_command->target == id) { // Delete of everything
+    if((IS_DELETE(user_command->message_code) || IS_INFO(user_command->message_code))&& user_command->target == id) {
+        // Delete of everything or info of Controller
         return OK;
     }
     if(user_command->target == id) { // Cannot do other operations on Controller
@@ -396,9 +416,27 @@ error_code_t check_user_command(user_command_t *user_command) {
 }
 
 error_code_t execute_user_command(user_command_t *user_command) {
-    //simulate_processing_time(); // TODO: check if to be done
-
+    if(user_command->code == SWITCH_MAIN_COMMAND) {
+        if(state != user_command->argument) {
+            state = user_command->argument;
+            output("Controller: system is now %s", state == STATE_ON ? "on" : "off");
+        }
+        return OK;
+    }
     if(IS_MESSAGE(user_command->code)) {
+        if(user_command->code == INFO_COMMAND && user_command->target == id) {
+            routing_data_t *current = find_all_routing_data(routing_table, id, NULL);
+            u_int16_t count = 0;
+            while(current != NULL) { // Loop all devices
+                if(current->parent_id == id) { // Count as direct child
+                    count++;
+                }
+                current = find_all_routing_data(routing_table, id, current);
+            }
+            output("Controller: state: %s, number of directly connected devices: %u",
+                state == STATE_ON ? "on" : "off", count);
+            return OK;
+        }
         request.command_code = user_command->message_code;
         request.argument = user_command->argument;
         if(user_command->code == DELETE_COMMAND && user_command->target == id) { // Request delete of all direct children
@@ -426,7 +464,7 @@ error_code_t execute_user_command(user_command_t *user_command) {
 void execute_list_command() {
     routing_data_t *current = find_all_routing_data(routing_table, id, NULL);
     u_int16_t count = 0;
-    output("Active devices:");
+    output("Controller: active devices:");
     while(current != NULL) { // Loop all devices
         if(current->parent_id == id) { // Count as direct child
             count++;
@@ -434,7 +472,7 @@ void execute_list_command() {
         output_device(current);
         current = find_all_routing_data(routing_table, id, current);
     }
-    output("Total number of devices directly connected to the Controller: %d", count);
+    output("Number of devices directly connected to the Controller: %d", count);
 }
 
 error_code_t execute_add_command(device_type_t type) {
