@@ -1034,7 +1034,7 @@ void* sigchld_routine(void *arg) {
     error_code_t error_code = OK;
     error_code_t tmp;
     request_t request;
-    request.command_code = DELETE;
+    request.command_code = LINK | LINK_REMOVE_CHILD;
     char request_buffer[MAX_REQUEST_SIZE];
     /*
      It's no longer possible to send requests and receive responses to the children of the dead device/s
