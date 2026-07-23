@@ -94,7 +94,7 @@ routing_data_t* find_all_routing_data(routing_table_t table, device_id_t parent_
     }
     // Move up and horizontally, search for siblings of the parent, until the top is reached
     routing_data_t *parent = find_routing_data(table, last->parent_id);
-    while(parent != NULL) {
+    while(parent != NULL && parent->id != parent_id) { // Stop at specified parent
         sibling = find_direct_routing_data(table, parent->parent_id, parent);
         if(sibling != NULL) {
             return sibling;

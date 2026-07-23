@@ -914,9 +914,10 @@ void start_responses_fifo() {
 
 error_code_t end_responses_fifo() {
     error_code_t error_code = OK;
-    char name[PIPE_NAME_MAX_LENGTH];    
+    char name[PIPE_NAME_MAX_LENGTH];
+    // Can happen that handle_shutdown is called concurrently and that the pipe is already closed and removed
     if(close(rcv_responses_fd) < 0) {
-        error_code = UNABLE_TO_CLOSE_PIPE;
+       return OK;
     }
     if(IS_ERROR(create_fifo_name(id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
         || remove(name) < 0) {
@@ -1034,6 +1035,9 @@ void* sigchld_routine(void *arg) {
     routing_data_t *current = find_all_routing_data(routing_table, id, NULL);
     int exit_code;
     int status;
+    device_id_t current_id;
+    device_id_t current_parent_id;
+    bool remove;
     error_code_t error_code = OK;
     error_code_t tmp;
     request_t request;
@@ -1050,18 +1054,19 @@ void* sigchld_routine(void *arg) {
          It can happen that when receiving multiple SIGCHLD a child that exited successfully, and so is not removed,
          is waited for multiple times, from the second time on it returns with errno ECHILD, it is expected 
         */
+        remove = false;
         if((status = waitpid(current->pid, &exit_code, WNOHANG)) < 0) {
             if(errno != ECHILD) { // Unexpected error, meanwhile ECHILD is possible as mentioned above
                 print_error(STDERR_FILENO, UNABLE_TO_WAIT, id, "while checking child process status");
             }
         }
-        else if(status > 0 && ((WIFEXITED(exit_code) && IS_ERROR(WEXITSTATUS(status))) || WIFSIGNALED(status))) {
+        else if(status > 0 && ((WIFEXITED(exit_code) && IS_ERROR(WEXITSTATUS(exit_code))) || WIFSIGNALED(exit_code))) {
             output("%d exited with %d, signaled: %s", current->id, WEXITSTATUS(status), WIFSIGNALED(status) ? "true" : "false");
             /*
              Terminated with error, handle termination of children
              Send notification to parent, to avoid it crashing with SIGPIPE when writing on pipe with no readers
             */
-            request.destination = current->id;
+            request.destination = current->parent_id;
             write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
             // Remove pipes and shutdown children
             tmp = end_child_device_fifos(current);
@@ -1075,13 +1080,25 @@ void* sigchld_routine(void *arg) {
                 print_error(STDERR_FILENO, error_code, id, "while terminating dead device children");
             }
             // Remove data
-            remove_routing_data(routing_table, current->id, current->parent_id);
+            remove = true;
         }
+        current_id = current->id;
+        current_parent_id = current->parent_id;
         current = find_all_routing_data(routing_table, id, current);
+        if(remove) {
+            remove_routing_data(routing_table, current_id, current_parent_id);
+        }
     }
     if(pthread_mutex_unlock(&data_mutex) < 0) {
-        error_code_t error_code = UNABLE_TO_UNLOCK_MUTEX;
+        error_code = UNABLE_TO_UNLOCK_MUTEX;
         print_error(STDERR_FILENO, error_code, id, "releasing mutex to handle SIGCHLD");
+        handle_shutdown(error_code, false);
+    }
+
+    /*
+     It can happen that some child processes are signaled, so it should exit here
+    */
+    if(pending_shutdown && find_direct_routing_data(routing_table, id, NULL) == NULL) {
         handle_shutdown(error_code, false);
     }
     pthread_exit(NULL);

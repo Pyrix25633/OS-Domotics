@@ -91,7 +91,7 @@ int get_id_from_arguments(int argc, char *argv[]);
  * 
  * If the operation fails, the function exits with code `UNABLE_TO_SET_SIGHANDLER`
  */
-void set_signal_handler(int signal, void (*signal_handler)());
+void set_signal_handler(int signal, void (*signal_handler)(int));
 
 /**
  * Create the pipe name from the ID and the direction
