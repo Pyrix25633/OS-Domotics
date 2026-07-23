@@ -34,6 +34,7 @@ pthread_t children_thread;
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
     set_signal_handler(SIGPIPE, sigpipe_handler); //when a device write on a pipe but no device is listening anymore due to crash or child removed
+    set_signal_handler(SIGINT, sigterm_handler);
 
     id = get_id_from_arguments(argc, argv);
     start_device_fifos(id,&rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
@@ -63,7 +64,7 @@ error_code_t top_down_handler(){
     request_t request;
     response_t response;
     command_code_t code;
-    error_code_t error_code;
+    error_code_t error_code = UNEXPECTED_SHUTDOWN;
     bool is_request = false;
     bool parent_changed = false;
     bool to_be_forwarded = false;
@@ -226,7 +227,10 @@ void* bottom_up_handler(void* arg){
                 if(found && is_complete && !force_exit){
                     if(IS_INFO(code)) {info_response(&response, solved_response);}
                     else if(IS_SWITCH(code)) {switch_response(&response, solved_response);}
-                    else if(IS_DELETE(code)) {delete_response(&response, solved_response);}
+                    else if(IS_DELETE(code)) {
+                        delete_response(&response, solved_response);
+                        force_exit = true;
+                    }
                     response.source = id;
 
                     if(solved_response == pending_responses){
@@ -238,7 +242,8 @@ void* bottom_up_handler(void* arg){
                     free(solved_response->pending_devices);
                     free(solved_response);
                 }
-                else if(!force_exit && IS_DELETE(code)){
+                //if i receive a delete response from a child I need to remove it from the routing table and close its pipe
+                else if(!force_exit && IS_DELETE(code) && !found){
                     error_code = link_remove_child(response.source);
                     if(IS_ERROR(error_code)) print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
                 }
@@ -465,7 +470,7 @@ int send_to_child(response_t *response, device_id_t destination){
 
 error_code_t link_remove_child(device_id_t child_id){
     error_code_t error_code = OK;
-    dprintf(STDERR_FILENO, "%d\n", child_id);
+    dprintf(STDERR_FILENO, "%d id: %d\n", child_id, id);
     routing_data_t *routing_information = find_direct_child(child_id);
     if(children == 0 || routing_information == NULL){
         error_code = CHILD_NOT_FOUND;
@@ -482,7 +487,6 @@ error_code_t link_remove_child(device_id_t child_id){
             device_type = HUB_DEVICE;
         }
     }
-
     return error_code;
 }
 

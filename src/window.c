@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
     last_closed = last_opened = time(NULL);
     srand(last_closed); //set random seed with the current time so it's always different
 
-    error_code_t error_code;
+    error_code_t error_code = UNEXPECTED_SHUTDOWN;
 
     //the main thread is blocked waiting for requests in a loop (while the exit is not forced by the delete command)
     //when a request is received it is executed, one by one in order of arrival
@@ -52,7 +52,7 @@ void handle_shutdown(error_code_t error) {
         //prints the error on standard error, best practice to do
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
-    else{ error_code = error; }
+    else error_code = error;
     exit(error_code);
 }
 
