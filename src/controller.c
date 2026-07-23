@@ -308,6 +308,9 @@ error_code_t check_user_command(user_command_t *user_command) {
     if(IS_DELETE(user_command->message_code) && user_command->target == id) { // Delete of everything
         return OK;
     }
+    if(user_command->target == id) { // Cannot do other operations on Controller
+        return DEVICE_TYPE_MISMATCH;
+    }
     // Check that destination exists and eventually that the device type is compatible
     if(pthread_mutex_lock(&data_mutex) < 0) {
         return UNABLE_TO_LOCK_MUTEX;
