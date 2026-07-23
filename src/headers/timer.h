@@ -19,8 +19,8 @@
 
 // Default values
 
-#define MAX_TIMER_ARGUMENTS     4    //state, num, begin and end
-#define NUM_ARGUMENT            1    //number of children (0 or 1), shares the position with the fridge autoclose delay
+#define MAX_TIMER_ARGUMENTS     4    //state, on/open time of the child, begin and end
+#define MAX_PENDING_REQUESTS    8    //commands that can be awaiting a child reply at the same time
 #define MINUTES_IN_A_DAY        1440 //begin and end are minutes from midnight, so they must be less than this
 #define SECONDS_IN_A_DAY        (MINUTES_IN_A_DAY * 60) //used by the schedule thread to wait until the next day
 #define DEFAULT_BEGIN           0    //midnight, so any end is always greater than the default begin
@@ -46,13 +46,55 @@ void handle_shutdown(error_code_t error);
 
 /**
  * Handles the shutdown caused by a `SIGTERM` signal
+ * @param sig_num Number of the received signal, unused
  */
-void sigterm_handler();
+void sigterm_handler(int sig_num);
 
 /**
  * Handles the shutdown caused by a `SIGPIPE` signal
+ * @param sig_num Number of the received signal, unused
  */
-void sigpipe_handler();
+void sigpipe_handler(int sig_num);
+
+/**
+ * Locks the mutex that guards the data shared between the threads
+ *
+ * The mutex is statically initialized, so a failure means the shared state is no longer reliable:
+ * the error is printed and the exit is requested, the shutdown is then performed by the main thread
+ */
+void lock_data();
+
+/**
+ * Unlocks the mutex that guards the data shared between the threads
+ *
+ * On failure the error is printed and the exit is requested, as for `lock_data`
+ */
+void unlock_data();
+
+/**
+ * Records a command sent to the child among the ones whose reply is still awaited
+ *
+ * The caller must already hold the lock
+ *
+ * @param code The command code sent to the child
+ *
+ * @returns `true` if the command was recorded, `false` if there is no room left
+ */
+bool add_pending(command_code_t code);
+
+/**
+ * Removes the first awaited command matching the given one, keeping the order of the remaining ones
+ *
+ * The match is done on the command and not on the oldest entry, because a child that is a control device
+ * can complete commands of different kinds out of order
+ *
+ * The caller must already hold the lock
+ *
+ * @param code The command code of the received reply
+ *
+ * @returns `true` if a matching awaited command was found and removed, `false` otherwise
+ */
+bool take_pending(command_code_t code);
 
 /**
  * Reads the pipe and identifies the command
