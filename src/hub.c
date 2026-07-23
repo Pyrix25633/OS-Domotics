@@ -238,6 +238,7 @@ void* bottom_up_handler(void* arg){
 
 void handle_shutdown(error_code_t error) {
     error_code_t error_code = OK;
+    device_id_t current_child_id;
 
     if(pthread_cancel(children_thread) != 0){
         error_code = UNABLE_TO_CANCEL_THREAD;
@@ -252,8 +253,9 @@ void handle_shutdown(error_code_t error) {
                 print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
                 break;
             }
+            current_child_id = current_child->id; //i need to save the id of the current child before updating it to remove it correctly after
             current_child = find_direct_routing_data(routing_table, id, current_child);
-            remove_routing_data(routing_table, current_child->id, id);
+            remove_routing_data(routing_table, current_child_id, id);
         }
     }
 
