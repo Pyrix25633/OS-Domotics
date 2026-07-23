@@ -96,7 +96,9 @@ error_code_t top_down_handler(){
                 else{
                     if (has_children){
                         if(request.destination == id){ //the destination is the parent
-                            if(IS_INFO(code)) {forward_request(&request, &response, &to_be_forwarded, request_buffer);}
+                            if(IS_INFO(code)) {
+                                forward_request(&request, &response, &to_be_forwarded, request_buffer);
+                            }
                             else if(IS_SWITCH(code)) { create_switch(&request, &response, &to_be_forwarded, request_buffer); }
                             else if(IS_LINK(code)) { create_link(&request, &response, &parent_changed); }
                             else if(IS_DELETE(code)) { forward_request(&request, &response, &to_be_forwarded, request_buffer); }
@@ -115,8 +117,9 @@ error_code_t top_down_handler(){
                     else{
                         if(request.destination == id){
                             if(IS_INFO(code)){
-                                response.arguments_size = 1;
+                                response.arguments_size = 2;
                                 response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
+                                response.arguments[OPEN_SECONDS_ARGUMENT] = 0;
                             }
                             else if(IS_DELETE(code)){
                                 force_exit = true;
@@ -196,6 +199,7 @@ void* bottom_up_handler(void* arg){
             if(IS_LINK(code)){
                 if(pthread_mutex_lock(&data_mutex) < 0){
                     response.response_code = UNABLE_TO_LOCK_MUTEX;
+                    
                 }
                 else{
                     link_response(&response);
@@ -210,7 +214,8 @@ void* bottom_up_handler(void* arg){
                 if(pthread_mutex_lock(&data_mutex) < 0){
                     response.response_code = UNABLE_TO_LOCK_MUTEX;
                 }
-                else{                                                       //double pointers
+                else{                     
+                    //double pointers
                     check_pending_complete(&response, &found, &is_complete, &solved_response, &previous_response);
                     if(pthread_mutex_unlock(&data_mutex) < 0){
                         response.response_code = UNABLE_TO_UNLOCK_MUTEX;
@@ -222,17 +227,24 @@ void* bottom_up_handler(void* arg){
                     else if(IS_SWITCH(code)) {switch_response(&response, solved_response);}
                     else if(IS_DELETE(code)) {delete_response(&response, solved_response);}
                     response.source = id;
-                    previous_response->next = pending_responses->next;
+
+                    if(solved_response == pending_responses){
+                        pending_responses = solved_response->next;
+                    }
+                    else if(previous_response != NULL){
+                        previous_response->next = solved_response->next;
+                    }
                     free(solved_response->pending_devices);
                     free(solved_response);
                 }
             }
         }
-        simulate_processing_time();
-        write_pipe_response(&response, response_buffer);
+        if(!(found && !is_complete)){
+            simulate_processing_time();
+            write_pipe_response(&response, response_buffer);
+        }
     }
     pthread_exit(NULL);
-
     return NULL;
 }
 
@@ -280,10 +292,11 @@ void sigpipe_handler(int sig_num){
     handle_shutdown(BROKEN_PIPE);
 }
 
-error_code_t open_pipe(device_id_t device_id, int *rcv_child_responses){
+//TODO .h
+error_code_t open_pipe(device_id_t device_id, int *snd_requests_child){
     char name[PIPE_NAME_MAX_LENGTH];
-    if(IS_ERROR(create_fifo_name(device_id, DIRECTION_UP, name, PIPE_NAME_MAX_LENGTH))
-        || (*rcv_child_responses = open(name, O_WRONLY)) < 0) {
+    if(IS_ERROR(create_fifo_name(device_id, DIRECTION_DOWN, name, PIPE_NAME_MAX_LENGTH))
+        || (*snd_requests_child = open(name, O_WRONLY)) < 0) {
         return UNABLE_TO_OPEN_PIPE;
     }
     return OK;
@@ -321,7 +334,7 @@ void add_child(response_t *response){
 
 void info_response(response_t *response, linked_list_t *solved_response){
     response->arguments[STATE_ARGUMENT] = solved_response->state;
-    response->arguments[OPEN_SECONDS_ARGUMENT] = solved_response->max_time; //it 
+    response->arguments[OPEN_SECONDS_ARGUMENT] = solved_response->max_time;
     response->arguments_size = 2;
     if(solved_response->has_error){
         response->arguments[ADDITIONAL_INFO_ARGUMENT] = CHILD_ERROR;
@@ -460,6 +473,7 @@ error_code_t link_remove_child(device_id_t child_id){
     
     if(!IS_ERROR(error_code)) {
         remove_routing_data(routing_table, child_id, routing_information->parent_id);
+        children--;
     }
 
     return error_code;
@@ -496,19 +510,19 @@ void forward_request(request_t *request, response_t *response, bool *to_be_forwa
     routing_data_t *direct_child = find_direct_routing_data(routing_table, id, NULL);
     linked_list_t *pending = init_pending_requests(request->command_code, response);
     if(pending == NULL) return;
-    
+
     u_int32_t i = 0;
     
     *to_be_forwarded = true; //nothing to send
 
     while(direct_child != NULL) {
         request->destination = direct_child->id;
-        simulate_processing_time();
         write_pipe_request(request, buffer_write, direct_child->next_hop_fd);
         pending->pending_devices[i] = direct_child->id;
         direct_child = find_direct_routing_data(routing_table, id, direct_child);
         i++;
     }
+    simulate_processing_time();
     add_request(pending);
 }
 
