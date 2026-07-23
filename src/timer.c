@@ -13,7 +13,7 @@
 
 device_id_t id;
 device_type_t device_type = TIMER_DEVICE; //declared in the change-parent response so the parent knows the timer type
-control_device_state_t state = STATE_OFF; //it mirrors the state of the child
+control_device_state_t state = UNDEFINED_STATE; //it should be undefined at default --> I don't have a state variable in the hub because i write it directly in the info response
 u_int16_t begin = DEFAULT_BEGIN; //activation time, minutes from midnight
 u_int16_t end = DEFAULT_END;     //deactivation time, minutes from midnight
 
@@ -67,53 +67,68 @@ int main(int argc, char *argv[]) {
 
     srand(time(NULL)); //set random seed with the current time so it's always different
 
+    //in this way the handle_shutdown is called only once
+    error_code_t error_code;
+
     //start the bottom-up thread that reads the child responses and forwards them up to the parent
     if(pthread_create(&child_responses_thread, NULL, child_responses_handler, NULL) != 0){
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating the child responses thread");
-        handle_shutdown(UNABLE_TO_CREATE_THREAD);
+        error_code = UNABLE_TO_CREATE_THREAD;
     }
-    child_thread_running = true;
+    else{
+        child_thread_running = true;
 
-    //start the schedule thread that switches the child on at begin and off at end
-    if(pthread_create(&schedule_thread, NULL, schedule_handler, NULL) != 0){
-        print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating the schedule thread");
-        handle_shutdown(UNABLE_TO_CREATE_THREAD);
-    }
-    schedule_thread_running = true;
-
-    error_code_t error_code;
-    //the main thread handles the requests coming from the parent, one by one in order of arrival
-    while(!force_exit) {
-        error_code = execute_command();
+        //start the schedule thread that switches the child on at begin and off at end
+        if(pthread_create(&schedule_thread, NULL, schedule_handler, NULL) != 0){
+            print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating the schedule thread");
+            error_code = UNABLE_TO_CREATE_THREAD;
+        }
+        else{
+            schedule_thread_running = true;
+                //the main thread handles the requests coming from the parent, one by one in order of arrival
+            while(!force_exit) {
+                error_code = execute_command();
+            }
+        }
     }
     handle_shutdown(error_code);
 }
 
 void handle_shutdown(error_code_t error) {
+    //in this way every error_code can be passed to the exit
+    error_code_t error_code;
     //the child-responses thread is blocked on a read that never returns EOF (up pipe in O_RDWR),
     //so it is cancelled and joined before closing the pipes it uses
     if(child_thread_running){
-        pthread_cancel(child_responses_thread);
+        //it could fail so it has to be managed
+        if(pthread_cancel(child_responses_thread) != 0){
+            error_code = UNABLE_TO_CANCEL_THREAD;
+            print_error(STDERR_FILENO, error_code, id, "in shutdown");
+        }
         pthread_join(child_responses_thread, NULL);
         child_thread_running = false;
     }
     //the schedule thread may be sleeping or writing to the child, it is cancelled and joined before its pipe is closed
     if(schedule_thread_running){
-        pthread_cancel(schedule_thread);
+        if(pthread_cancel(schedule_thread) != 0){
+            error_code = UNABLE_TO_CANCEL_THREAD;
+            print_error(STDERR_FILENO, error_code, id, "in shutdown");
+        }
         pthread_join(schedule_thread, NULL);
         schedule_thread_running = false;
     }
     //the child down pipe is only opened for writing, the child owns it, so it is just closed and not deleted
     if(has_child){
         if(close(snd_requests_child_fd) < 0){
+            error_code = UNABLE_TO_CLOSE_PIPE;
             print_error(STDERR_FILENO, UNABLE_TO_CLOSE_PIPE, id, "while closing the child requests pipe");
         }
         //free the routing table nodes of a control-device child subtree, the threads are already joined so no lock
         remove_routing_data(routing_table, child_id, id);
     }
     //control device: the last argument is the child pipe and not NO_FILE_DESCRIPTOR, so it is closed and deleted too
-    error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, rcv_responses_child_fd);
-    if(IS_ERROR(error_code)){
+    if(IS_ERROR(end_device_fifos(id, rcv_requests_fd, snd_responses_fd, rcv_responses_child_fd))){
+        error_code = STDERR_FILENO;
         //prints the error on standard error, best practice to do
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
