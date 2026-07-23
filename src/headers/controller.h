@@ -67,7 +67,7 @@ int main(int argc, char *argv[]);
  * `UNABLE_TO_LOCK_MUTEX` if data mutex could not be locked,
  * `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
  * `DEVICE_TYPE_MISMATCH` if the command is not compatible with the target device,
- * `SYSTEM_OFF` if the system is off and the command is not a switch main,
+ * `SYSTEM_OFF` if the system is off and the command is not a switch main,F
  * `CANNOT_ADD_TO_PARENT` if the parent wouldn't change or is a Timer already with a child,
  * `LINKING_PARENT_TO_CHILD` if the link would create cycles,
  * `UNABLE_TO_UNLOCK_MUTEX` if data mutex could not be locked,
@@ -376,12 +376,13 @@ void handle_shutdown(error_code_t error, bool in_responses_thread);
  * Sends `SIGTERM` to all devices that have the specified parent ID and their children, and cleans up their pipes
  * 
  * @param parent_id The parent ID
+ * @param complete If also children should be removed from the routing table and their pipes should be cleaned up
  * 
  * @returns `UNABLE_TO_SEND_SIGNAL` if the `SIGTERM` signal could not be sent,
  * `UNABLE_TO_REMOVE_PIPE` if a pipe could not be removed and not because the file didn't exist,
  * `OK` otherwise
  */
-error_code_t shutdown_devices(device_id_t parent_id);
+error_code_t shutdown_devices(device_id_t parent_id, bool complete);
 
 /**
  * Handles the shutdown caused by a `SIGTERM` signal

@@ -40,7 +40,7 @@ int original_stderr_fd;
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
     set_signal_handler(SIGINT, sigterm_handler);
-    set_signal_handler(SIGPIPE, sigpipe_handler);
+    set_signal_handler(SIGPIPE, SIG_IGN); // Writes to pipes with no readers will fail but not cause the controller to exit
     set_signal_handler(SIGCHLD, sigchld_handler);
 
     start_responses_fifo();
@@ -1040,7 +1040,7 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
             print_error(STDERR_FILENO, error_code, id, "while canceling responses thread");
         }
     }
-    tmp = shutdown_devices(id);
+    tmp = shutdown_devices(id, true);
     if(IS_ERROR(tmp)) {
         error_code = tmp;
         print_error(STDERR_FILENO, error_code, id, "while cleaning up devices");
@@ -1055,9 +1055,15 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
     exit(error_code);
 }
 
-error_code_t shutdown_devices(device_id_t parent_id) {
+error_code_t shutdown_devices(device_id_t parent_id, bool complete) {
     // About to shutdown, mutex not used to read data as it may be locked and/or not working
-    routing_data_t *device = find_all_routing_data(routing_table, parent_id, NULL);
+    routing_data_t *device;
+    if(complete) {
+        device = find_all_routing_data(routing_table, parent_id, NULL);
+    }
+    else {
+        device = find_direct_routing_data(routing_table, parent_id, NULL);
+    }
     error_code_t error_code = OK;
     error_code_t tmp;
     while(device != NULL) {
@@ -1068,12 +1074,19 @@ error_code_t shutdown_devices(device_id_t parent_id) {
         if(device->parent_id == id) {
             close(device->next_hop_fd); // Not checking for errors, could be already closed
         }
-        tmp = end_child_device_fifos(device);
-        if(IS_ERROR(tmp)) {
-            error_code = tmp;
+        if(complete) {
+            tmp = end_child_device_fifos(device);
+            if(IS_ERROR(tmp)) {
+                error_code = tmp;
+            }
+            device = find_all_routing_data(routing_table, parent_id, device);
         }
-
-        device = find_all_routing_data(routing_table, parent_id, device);
+        else {
+            device = find_direct_routing_data(routing_table, parent_id, device);
+        }
+    }
+    if(!complete) {
+        return error_code;
     }
     device_id_t device_id;
     device = find_direct_routing_data(routing_table, parent_id, NULL);
@@ -1146,20 +1159,23 @@ void* sigchld_routine(void *arg) {
         else if(status > 0 && ((WIFEXITED(exit_code) && IS_ERROR(WEXITSTATUS(exit_code))) || WIFSIGNALED(exit_code))) {
             char device_type[DEVICE_TYPE_SIZE];
             format_device_type(current->type, device_type);
-            output("%s with ID %d exited with error code: 0x%2x", device_type, current->id, WEXITSTATUS(status));
+            output("%s with ID %d exited with error code: 0x%2x", device_type, current->id, WEXITSTATUS(exit_code));
             /*
              Terminated with error, handle termination of children
              Send notification to parent, to avoid it crashing with SIGPIPE when writing on pipe with no readers
             */
-            request.destination = current->parent_id;
-            write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
+            if(current->parent_id != id) { // Parent is not the controller
+                request.destination = current->parent_id;
+                request.argument = current->id;
+                tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
+            }
             // Remove pipes and shutdown children
             tmp = end_child_device_fifos(current);
             if(IS_ERROR(tmp)) {
                 error_code = tmp;
                 print_error(STDERR_FILENO, error_code, id, "while cleaning pipes of dead device");
             }
-            tmp = shutdown_devices(current->id);
+            tmp = shutdown_devices(current->id, false);
             if(IS_ERROR(tmp)) {
                 error_code = tmp;
                 print_error(STDERR_FILENO, error_code, id, "while terminating dead device children");
@@ -1171,7 +1187,6 @@ void* sigchld_routine(void *arg) {
         current_parent_id = current->parent_id;
         current = find_all_routing_data(routing_table, id, current);
         if(remove) {
-            output("Removing %u", current_id); // ! remove
             remove_routing_data(routing_table, current_id, current_parent_id);
             tmp = export_routing_table(routing_table, id);
             if(IS_ERROR(tmp)) {
