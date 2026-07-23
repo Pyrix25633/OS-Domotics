@@ -1021,7 +1021,7 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
             print_error(STDERR_FILENO, error_code, id, "while closing ncurses");
         }
     }
-    if(!in_responses_thread && pthread_cancel(responses_thread) < 0) {
+    if(!in_responses_thread && (pthread_cancel(responses_thread) < 0 || pthread_join(responses_thread, NULL) < 0)) {
         error_code = UNABLE_TO_CANCEL_THREAD;
         print_error(STDERR_FILENO, error_code, id, "while canceling responses thread");
     }
@@ -1139,11 +1139,6 @@ void* sigchld_routine(void *arg) {
             request.destination = current->parent_id;
             write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
             // Remove pipes and shutdown children
-            tmp = end_child_device_fifos(current);
-            if(IS_ERROR(tmp)) {
-                error_code = tmp;
-                print_error(STDERR_FILENO, error_code, id, "while cleaning pipes of dead device");
-            }
             tmp = shutdown_devices(current->id);
             if(IS_ERROR(tmp)) {
                 error_code = tmp;
@@ -1325,8 +1320,8 @@ error_code_t end_ncurses() {
      The thread is canceled because it is very likely blocked on a read call
      It's not a problem since it has nothing else to do and doesn't modify data
     */
-    if(pthread_cancel(stderr_thread) < 0) {
-        error_code = UNABLE_TO_JOIN_THREAD;
+    if(pthread_cancel(stderr_thread) < 0 || pthread_join(stderr_thread, NULL)) {
+        error_code = UNABLE_TO_CANCEL_THREAD;
     }
 
     error_code_t error = restore_stderr();
