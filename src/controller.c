@@ -1256,7 +1256,7 @@ error_code_t create_windows() {
     int height, width;
     getmaxyx(stdscr, height, width);
     height -= 2; // 2 lines for the window titles
-    int output_height = height / 2;
+    int output_height = height * 2 / 3;
     int input_height = height - output_height;
     // Lines and titles
     mvwhline(stdscr, 0, 0, 0, width);
