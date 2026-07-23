@@ -1,6 +1,7 @@
 #define _XOPEN_SOURCE 700
 
 #include "hub.h"
+#include "stdio.h"
 
 // - Explicit control device data -
 
@@ -237,6 +238,10 @@ void* bottom_up_handler(void* arg){
                     free(solved_response->pending_devices);
                     free(solved_response);
                 }
+                else if(!force_exit && IS_DELETE(code)){
+                    error_code = link_remove_child(response.source);
+                    if(IS_ERROR(error_code)) print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
+                }
             }
         }
         if(!(found && !is_complete)){
@@ -390,17 +395,8 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
                         current_pending->max_time = response->arguments[OPEN_SECONDS_ARGUMENT];
                     }
                     if(IS_DELETE(response->command_code)){
-                        error_code = link_remove_child_received(response->arguments[CHILD_ID_ARGUMENT]);
-                        if(!IS_ERROR(error_code)){
-                            children--;
-                            if(children == 0){
-                                has_children = false;
-                                device_type = HUB_DEVICE;
-                            }
-                        }
-                        else{
-                            current_pending->has_error = true;
-                        }
+                       error_code = link_remove_child(response->source);
+                        if(IS_ERROR(error_code)) current_pending->has_error = true;
                     }
                     //if it's a control device the response code can be OK while the additional argument can provide an error
                     if(IS_CONTROL(response->arguments[DEVICE_TYPE_ARGUMENT])){
@@ -411,7 +407,7 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
                         }
                     }
                     *found = true;
-                    *solved_response = current_pending;
+                    *solved_response = current_pending; //TODO togliere dai pending quando ricevo una risposta di delete
                 }
             }
             response->response_code = error_code;
@@ -421,6 +417,12 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
         current_pending = current_pending->next;
     }
 }
+
+//TODO
+//empty hub --> empty timer not ok
+//empty timer --> empty hub ok
+//empty hub --> empty hub not ok
+//TODO double removal
 
 void create_link(request_t *request, response_t *response, bool *parent_changed){
     if(LINK_SUBCOMMAND(request->command_code)==LINK_REMOVE_CHILD){
@@ -463,6 +465,7 @@ int send_to_child(response_t *response, device_id_t destination){
 
 error_code_t link_remove_child(device_id_t child_id){
     error_code_t error_code = OK;
+    dprintf(STDERR_FILENO, "%d\n", child_id);
     routing_data_t *routing_information = find_direct_child(child_id);
     if(children == 0 || routing_information == NULL){
         error_code = CHILD_NOT_FOUND;
@@ -474,6 +477,10 @@ error_code_t link_remove_child(device_id_t child_id){
     if(!IS_ERROR(error_code)) {
         remove_routing_data(routing_table, child_id, routing_information->parent_id);
         children--;
+        if(children == 0) {
+            has_children = false;
+            device_type = HUB_DEVICE;
+        }
     }
 
     return error_code;
@@ -522,7 +529,6 @@ void forward_request(request_t *request, response_t *response, bool *to_be_forwa
         direct_child = find_direct_routing_data(routing_table, id, direct_child);
         i++;
     }
-    simulate_processing_time();
     add_request(pending);
 }
 
