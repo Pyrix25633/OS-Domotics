@@ -358,7 +358,7 @@ error_code_t end_responses_fifo();
  * @returns `UNABLE_TO_REMOVE_PIPE` if the pipes could not be removed,
  * `OK` otherwise
  */
-error_code_t end_device_fifos(routing_data_t *device);
+error_code_t end_child_device_fifos(routing_data_t *device);
 
 /**
  * Handles the shutdown

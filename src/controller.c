@@ -625,6 +625,11 @@ error_code_t update_with_link_response(response_t *response) {
         if(close(source->next_hop_fd) < 0) {
             return UNABLE_TO_CLOSE_PIPE;
         }
+        insert_indirect_routing_data(routing_table, source->id, source->type, response->arguments[PARENT_ID_ARGUMENT]);
+        /*
+         Data about the children of moved device will be updated automatically when the Controller
+         receives the "replay history" messages of the moved device, if it is a control device
+         */
         return OK;
     }
 
@@ -917,7 +922,7 @@ error_code_t end_responses_fifo() {
     return error_code;
 }
 
-error_code_t end_device_fifos(routing_data_t *device) {
+error_code_t end_child_device_fifos(routing_data_t *device) {
     error_code_t error_code;
     char pipe_name[PIPE_NAME_MAX_LENGTH];
     if(IS_ERROR(create_fifo_name(device->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
@@ -976,12 +981,20 @@ error_code_t shutdown_devices(device_id_t parent_id) {
         if(device->parent_id == id) {
             close(device->next_hop_fd); // Not checking for errors, could be already closed
         }
-        tmp = end_device_fifos(device);
+        tmp = end_child_device_fifos(device);
         if(IS_ERROR(tmp)) {
             error_code = tmp;
         }
 
         device = find_all_routing_data(routing_table, parent_id, device);
+    }
+    device_id_t device_id;
+    device = find_direct_routing_data(routing_table, id, NULL);
+    // Cannot remove Controller from the routing table as it is not present, so all direct children are removed
+    while(device != NULL) {
+        device_id = device->id;
+        device = find_direct_routing_data(routing_table, id, device); // First find next
+        remove_routing_data(routing_table, device_id, id); // Then remove current
     }
     return error_code;
 }
@@ -1005,6 +1018,8 @@ void sigchld_handler() {
 }
 
 void* sigchld_routine(void *arg) {
+    (void)arg; // Unused parameter
+
     if(pthread_mutex_lock(&data_mutex) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "acquiring mutex to handle SIGCHLD");
         pthread_exit(NULL);
@@ -1015,18 +1030,23 @@ void* sigchld_routine(void *arg) {
     int status;
     error_code_t error_code = OK;
     error_code_t tmp;
+    request_t request;
+    request.command_code = DELETE;
+    char request_buffer[MAX_REQUEST_SIZE];
     /*
      It's no longer possible to send requests and receive responses to the children of the dead device/s
      So they are terminated using `SIGTERM`
     */
     while(current != NULL) {
-        if((status = waitpid(current->pid, &exit_code, WNOHANG) < 0)) {
+        if((status = waitpid(current->pid, &exit_code, WNOHANG)) < 0) {
             print_error(STDERR_FILENO, UNABLE_TO_WAIT, id, "while checking child process status");
         }
         if(status > 0 && (WIFEXITED(exit_code) || WIFSIGNALED(exit_code))) { // Terminated, handle termination of children
-            // TODO: send LINK_REMOVE_CHILD to parent
+            // Send notification to parent, to avoid it crashing with SIGPIPE when writing on pipe with no readers
+            request.destination = current->id;
+            write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
             // Remove pipes and shutdown children
-            tmp = end_device_fifos(current->id);
+            tmp = end_child_device_fifos(current);
             if(IS_ERROR(tmp)) {
                 error_code = tmp;
                 print_error(STDERR_FILENO, error_code, id, "while cleaning pipes of dead device");
