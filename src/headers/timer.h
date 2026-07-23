@@ -51,12 +51,6 @@ void handle_shutdown(error_code_t error);
 void sigterm_handler(int sig_num);
 
 /**
- * Handles the shutdown caused by a `SIGPIPE` signal
- * @param sig_num Number of the received signal, unused
- */
-void sigpipe_handler(int sig_num);
-
-/**
  * Locks the mutex that guards the data shared between the threads
  *
  * The mutex is statically initialized, so a failure means the shared state is no longer reliable:
@@ -108,6 +102,33 @@ error_code_t read_pipe();
 void write_pipe();
 
 /**
+ * Sends an already formatted response up to the parent, guarding the pipe shared between the threads
+ *
+ * `SIGPIPE` is ignored, so a write to a pipe with no reader fails instead of terminating the process:
+ * towards the parent there is nobody left to report the failure to, so the timer shuts down
+ *
+ * @param buffer The formatted response, of size `MAX_RESPONSE_SIZE`
+ * @param message Additional message for the error printing, if the write fails
+ */
+void write_to_parent(char *buffer, char *message);
+
+/**
+ * Forgets the child, freeing its subtree and closing its pipe, and goes back to the plain timer type
+ *
+ * The caller must already hold the lock
+ *
+ * @returns `UNABLE_TO_CLOSE_PIPE` if the child requests pipe could not be closed, `OK` otherwise
+ */
+error_code_t drop_child();
+
+/**
+ * Drops the child after a failed write towards it, meaning nobody is reading its pipe anymore
+ *
+ * The timer keeps working and reports the failure, instead of terminating the way a leaf device does
+ */
+void release_unreachable_child();
+
+/**
  * Acquires the child if the response is its change-parent response naming the timer as the new parent
  *
  * Sets the child scalars and the declared type under the lock, does nothing for any other response
@@ -126,12 +147,15 @@ void acquire_child(response_t *child_response);
 void acquire_descendant(response_t *child_response);
 
 /**
- * Removes a tracked descendant from the routing table when its delete response passes up, so the subtree
- * replay does not re-announce deleted nodes, does nothing for a response that is not a delete of a descendant
+ * Releases the device that sent a delete response, because it no longer exists: the direct child frees the
+ * scalars and the declared type, a tracked descendant is removed from the routing table so the subtree
+ * replay does not re-announce deleted nodes
+ *
+ * Does nothing for a response that is not a delete
  *
  * @param child_response The response read from the child
  */
-void release_descendant(response_t *child_response);
+void release_child(response_t *child_response);
 
 /**
  * Bottom-up thread body: reads the responses coming from the child and forwards them up to the parent
@@ -212,6 +236,14 @@ void create_registry_response();
  * Sets the attributes for the switch response and performs actions if needed
  */
 void create_switch_response();
+
+/**
+ * Propagates the delete to the child, so the whole branch below the timer is terminated
+ *
+ * The response is deferred to the child confirmation, which also triggers the shutdown; if there is no child,
+ * or the request could not be sent, the exit is requested immediately and the response is sent by the caller
+ */
+void create_delete_response();
 
 /**
  * Opens in writing the down pipe of the child (the child itself created it), so the timer can send requests to it
