@@ -1094,7 +1094,7 @@ void sigchld_handler(int sig_num) {
     (void)sig_num; // Unused parameter
     pthread_t sigchld_thread;
     pthread_attr_t sigchld_attributes;
-    if(pthread_attr_init(&sigchld_attributes) < 0
+    if(pthread_attr_init(&sigchld_attributes) != 0
         || pthread_attr_setdetachstate(&sigchld_attributes, PTHREAD_CREATE_DETACHED) != 0
         || pthread_create(&sigchld_thread, &sigchld_attributes, sigchld_routine, NULL) != 0) {
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating thread to handle SIGCHLD");

@@ -69,7 +69,7 @@ error_code_t execute_command() {
         response.command_code = request.command_code;
         response.response_code = OK;
 
-        if(pthread_mutex_lock(&data_mutex) < 0) {
+        if(pthread_mutex_lock(&data_mutex) != 0) {
             response.response_code = UNABLE_TO_LOCK_MUTEX;
         } else {
             if(IS_INFO(request.command_code)) { create_info_response(); }
@@ -80,7 +80,7 @@ error_code_t execute_command() {
             else {
                 response.response_code = UNEXPECTED_COMMAND;
             }
-            if(pthread_mutex_unlock(&data_mutex) < 0) {
+            if(pthread_mutex_unlock(&data_mutex) != 0) {
                 error_code = UNABLE_TO_UNLOCK_MUTEX;
                 print_error(STDERR_FILENO, error_code, id, "while processing request");
                 force_exit = true; // Nothing to do, do not try to lock again
@@ -236,7 +236,7 @@ error_code_t set_state(leaf_device_state_t new_state, bool automatic) {
         }
         else {
             last_closed = time(NULL);
-            if(!automatic && pthread_cancel(autoclose_thread) < 0) { // The thread does not cancel itself
+            if(!automatic && pthread_cancel(autoclose_thread) != 0) { // The thread does not cancel itself
                 return UNABLE_TO_CANCEL_THREAD;
             }
         }
@@ -250,15 +250,15 @@ void* autoclose_routine(void *arg) {
     (void)arg; // Unused parameter
     sleep(autoclose_delay);
 
-    if(pthread_mutex_lock(&data_mutex) < 0) {
+    if(pthread_mutex_lock(&data_mutex) != 0) {
         print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "in autoclose thread");
         pthread_exit(NULL);
     }
 
     set_state(STATE_CLOSED, true);
 
-    if(pthread_mutex_unlock(&data_mutex) < 0) {
-        print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "in autoclose thread");
+    if(pthread_mutex_unlock(&data_mutex) != 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "in autoclose thread");
         /*
          Here the main thread is waiting to lock the mutex, it's not performing
          any operation, so the program can exit without problems
