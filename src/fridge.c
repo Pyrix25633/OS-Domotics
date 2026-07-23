@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
 
     srand(last_closed); // Seed random generator with current time, always different
 
-    error_code_t error_code;
+    error_code_t error_code = UNEXPECTED_SHUTDOWN; // Should not terminate before the first command
 
     while(!force_exit) {
         error_code = execute_command();

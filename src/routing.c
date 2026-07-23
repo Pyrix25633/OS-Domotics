@@ -195,18 +195,20 @@ void remove_routing_data_from_bucket(routing_data_t **bucket, device_id_t id) {
 error_code_t export_routing_table(routing_table_t table, device_id_t parent_id) {
     FILE *tmp_file = fopen(TMP_REGISTRY_FILE, "w"); // Create or truncate
     if(tmp_file == NULL) {
-        return UNABLE_TO_CLOSE_FILE;
+        return UNABLE_TO_OPEN_FILE;
     }
 
     char line[REGISTRY_LINE_SIZE];
     int length;
+    error_code_t error_code = OK;
 
     routing_data_t *current = find_all_routing_data(table, parent_id, NULL);
     while(current != NULL) {
         length = snprintf(line, REGISTRY_LINE_SIZE, "%u %u\n", current->id, current->type);
-        if(length >= (int)REGISTRY_LINE_SIZE || length < 0
+        if(length >= REGISTRY_LINE_SIZE || length < 0
             || fputs(line, tmp_file) < 0) {
-            return UNABLE_TO_WRITE_FILE;
+            error_code = UNABLE_TO_WRITE_FILE;
+            break;
         }
 
         current = find_all_routing_data(table, parent_id, current);
@@ -214,6 +216,9 @@ error_code_t export_routing_table(routing_table_t table, device_id_t parent_id) 
 
     if(fclose(tmp_file) < 0) {
         return UNABLE_TO_CLOSE_FILE;
+    }
+    if(IS_ERROR(error_code)) {
+        return error_code;
     }
     if(rename(TMP_REGISTRY_FILE, REGISTRY_FILE) < 0) {
         // The rename is atomic and replaces the old registry file
@@ -237,26 +242,35 @@ error_code_t find_device_type(device_id_t id, device_type_t* type) {
     device_id_t current_id;
     device_type_t current_type;
     int ret;
+    error_code_t error_code = OK;
     bool found = false;
+    int length;
 
     while(fgets(line, REGISTRY_LINE_SIZE, file) != NULL && !found) {
-        line[strlen(line) - 1] = '\0'; // Remove new line
+        length = strlen(line);
+        if(length > 0 && line[length - 1] == '\n') {
+            line[--length] = '\0'; // Remove new line
+        }
         token = strtok_r(line, " ", &last);
         if(token == NULL) {
-            return REGISTRY_FORMAT_ERROR;
+            error_code = REGISTRY_FORMAT_ERROR;
+            break;
         }
         ret = string_to_unsigned(token);
         if(IS_RETURN_ERROR(ret)) {
-            return REGISTRY_FORMAT_ERROR;
+            error_code = REGISTRY_FORMAT_ERROR;
+            break;
         }
         current_id = ret;
         token = strtok_r(NULL, " ", &last);
         if(token == NULL) {
-            return REGISTRY_FORMAT_ERROR;
+            error_code = REGISTRY_FORMAT_ERROR;
+            break;
         }
         ret = string_to_unsigned(token);
         if(IS_RETURN_ERROR(ret)) {
-            return REGISTRY_FORMAT_ERROR;
+            error_code = REGISTRY_FORMAT_ERROR;
+            break;
         }
         current_type = ret;
         if(current_id == id) {
@@ -267,6 +281,9 @@ error_code_t find_device_type(device_id_t id, device_type_t* type) {
 
     if(fclose(file) < 0) {
         return UNABLE_TO_CLOSE_FILE;
+    }
+    if(IS_ERROR(error_code)) {
+        return error_code;
     }
     return found ? OK : DEVICE_NOT_FOUND;
 }

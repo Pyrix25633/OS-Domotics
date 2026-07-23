@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
         print_error(STDERR_FILENO, error_code, id, "while starting ncurses");
     }
 
-    if(pthread_create(&responses_thread, NULL, responses_routine, NULL) < 0) {
+    if(pthread_create(&responses_thread, NULL, responses_routine, NULL) != 0) {
         error_code = UNABLE_TO_CREATE_THREAD;
         print_error(STDERR_FILENO, error_code, id, "while creating responses thread");
         force_exit = true; // Fatal error
@@ -700,7 +700,7 @@ error_code_t update_with_link_response(response_t *response) {
         int fd;
         if(IS_ERROR(create_fifo_name(source->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
             || (fd = open(pipe_name, O_WRONLY | O_CLOEXEC)) < 0) { // Shouldn't block because already open by child
-            error_code = UNABLE_TO_OPEN_PIPE;
+            return UNABLE_TO_OPEN_PIPE;
         }
         error_code_t tmp = insert_direct_routing_data(routing_table, source->id, source->type, id, fd);
         if(IS_ERROR(tmp)) {
@@ -731,7 +731,7 @@ error_code_t update_with_delete_response(response_t *response) {
     if(device == NULL) {
         return CHILD_NOT_FOUND;
     }
-    error_code_t error_code;
+    error_code_t error_code = OK;
     // No need to handle cascading deletion here, it is already handled by Hub and Timer
     if(device->parent_id == id) { // Pipe has to be closed
         if(close(device->next_hop_fd) < 0) {
@@ -856,7 +856,7 @@ void format_info_user_message(response_t *response, char user_message[USER_MESSA
         if(IS_HUB(type)) {
             char child_error[CHILD_ERROR_SIZE];
             snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
-            snprintf(user_message, RESPONSE_STATUS_SIZE, "%s%s", intermediate,
+            snprintf(user_message, USER_MESSAGE_SIZE, "%s%s", intermediate,
                 response->arguments_size == 3 ? child_error : "");
         }
         else {
@@ -916,7 +916,7 @@ void* responses_routine(void *arg) {
     (void)arg; // Unused parameter
 
     int err;
-    error_code_t error_code;
+    error_code_t error_code = UNEXPECTED_SHUTDOWN; // Should read at least 1 response if not canceled
     while(!force_exit) {
         error_code = OK;
         err = read(rcv_responses_fd, response_buffer, MAX_RESPONSE_SIZE);
@@ -1021,16 +1021,25 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
             print_error(STDERR_FILENO, error_code, id, "while closing ncurses");
         }
     }
-    if(!in_responses_thread && (pthread_cancel(responses_thread) < 0 || pthread_join(responses_thread, NULL) < 0)) {
-        error_code = UNABLE_TO_CANCEL_THREAD;
-        print_error(STDERR_FILENO, error_code, id, "while canceling responses thread");
+    if(!in_responses_thread) {
+        tmp = OK;
+        if(pthread_cancel(stderr_thread) != 0) {
+            tmp = UNABLE_TO_CANCEL_THREAD;
+        }
+        if(pthread_join(stderr_thread, NULL) != 0) {
+            tmp = UNABLE_TO_JOIN_THREAD;
+        }
+        if(IS_ERROR(tmp)) {
+            error_code = tmp;
+            print_error(STDERR_FILENO, error_code, id, "while canceling responses thread");
+        }
     }
     tmp = shutdown_devices(id);
     if(IS_ERROR(tmp)) {
         error_code = tmp;
         print_error(STDERR_FILENO, error_code, id, "while cleaning up devices");
     }
-    if((remove(REGISTRY_FILE) < 0 || remove(TMP_REGISTRY_FILE)) && errno != ENOENT) {
+    if((remove(REGISTRY_FILE) < 0 || remove(TMP_REGISTRY_FILE) < 0) && errno != ENOENT) {
         error_code = UNABLE_TO_REMOVE_FILE;
         print_error(STDERR_FILENO, error_code, id, "while cleaning up registry files");
     }
@@ -1086,8 +1095,8 @@ void sigchld_handler(int sig_num) {
     pthread_t sigchld_thread;
     pthread_attr_t sigchld_attributes;
     if(pthread_attr_init(&sigchld_attributes) < 0
-        || pthread_attr_setdetachstate(&sigchld_attributes, PTHREAD_CREATE_DETACHED) < 0
-        || pthread_create(&sigchld_thread, &sigchld_attributes, sigchld_routine, NULL) < 0) {
+        || pthread_attr_setdetachstate(&sigchld_attributes, PTHREAD_CREATE_DETACHED) != 0
+        || pthread_create(&sigchld_thread, &sigchld_attributes, sigchld_routine, NULL) != 0) {
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating thread to handle SIGCHLD");
     }
 }
@@ -1139,6 +1148,11 @@ void* sigchld_routine(void *arg) {
             request.destination = current->parent_id;
             write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
             // Remove pipes and shutdown children
+            tmp = end_child_device_fifos(current);
+            if(IS_ERROR(tmp)) {
+                error_code = tmp;
+                print_error(STDERR_FILENO, error_code, id, "while cleaning pipes of dead device");
+            }
             tmp = shutdown_devices(current->id);
             if(IS_ERROR(tmp)) {
                 error_code = tmp;
@@ -1197,7 +1211,7 @@ error_code_t start_ncurses(int argc, char *argv[]) {
 
     error_code = create_windows();
 
-    if(pthread_create(&stderr_thread, NULL, stderr_routine, NULL) < 0) {
+    if(pthread_create(&stderr_thread, NULL, stderr_routine, NULL) != 0) {
         return UNABLE_TO_CREATE_THREAD;
     }
     return error_code;
@@ -1301,7 +1315,9 @@ int input(char *buffer, size_t size) {
         return wgetnstr(input_win, buffer, size);
     }
     else {
-        fgets(buffer, size, stdin);
+        if(fgets(buffer, size, stdin) == NULL) {
+            return 0;
+        }
         int n = strnlen(buffer, size);
         if(n > 0) {
             buffer[--n] = '\0'; // Remove '\n'
@@ -1320,8 +1336,11 @@ error_code_t end_ncurses() {
      The thread is canceled because it is very likely blocked on a read call
      It's not a problem since it has nothing else to do and doesn't modify data
     */
-    if(pthread_cancel(stderr_thread) < 0 || pthread_join(stderr_thread, NULL)) {
+    if(pthread_cancel(stderr_thread) != 0) {
         error_code = UNABLE_TO_CANCEL_THREAD;
+    }
+    if(pthread_join(stderr_thread, NULL) != 0) {
+        error_code = UNABLE_TO_JOIN_THREAD;
     }
 
     error_code_t error = restore_stderr();

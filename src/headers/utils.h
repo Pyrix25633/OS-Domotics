@@ -18,7 +18,7 @@
 #define EXECUTABLE_NAME_MAX_LENGTH 16
 #define PIPE_PERMISSIONS           0660
 #define NO_FILE_DESCRIPTOR         -1
-#define TIME_SIZE                  8
+#define TIME_SIZE                  16
 
 // Pipes
 
