@@ -333,7 +333,7 @@ error_code_t check_user_command(user_command_t *user_command) {
         return DEVICE_TYPE_MISMATCH;
     }
     // Check that destination exists and eventually that the device type is compatible
-    if(pthread_mutex_lock(&data_mutex) < 0) {
+    if(pthread_mutex_lock(&data_mutex) != 0) {
         return UNABLE_TO_LOCK_MUTEX;
     }
     error_code_t error_code = OK;
@@ -409,7 +409,7 @@ error_code_t check_user_command(user_command_t *user_command) {
     if(!IS_ERROR(error_code)) {
         next_hop_fd = target->next_hop_fd;
     }
-    if(pthread_mutex_unlock(&data_mutex) < 0) {
+    if(pthread_mutex_unlock(&data_mutex) != 0) {
         force_exit = true;
         return UNABLE_TO_LOCK_MUTEX;
     }
@@ -497,7 +497,7 @@ error_code_t execute_add_command(device_type_t type) {
             || fcntl(fd, F_SETFD, FD_CLOEXEC)) {
             return UNABLE_TO_OPEN_PIPE;
         }
-        if(pthread_mutex_lock(&data_mutex) < 0) {
+        if(pthread_mutex_lock(&data_mutex) != 0) {
             return UNABLE_TO_LOCK_MUTEX;
         }
         error_code_t error_code = insert_direct_routing_data_pid(routing_table, new_id, pid, type, id, fd);
@@ -505,7 +505,7 @@ error_code_t execute_add_command(device_type_t type) {
         if(IS_ERROR(tmp)) {
             error_code = tmp;
         }
-        if(pthread_mutex_unlock(&data_mutex) < 0) {
+        if(pthread_mutex_unlock(&data_mutex) != 0) {
             force_exit = true;
             return UNABLE_TO_UNLOCK_MUTEX;
         }
@@ -533,7 +533,7 @@ error_code_t execute_add_command(device_type_t type) {
 }
 
 error_code_t execute_delete_command() {
-    if(pthread_mutex_lock(&data_mutex) < 0) {
+    if(pthread_mutex_lock(&data_mutex) != 0) {
         return UNABLE_TO_LOCK_MUTEX;
     }
     // Loop all direct children
@@ -548,7 +548,7 @@ error_code_t execute_delete_command() {
         error_code = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, direct->next_hop_fd); // Send delete request to all direct children
         direct = find_direct_routing_data(routing_table, id, direct);
     }
-    if(pthread_mutex_unlock(&data_mutex) < 0) {
+    if(pthread_mutex_unlock(&data_mutex) != 0) {
         force_exit = true;
         return UNABLE_TO_LOCK_MUTEX;
     }
@@ -931,7 +931,7 @@ void* responses_routine(void *arg) {
             print_error(STDERR_FILENO, error_code, id, "while parsing response");
             continue;
         }
-        if(pthread_mutex_lock(&data_mutex) < 0) {
+        if(pthread_mutex_lock(&data_mutex) != 0) {
             error_code = UNABLE_TO_LOCK_MUTEX;
             print_error(STDERR_FILENO, error_code, id, "after receiving response");
             continue;
@@ -950,7 +950,7 @@ void* responses_routine(void *arg) {
             error_code = update_with_delete_response(&response);
         }
 
-        if(pthread_mutex_unlock(&data_mutex) < 0) {
+        if(pthread_mutex_unlock(&data_mutex) != 0) {
             error_code = UNABLE_TO_UNLOCK_MUTEX;
             print_error(STDERR_FILENO, error_code, id, "after processing response");
             force_exit = true;
@@ -1023,10 +1023,10 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
     }
     if(!in_responses_thread) {
         tmp = OK;
-        if(pthread_cancel(stderr_thread) != 0) {
+        if(pthread_cancel(responses_thread) != 0) {
             tmp = UNABLE_TO_CANCEL_THREAD;
         }
-        if(pthread_join(stderr_thread, NULL) != 0) {
+        if(pthread_join(responses_thread, NULL) != 0) {
             tmp = UNABLE_TO_JOIN_THREAD;
         }
         if(IS_ERROR(tmp)) {
@@ -1104,7 +1104,7 @@ void sigchld_handler(int sig_num) {
 void* sigchld_routine(void *arg) {
     (void)arg; // Unused parameter
 
-    if(pthread_mutex_lock(&data_mutex) < 0) {
+    if(pthread_mutex_lock(&data_mutex) != 0) {
         print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "acquiring mutex to handle SIGCHLD");
         pthread_exit(NULL);
     }
@@ -1173,7 +1173,7 @@ void* sigchld_routine(void *arg) {
             }
         }
     }
-    if(pthread_mutex_unlock(&data_mutex) < 0) {
+    if(pthread_mutex_unlock(&data_mutex) != 0) {
         error_code = UNABLE_TO_UNLOCK_MUTEX;
         print_error(STDERR_FILENO, error_code, id, "releasing mutex to handle SIGCHLD");
         handle_shutdown(error_code, false);
