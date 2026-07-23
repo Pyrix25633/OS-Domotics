@@ -40,7 +40,8 @@ int main(int argc, char *argv[]) {
 
     srand(time(NULL)); //set random seed with the current time so it's always different
 
-    error_code_t error_code;
+    //the loop below may not run, so the code is initialized to avoid an undefined value
+    error_code_t error_code = OK;
     //the main thread is blocked waiting for requests in a loop (while the exit is not forced by the delete command)
     //when a request is received it is executed, one by one in order of arrival
     while(!force_exit) {
@@ -61,12 +62,14 @@ void handle_shutdown(error_code_t error) {
 }
 
 //SIGTERM is used by the controller for a clean deletion, the device shuts down returning the code
-void sigterm_handler() {
+void sigterm_handler(int sig_num) {
+    (void)sig_num; //unused, the handler is registered for a single signal
     handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
 //SIGPIPE means a write to a pipe with no reader, it is a critical error, the device shuts down
-void sigpipe_handler() {
+void sigpipe_handler(int sig_num) {
+    (void)sig_num; //unused, the handler is registered for a single signal
     handle_shutdown(BROKEN_PIPE);
 }
 
