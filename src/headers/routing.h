@@ -154,6 +154,15 @@ routing_data_t* find_direct_routing_data(routing_table_t table, device_id_t pare
 routing_data_t* find_all_routing_data(routing_table_t table, device_id_t parent_id, routing_data_t *last);
 
 /**
+ * Finds also routing data that is unreachable as the parent does not exist anymore,
+ * used in the controller while handling `SIGCHLD`
+ * 
+ * @param table The routing table where to search
+ * @param last Pointer to the last returned child, where to start the search, if `NULL` the search starts from the beginning
+ */
+routing_data_t* find_unreachable_routing_data(routing_table_t table, routing_data_t *last);
+
+/**
  * Removes recursively, if present, the routing data, also about children of the removed ID,
  * only if the provided parent ID matches the actual parent ID found in the routing information
  * 

@@ -113,6 +113,30 @@ routing_data_t* find_all_routing_data(routing_table_t table, device_id_t parent_
     return NULL;
 }
 
+routing_data_t* find_unreachable_routing_data(routing_table_t table, routing_data_t *last) {
+    routing_data_t *current = last;
+    if(current != NULL) {
+        current = current->next;
+    }
+    id_hash_t b = current != NULL ? HASH_ID(current->id) : (last != NULL ? HASH_ID(last->id) + 1 : 0);
+    for(; b < UNIQUE_ID_HASHES; b++) {
+        if(current == NULL) {
+            current = table[b];
+            if(current != NULL) {
+                return current;
+            }
+            else {
+                continue;
+            }
+        }
+        current = current->next;
+        if(current != NULL) {
+            return current;
+        }
+    }
+    return NULL;
+}
+
 void remove_routing_data(routing_table_t table, device_id_t id, device_id_t parent_id) {
     routing_data_t *data = find_routing_data(table, id);
     // Check if found and parent ID matches

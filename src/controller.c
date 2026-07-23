@@ -551,7 +551,7 @@ error_code_t execute_delete_command() {
     }
     if(pthread_mutex_unlock(&data_mutex) != 0) {
         force_exit = true;
-        return UNABLE_TO_LOCK_MUTEX;
+        return UNABLE_TO_UNLOCK_MUTEX;
     }
     return error_code;
 }
@@ -608,7 +608,7 @@ void output_response(response_t *response) {
     }
     if(IS_SWITCH(code)) {
         char child_error[CHILD_ERROR_SIZE];
-        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
+        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_SWITCH_ARGUMENT]);
         snprintf(user_message, USER_MESSAGE_SIZE, "switch %s %s%s",
             SWITCH_LABEL(code) == SWITCH_POWER ? "power" : (SWITCH_LABEL(code) == SWITCH_OPEN ? "open" : "close"),
             SWITCH_POSITION(code) == POSITION_ON ? "on" : "off",
@@ -625,7 +625,7 @@ void output_response(response_t *response) {
     }
     else if(IS_DELETE(code)) {
         char child_error[CHILD_ERROR_SIZE];
-        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
+        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_DELETE_ARGUMENT]);
         snprintf(user_message, USER_MESSAGE_SIZE, "delete%s", response->arguments_size == 1 ? child_error : "");
     }
     else if(IS_LINK(code)) {
@@ -1128,7 +1128,7 @@ void* sigchld_routine(void *arg) {
         pthread_exit(NULL);
     }
     // Determine which child/children caused the signal and cleanup
-    routing_data_t *current = find_all_routing_data(routing_table, id, NULL);
+    routing_data_t *current = find_unreachable_routing_data(routing_table, NULL);
     int exit_code;
     int status;
     device_id_t current_id;
@@ -1183,7 +1183,7 @@ void* sigchld_routine(void *arg) {
             remove = true;
         }
         current_id = current->id;
-        current = find_all_routing_data(routing_table, id, current);
+        current = find_unreachable_routing_data(routing_table, current);
         if(remove) {
             remove_routing_data_from_bucket(GET_BUCKET(routing_table, current_id), current_id);
             tmp = export_routing_table(routing_table, id);
