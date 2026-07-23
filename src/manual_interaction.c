@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
         exit(error_code);
     }
 
-    if(write(snd_command_fd, request_buffer, MAX_REQUEST_SIZE) < 0) {
+    if(write(snd_command_fd, request_buffer, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE) {
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, MANUAL_INTERACTION_ID, "while sending command to device");
         exit(UNABLE_TO_WRITE_PIPE);
     }

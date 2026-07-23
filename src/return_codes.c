@@ -62,7 +62,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         case MISSING_ID_ARGUMENT:      strcpy(info, "missing ID argument");          break;
         case CODE_FORMAT_ERROR:        strcpy(info, "code format error");            break;
         case REQUEST_FORMAT_ERROR:     strcpy(info, "request format error");         break;
-        case RESPONSE_FORMAT_ERROR:    strcpy(info, "response forma error");         break;
+        case RESPONSE_FORMAT_ERROR:    strcpy(info, "response format error");        break;
         case BUFFER_TOO_SHORT:         strcpy(info, "buffer too short");             break;
         case DESTINATION_ID_MISMATCH:  strcpy(info, "destination ID mismatch");      break;
         case INVALID_REQUEST_ARGUMENT: strcpy(info, "invalid request argument");     break;

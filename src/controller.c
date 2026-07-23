@@ -416,13 +416,6 @@ error_code_t check_user_command(user_command_t *user_command) {
 }
 
 error_code_t execute_user_command(user_command_t *user_command) {
-    if(user_command->code == SWITCH_MAIN_COMMAND) {
-        if(state != user_command->argument) {
-            state = user_command->argument;
-            output("Controller: system is now %s", state == STATE_ON ? "on" : "off");
-        }
-        return OK;
-    }
     if(IS_MESSAGE(user_command->code)) {
         if(user_command->code == INFO_COMMAND && user_command->target == id) {
             routing_data_t *current = find_all_routing_data(routing_table, id, NULL);
@@ -453,6 +446,12 @@ error_code_t execute_user_command(user_command_t *user_command) {
         }
         else if(user_command->code == SLEEP_COMMAND) { // Sleep specified seconds
             sleep(user_command->argument);
+        }
+        else if(user_command->code == SWITCH_MAIN_COMMAND) { // Switch main
+            if(state != user_command->argument) {
+                state = user_command->argument;
+                output("Controller: system is now %s", state == STATE_ON ? "on" : "off");
+            }
         }
         else { // Add device
             return execute_add_command(user_command->argument);
@@ -661,14 +660,17 @@ error_code_t update_with_link_response(response_t *response) {
     if(source->parent_id == response->arguments[PARENT_ID_ARGUMENT]) { // Parent didn't change
         return OK;
     }
-    
-    update_type_to_not_empty(source);
 
     if(source->parent_id == id) { // Controller is the old parent
         if(close(source->next_hop_fd) < 0) {
             return UNABLE_TO_CLOSE_PIPE;
         }
         insert_indirect_routing_data(routing_table, source->id, source->type, response->arguments[PARENT_ID_ARGUMENT]);
+        source = find_routing_data(routing_table, response->source); // Replaced, need to find the new instance
+        if(source == NULL) {
+            return CHILD_NOT_FOUND;
+        }
+        update_type_to_not_empty(source);
         /*
          Data about the children of moved device will be updated automatically when the Controller
          receives the "replay history" messages of the moved device, if it is a control device
@@ -703,6 +705,12 @@ error_code_t update_with_link_response(response_t *response) {
     else {
         error_code = insert_indirect_routing_data(routing_table, source->id, source->type, response->arguments[PARENT_ID_ARGUMENT]);
     }
+
+    source = find_routing_data(routing_table, response->source); // Replaced, need to find the new instance
+    if(source == NULL) {
+        return CHILD_NOT_FOUND;
+    }
+    update_type_to_not_empty(source);
     
     error_code_t tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, old_parent->next_hop_fd);
     return IS_ERROR(tmp) ? tmp : error_code;
@@ -753,7 +761,6 @@ void update_type_to_empty(routing_data_t *device) {
             }
             child = find_direct_routing_data(routing_table, current->id, child);
         }
-        
         if(empty) {
             current->type = IS_HUB(current->type) ? HUB_DEVICE : TIMER_DEVICE;
         }
@@ -770,6 +777,7 @@ void update_type_to_not_empty(routing_data_t *device) {
     child_type &= LEAF_DEVICE_MASK; // Get children type
     routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
     while(parent != NULL) { // Recalculate types up to topmost parent if necessary
+        output_device(parent);
         if(!IS_EMPTY(parent->type)) {
             // Already has a type, it shouldn't happen that it is incompatible, anyways nothing could be done
             break;
@@ -895,8 +903,9 @@ void* responses_routine(void *arg) {
     (void)arg; // Unused parameter
 
     int err;
-    error_code_t error_code = OK;
+    error_code_t error_code;
     while(!force_exit) {
+        error_code = OK;
         err = read(rcv_responses_fd, response_buffer, MAX_RESPONSE_SIZE);
         if(err != MAX_RESPONSE_SIZE) {
             error_code = UNABLE_TO_READ_PIPE;
@@ -916,10 +925,11 @@ void* responses_routine(void *arg) {
         }
 
         if(!IS_ERROR(response.response_code) && IS_LINK(response.command_code)) {
-            output("Update with link response");
             error_code = update_with_link_response(&response);
         }
-        output_response(&response);
+        if(!IS_ERROR(error_code)) {
+            output_response(&response);
+        }
         if(IS_ERROR(error_code)) {
             print_error(STDERR_FILENO, error_code, id, "while parsing response");
         }
@@ -1102,7 +1112,9 @@ void* sigchld_routine(void *arg) {
             }
         }
         else if(status > 0 && ((WIFEXITED(exit_code) && IS_ERROR(WEXITSTATUS(exit_code))) || WIFSIGNALED(exit_code))) {
-            output("%d exited with %d, signaled: %s", current->id, WEXITSTATUS(status), WIFSIGNALED(status) ? "true" : "false");
+            char device_type[DEVICE_TYPE_SIZE];
+            format_device_type(current->type, device_type);
+            output("%s with ID %d exited with error code: 0x%2x", device_type, current->id, WEXITSTATUS(status));
             /*
              Terminated with error, handle termination of children
              Send notification to parent, to avoid it crashing with SIGPIPE when writing on pipe with no readers

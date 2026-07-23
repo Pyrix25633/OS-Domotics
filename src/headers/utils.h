@@ -40,7 +40,7 @@ typedef u_int8_t user_command_code_t;
 #define ADD_COMMAND         0b0000
 #define LIST_COMMAND        0b0001
 #define SWITCH_MAIN_COMMAND 0b0010
-#define SLEEP_COMMAND       0b0010
+#define SLEEP_COMMAND       0b0011
 #define DELETE_COMMAND      0b1000
 #define SWITCH_COMMAND      0b1001
 #define LINK_COMMAND        0b1010
