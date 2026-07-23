@@ -9,6 +9,7 @@
 #include "messages.h"
 #include "return_codes.h"
 #include "utils.h"
+#include "routing.h"
 
 #include <string.h>
 #include <unistd.h>
@@ -21,12 +22,13 @@
  * @param argc Number of arguments received
  * @param argv Argument vector of length `argc`, each string is terminated by `'\0'`
  * 
- * TODO: Determine all other possible exit values, add them every time you find out another error that requires complete
- * termination of the process can occur
- * 
  * @returns `INVALID_TARGET_ID` if the target ID is missing or has an invalid format,
  * `INVALID_COMMAND` if the command is not between the expected ones or is missing,
  * `INVALID_COMMAND_ARGUMENT` if any of the arguments is missing or doesn't have a valid format,
+ * `DEVICE_NOT_FOUND` if the target device does not exist,
+ * `UNABLE_TO_OPEN_FILE` if the registry file could not be opened not because absent,
+ * `REGISTRY_FORMAT_ERROR` if the registry file doesn't have the expected format,
+ * `DEVICE_TYPE_MISMATCH` if the command does not match with the device type,
  * `UNABLE_TO_OPEN_PIPE` if the device pipe could not be opened,
  * `BUFFER_TOO_SHORT` or `REQUEST_FORMAT_ERROR` if the request could not be formatted,
  * `UNABLE_TO_WRITE_PIPE` if the request could not be sent,
@@ -36,8 +38,6 @@ int main(int argc, char *argv[]);
 
 /**
  * Parses a command-line user command
- * 
- * TODO: decide if the manual interaction can execute other commands, except for `list` and `add`
  * 
  * @param user_command Struct where command data will be put
  * @param argc Number of string arguments
@@ -73,6 +73,17 @@ error_code_t parse_switch_command(user_command_t *user_command, int argc, char *
  * `OK` otherwise
  */
 error_code_t parse_set_command(user_command_t *user_command, int argc, char *argv[]);
+
+/**
+ * Checks the user command for semantic errors, mismatch between command and device type
+ * 
+ * @param user_command The user command
+ * @param type The device type
+ * 
+ * @returns `DEVICE_TYPE_MISMATCH` if the command doesn't match the device type,
+ * `OK` otherwise
+ */
+error_code_t check_user_command(user_command_t *user_command, device_type_t type);
 
 /**
  * Opens the pipe where to send commands to the target device

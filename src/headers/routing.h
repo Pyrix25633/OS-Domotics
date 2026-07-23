@@ -34,6 +34,12 @@ typedef struct routing_data_t {
 // Routing table, an array of all buckets, do not forget to call `init_routing_table`
 typedef routing_data_t *routing_table_t[UNIQUE_ID_HASHES];
 
+// Information sharing through file
+
+#define REGISTRY_FILE      "./ipc/devices.registry"
+#define TMP_REGISTRY_FILE  "./ipc/tmp.registry"
+#define REGISTRY_LINE_SIZE 16
+
 /**
  * Initializes the routing table by setting empty buckets
  */
@@ -155,5 +161,32 @@ void insert_routing_data_in_bucket(routing_data_t **bucket, routing_data_t *data
  * @param id ID of the device to be removed
  */
 void remove_routing_data_from_bucket(routing_data_t **bucket, device_id_t id);
+
+/**
+ * Writes id and type to the registry file, so that it can be read by the manual interaction
+ * 
+ * @param table Routing table to be exported
+ * @param parent_id Id of the parent which children, direct and indirect, should be exported
+ * 
+ * @returns `UNABLE_TO_OPEN_FILE` if the file could not be opened,
+ * `UNABLE_TO_WRITE_FILE` if there was an error writing to the file,
+ * `UNABLE_TO_CLOSE_FILE` if the file could not be opened,
+ * `UNABLE_TO_RENAME_FILE` if the temporary file could not be renamed,
+ * `OK` otherwise
+ */
+error_code_t export_routing_table(routing_table_t table, device_id_t parent_id);
+
+/**
+ * Finds the device type in the registry file, if present
+ * 
+ * @param id ID of the device which type has to be found
+ * @param type Pointer where the found type will be put
+ * 
+ * @returns `UNABLE_TO_OPEN_FILE` if the file could not be opened and not because absent,
+ * `REGISTRY_FORMAT_ERROR` if the registry file did not have the expected format,
+ * `DEVICE_NOT_FOUND` if the registry file or the device ID were absent,
+ * `OK` otherwise
+ */
+error_code_t find_device_type(device_id_t id, device_type_t* type);
 
 #endif

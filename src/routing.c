@@ -3,6 +3,10 @@
 #include "routing.h"
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <utils.h>
 
 void init_routing_table(routing_table_t table) {
     for(id_hash_t b = 0; b < UNIQUE_ID_HASHES; b++) {
@@ -186,4 +190,83 @@ void remove_routing_data_from_bucket(routing_data_t **bucket, device_id_t id) {
         }
         free(current);
     }
+}
+
+error_code_t export_routing_table(routing_table_t table, device_id_t parent_id) {
+    FILE *tmp_file = fopen(TMP_REGISTRY_FILE, "w"); // Create or truncate
+    if(tmp_file == NULL) {
+        return UNABLE_TO_CLOSE_FILE;
+    }
+
+    char line[REGISTRY_LINE_SIZE];
+    int length;
+
+    routing_data_t *current = find_all_routing_data(table, parent_id, NULL);
+    while(current != NULL) {
+        length = snprintf(line, REGISTRY_LINE_SIZE, "%u %u\n", current->id, current->type);
+        if(length >= (int)REGISTRY_LINE_SIZE || length < 0
+            || fputs(line, tmp_file) < 0) {
+            return UNABLE_TO_WRITE_FILE;
+        }
+
+        current = find_all_routing_data(table, parent_id, current);
+    }
+
+    if(fclose(tmp_file) < 0) {
+        return UNABLE_TO_CLOSE_FILE;
+    }
+    if(rename(TMP_REGISTRY_FILE, REGISTRY_FILE) < 0) {
+        // The rename is atomic and replaces the old registry file
+        return UNABLE_TO_RENAME_FILE;
+    }
+    return OK;
+}
+
+error_code_t find_device_type(device_id_t id, device_type_t* type) {
+    FILE *file = fopen(REGISTRY_FILE, "r");
+    if(file == NULL) {
+        if(errno == ENOENT) {
+            return DEVICE_NOT_FOUND;
+        }
+        return UNABLE_TO_OPEN_FILE;
+    }
+
+    char line[REGISTRY_LINE_SIZE];
+    char *token;
+    char *last;
+    device_id_t current_id;
+    device_type_t current_type;
+    int ret;
+    bool found = false;
+
+    while(fgets(line, REGISTRY_LINE_SIZE, file) != NULL && !found) {
+        line[strlen(line) - 1] = '\0'; // Remove new line
+        token = strtok_r(line, " ", &last);
+        if(token == NULL) {
+            return REGISTRY_FORMAT_ERROR;
+        }
+        ret = string_to_unsigned(token);
+        if(IS_RETURN_ERROR(ret)) {
+            return REGISTRY_FORMAT_ERROR;
+        }
+        current_id = ret;
+        token = strtok_r(NULL, " ", &last);
+        if(token == NULL) {
+            return REGISTRY_FORMAT_ERROR;
+        }
+        ret = string_to_unsigned(token);
+        if(IS_RETURN_ERROR(ret)) {
+            return REGISTRY_FORMAT_ERROR;
+        }
+        current_type = ret;
+        if(current_id == id) {
+            *type = current_type;
+            found = true;
+        }
+    }
+
+    if(fclose(file) < 0) {
+        return UNABLE_TO_CLOSE_FILE;
+    }
+    return found ? OK : DEVICE_NOT_FOUND;
 }

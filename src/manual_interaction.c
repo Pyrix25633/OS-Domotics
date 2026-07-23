@@ -21,17 +21,24 @@ int main(int argc, char *argv[]) {
         exit(error_code);
     }
 
-    /*
-     `user_command.code` is not used here, but to avoid possible inconsistencies it is
-     set by `parse_user_command` anyway
-    */
+    // Check device type and command
 
-    // TODO: check that target ID exists and device type matches
+    device_type_t type;
+    error_code = find_device_type(user_command.target, &type);
+    if(IS_ERROR(error_code)) {
+        print_error(STDERR_FILENO, error_code, MANUAL_INTERACTION_ID, "while parsing command");
+        exit(error_code);
+    }
+
+    error_code = check_user_command(&user_command, type);
+    if(IS_ERROR(error_code)) {
+        print_error(STDERR_FILENO, error_code, MANUAL_INTERACTION_ID, "while parsing command");
+        exit(error_code);
+    }
 
     // Send command request to target device
 
     open_device_pipe(user_command.target);
-
     
     request.destination = user_command.target;
     request.command_code = user_command.message_code;
@@ -169,6 +176,30 @@ error_code_t parse_set_command(user_command_t *user_command, int argc, char *arg
     }
     user_command->argument = argument;
     return OK;
+}
+
+error_code_t check_user_command(user_command_t *user_command, device_type_t type) {
+    if(user_command->code == INFO_COMMAND) { // Nothing to check
+        return OK;
+    }
+    if(IS_SWITCH(user_command->message_code)) {
+        if(IS_CONTROL(type) && IS_EMPTY(type)) {
+            return DEVICE_TYPE_MISMATCH; // No valid switch operation
+        }
+        if(SWITCH_LABEL(user_command->message_code) == SWITCH_POWER) {
+            return IS_BULB_LIKE(type) ? OK : DEVICE_TYPE_MISMATCH;
+        }
+        else { // Open or close
+            return IS_BULB_LIKE(type) ? DEVICE_TYPE_MISMATCH : OK;
+        }
+    }
+    // Registry set
+    if(REGISTRY_SUBCOMMAND(user_command->message_code) == REGISTRY_BEGIN
+        || REGISTRY_SUBCOMMAND(user_command->message_code) == REGISTRY_END) {
+        return IS_TIMER(type) ? OK : DEVICE_TYPE_MISMATCH;
+    }
+    // Set delay, thermostat or fill percentage
+    return IS_FRIDGE(type) ? OK : DEVICE_TYPE_MISMATCH;
 }
 
 void open_device_pipe(device_id_t target) {

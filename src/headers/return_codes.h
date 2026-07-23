@@ -50,6 +50,7 @@ typedef u_int8_t error_code_t;
 #define CHILD_NOT_FOUND          0x2a
 #define CHILD_ERROR              0x2b
 #define UNABLE_TO_CREATE_WINDOWS 0x2c
+#define REGISTRY_FORMAT_ERROR    0x2d
 
 // - CAUSE RELATED TO PROCESSES -
 
@@ -88,6 +89,9 @@ typedef u_int8_t error_code_t;
 #define FILE_ERROR               0x60
 #define UNABLE_TO_OPEN_FILE      0x61
 #define UNABLE_TO_CLOSE_FILE     0x62
+#define UNABLE_TO_WRITE_FILE     0x63
+#define UNABLE_TO_RENAME_FILE    0x64
+#define UNABLE_TO_REMOVE_FILE    0x65
 
 // Macros for error checking
 

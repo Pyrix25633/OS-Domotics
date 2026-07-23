@@ -316,7 +316,8 @@ error_code_t check_user_command(user_command_t *user_command) {
     if(state == STATE_OFF) { // Limit the possible commands to switch main, list, info 0
         switch(user_command->code) {
             case LIST_COMMAND: return OK;
-            case INFO_COMMAND: if(user_command->target == id) return OK; break;
+            case DELETE_COMMAND:
+            case INFO_COMMAND: if(user_command->target == id) { return OK; } break;
             case SWITCH_MAIN_COMMAND: return OK;
         }
         return SYSTEM_OFF;
@@ -500,6 +501,10 @@ error_code_t execute_add_command(device_type_t type) {
             return UNABLE_TO_LOCK_MUTEX;
         }
         error_code_t error_code = insert_direct_routing_data_pid(routing_table, new_id, pid, type, id, fd);
+        error_code_t tmp = export_routing_table(routing_table, id);
+        if(IS_ERROR(tmp)) {
+            error_code = tmp;
+        }
         if(pthread_mutex_unlock(&data_mutex) < 0) {
             force_exit = true;
             return UNABLE_TO_UNLOCK_MUTEX;
@@ -650,7 +655,7 @@ error_code_t update_with_link_response(response_t *response) {
         }
         device->type = response->arguments[DEVICE_TYPE_ARGUMENT];
         update_type_to_empty(device);
-        return OK;
+        return export_routing_table(routing_table, id);
     }
     // Link change parent
     routing_data_t *source = find_routing_data(routing_table, response->source);
@@ -675,7 +680,7 @@ error_code_t update_with_link_response(response_t *response) {
          Data about the children of moved device will be updated automatically when the Controller
          receives the "replay history" messages of the moved device, if it is a control device
          */
-        return OK;
+        return export_routing_table(routing_table, id);
     }
 
     error_code_t error_code = OK;
@@ -710,9 +715,14 @@ error_code_t update_with_link_response(response_t *response) {
     if(source == NULL) {
         return CHILD_NOT_FOUND;
     }
+
     update_type_to_not_empty(source);
+    error_code_t tmp = export_routing_table(routing_table, id);
+    if(IS_ERROR(tmp)) {
+        error_code = tmp;
+    }
     
-    error_code_t tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, old_parent->next_hop_fd);
+    tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, old_parent->next_hop_fd);
     return IS_ERROR(tmp) ? tmp : error_code;
 }
 
@@ -741,6 +751,10 @@ error_code_t update_with_delete_response(response_t *response) {
     remove_routing_data(routing_table, device->id, device->parent_id);
     if(pending_shutdown && find_direct_routing_data(routing_table, id, NULL) == NULL) { // Pending Controller delete and no more children
         force_exit = true;
+    }
+    error_code_t tmp = export_routing_table(routing_table, id);
+    if(IS_ERROR(tmp)) {
+        error_code = tmp;
     }
     return error_code;
 }
@@ -777,7 +791,6 @@ void update_type_to_not_empty(routing_data_t *device) {
     child_type &= LEAF_DEVICE_MASK; // Get children type
     routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
     while(parent != NULL) { // Recalculate types up to topmost parent if necessary
-        output_device(parent);
         if(!IS_EMPTY(parent->type)) {
             // Already has a type, it shouldn't happen that it is incompatible, anyways nothing could be done
             break;
@@ -846,7 +859,7 @@ void format_info_user_message(response_t *response, char user_message[USER_MESSA
             snprintf(user_message, RESPONSE_STATUS_SIZE, "%s%s", intermediate,
                 response->arguments_size == 3 ? child_error : "");
         }
-        else { // TODO: check if other data is given
+        else {
             char begin[TIME_SIZE];
             char end[TIME_SIZE];
             format_time(begin, response->arguments[BEGIN_ARGUMENT]);
@@ -1017,6 +1030,10 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
         error_code = tmp;
         print_error(STDERR_FILENO, error_code, id, "while cleaning up devices");
     }
+    if((remove(REGISTRY_FILE) < 0 || remove(TMP_REGISTRY_FILE)) && errno != ENOENT) {
+        error_code = UNABLE_TO_REMOVE_FILE;
+        print_error(STDERR_FILENO, error_code, id, "while cleaning up registry files");
+    }
     if(!IS_ERROR(error_code)) {
         error_code = error;
     }
@@ -1140,6 +1157,11 @@ void* sigchld_routine(void *arg) {
         current = find_all_routing_data(routing_table, id, current);
         if(remove) {
             remove_routing_data(routing_table, current_id, current_parent_id);
+            tmp = export_routing_table(routing_table, id);
+            if(IS_ERROR(tmp)) {
+                error_code = tmp;
+                print_error(STDERR_FILENO, error_code, id, "while exporting routing table after dead device");
+            }
         }
     }
     if(pthread_mutex_unlock(&data_mutex) < 0) {

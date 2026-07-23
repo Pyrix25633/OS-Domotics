@@ -71,6 +71,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
         case CHILD_NOT_FOUND:          strcpy(info, "child not found");              break;
         case CHILD_ERROR:              strcpy(info, "child error");                  break;
         case UNABLE_TO_CREATE_WINDOWS: strcpy(info, "unable to create windows");     break;
+        case REGISTRY_FORMAT_ERROR:    strcpy(info, "registry format error");        break;
 
         case UNABLE_TO_ALLOCATE_HEAP:  strcpy(info, "unable to allocate heap");      break;
         case UNABLE_TO_SET_SIGHANDLER: strcpy(info, "unable to set signal handler"); break;
@@ -97,6 +98,9 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
 
         case UNABLE_TO_OPEN_FILE:      strcpy(info, "unable to open file");          break;
         case UNABLE_TO_CLOSE_FILE:     strcpy(info, "unable to close file");         break;
+        case UNABLE_TO_WRITE_FILE:     strcpy(info, "unable to write file");         break;
+        case UNABLE_TO_RENAME_FILE:    strcpy(info, "unable to rename file");        break;
+        case UNABLE_TO_REMOVE_FILE:    strcpy(info, "unable to remove file");        break;
 
         default:                       strcpy(info, "no additional information");
     }
