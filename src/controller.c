@@ -1076,12 +1076,12 @@ error_code_t shutdown_devices(device_id_t parent_id) {
         device = find_all_routing_data(routing_table, parent_id, device);
     }
     device_id_t device_id;
-    device = find_direct_routing_data(routing_table, id, NULL);
+    device = find_direct_routing_data(routing_table, parent_id, NULL);
     // Cannot remove Controller from the routing table as it is not present, so all direct children are removed
     while(device != NULL) {
         device_id = device->id;
-        device = find_direct_routing_data(routing_table, id, device); // First find next
-        remove_routing_data(routing_table, device_id, id); // Then remove current
+        device = find_direct_routing_data(routing_table, parent_id, device); // First find next
+        remove_routing_data(routing_table, device_id, parent_id); // Then remove current
     }
     return error_code;
 }
@@ -1171,6 +1171,7 @@ void* sigchld_routine(void *arg) {
         current_parent_id = current->parent_id;
         current = find_all_routing_data(routing_table, id, current);
         if(remove) {
+            output("Removing %u", current_id); // ! remove
             remove_routing_data(routing_table, current_id, current_parent_id);
             tmp = export_routing_table(routing_table, id);
             if(IS_ERROR(tmp)) {
