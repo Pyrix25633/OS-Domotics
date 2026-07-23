@@ -214,11 +214,13 @@ void handle_shutdown(error_code_t error) {
     exit(error_code);
 }
 
-void sigterm_handler() {
+void sigterm_handler(int sig_num) {
+    (void)sig_num; // Unused parameter
     handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
-void sigpipe_handler() {
+void sigpipe_handler(int sig_num) {
+    (void)sig_num; // Unused parameter
     handle_shutdown(BROKEN_PIPE);
 }
 

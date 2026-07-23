@@ -1002,15 +1002,18 @@ error_code_t shutdown_devices(device_id_t parent_id) {
     return error_code;
 }
 
-void sigterm_handler() {
+void sigterm_handler(int sig_num) {
+    (void)sig_num; // Unused parameter
     handle_shutdown(UNEXPECTED_SHUTDOWN, false);
 }
 
-void sigpipe_handler() {
+void sigpipe_handler(int sig_num) {
+    (void)sig_num; // Unused parameter
     handle_shutdown(BROKEN_PIPE, false);
 }
 
-void sigchld_handler() {
+void sigchld_handler(int sig_num) {
+    (void)sig_num; // Unused parameter
     pthread_t sigchld_thread;
     pthread_attr_t sigchld_attributes;
     if(pthread_attr_init(&sigchld_attributes) < 0

@@ -381,20 +381,26 @@ error_code_t shutdown_devices(device_id_t parent_id);
 
 /**
  * Handles the shutdown caused by a `SIGTERM` signal
+ * 
+ * @param sig_num Signal number, unused
  */
-void sigterm_handler();
+void sigterm_handler(int signum);
 
 /**
  * Handles the shutdown caused by a `SIGPIPE` signal
+ * 
+ * @param sig_num Signal number, unused
  */
-void sigpipe_handler();
+void sigpipe_handler(int signum);
 
 /**
  * Handles the shutdown of a child process, logical direct or indirect child device
  * 
  * It creates a detached thread that locks the mutex to safely access data
+ * 
+ * @param sig_num Signal number, unused
  */
-void sigchld_handler();
+void sigchld_handler(int signum);
 
 /**
  * Handles the shutdown of a child process, logical direct or indirect child device

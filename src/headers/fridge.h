@@ -123,13 +123,17 @@ void handle_shutdown(error_code_t error);
 
 /**
  * Handles the shutdown caused by a `SIGTERM` signal
+ * 
+ * @param sig_num Signal number, unused
  */
-void sigterm_handler();
+void sigterm_handler(int sig_num);
 
 /**
  * Handles the shutdown caused by a `SIGPIPE` signal
+ * 
+ * @param sig_num Signal number, unused
  */
-void sigpipe_handler();
+void sigpipe_handler(int sig_num);
 
 /**
  * Sets the state and updates auxiliary variables

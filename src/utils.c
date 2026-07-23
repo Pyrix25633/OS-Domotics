@@ -46,7 +46,7 @@ int get_id_from_arguments(int argc, char *argv[]) {
     exit(MISSING_ID_ARGUMENT);
 }
 
-void set_signal_handler(int signal, void (*signal_handler)()) {
+void set_signal_handler(int signal, void (*signal_handler)(int)) {
     struct sigaction action;
     action.sa_handler = signal_handler;
     action.sa_flags = SA_RESTART;
