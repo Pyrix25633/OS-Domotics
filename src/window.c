@@ -2,20 +2,6 @@
 
 #include "window.h"
 
-//start - make FILE="window" (ARGS="id" only to test, then it's given by the controller)
-//print_error only if i can't send an error response
-
-//response: id command_code response_code arguments
-
-//! switch iff
-//make: *** [Makefile:25: default] Segmentation fault (core dumped)
-
-//! info on
-//Request: 1 72
-//Response: 1 72 0 0 0
-
-//! The comments need to be fixed, now they are just for me, apart the one that are good
-
 // - Explicit device data -
 
 device_id_t id;
@@ -32,7 +18,7 @@ time_t last_closed;
 int rcv_requests_fd;  //read is blocking       - pipe to receive requests from the parent or manual commands
 int snd_responses_fd; //write is non blocking  - pipe to send responses to parent or manual commands
 bool force_exit = false;
-request_t request; //destination, command_code, argument
+request_t request;
 response_t response;
 char buffer_read[MAX_REQUEST_SIZE]; //buffer to read the request from the pipe
 char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send it to the pipe
@@ -41,7 +27,7 @@ char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send
 // the controller starts a window process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
-    set_signal_handler(SIGPIPE, sigpipe_handler); //when a device write on a pipe but the device is no more listening due to crash or child removed
+    set_signal_handler(SIGPIPE, sigpipe_handler); //when a device write on a pipe but no device is listening anymore due to crash or child removed
 
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec
     response.source = id;
@@ -61,8 +47,6 @@ int main(int argc, char *argv[]) {
 }
 
 void handle_shutdown(error_code_t error) {
-    //it's different from the start_device_fifos but it's not a problem, it's not NULL because the first
-    //takes pointers while this it doesn't
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, NO_FILE_DESCRIPTOR);
     if(IS_ERROR(error_code)){
         //prints the error on standard error, best practice to do
@@ -85,7 +69,7 @@ error_code_t read_pipe(){
 
     if(size == 0){
         force_exit = true;
-        return UNEXPECTED_END_OF_FILE; //EOF only if it doesn not have a parent anymore
+        return UNEXPECTED_END_OF_FILE; //EOF only if it does not have a parent anymore
     }
     if(size != MAX_REQUEST_SIZE){
         return UNABLE_TO_READ_PIPE;
@@ -163,8 +147,6 @@ void create_link_response(){
     }
 }
 
-//i have 2 switch (open,close -> on/off)
-//there are 2 combinations that are useless 
 void create_switch_response(){
     if(SWITCH_POSITION(request.command_code)==POSITION_ON){
         if(SWITCH_LABEL(request.command_code)==SWITCH_OPEN && state != STATE_OPEN){

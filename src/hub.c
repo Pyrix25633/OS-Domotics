@@ -32,7 +32,7 @@ pthread_t children_thread;
 
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
-    set_signal_handler(SIGPIPE, sigpipe_handler); //when a device write on a pipe but the device is no more listening due to crash or child removed
+    set_signal_handler(SIGPIPE, sigpipe_handler); //when a device write on a pipe but no device is listening anymore due to crash or child removed
 
     id = get_id_from_arguments(argc, argv);
     start_device_fifos(id,&rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
@@ -242,8 +242,8 @@ void handle_shutdown(error_code_t error) {
     if(pthread_cancel(children_thread) != 0){
         error_code = UNABLE_TO_CANCEL_THREAD;
         print_error(STDERR_FILENO, error_code, id, "in shutdown");
-
     }
+
     if(children != 0){
         routing_data_t *current_child = find_direct_routing_data(routing_table, id, NULL);
         while(current_child != NULL){
@@ -252,10 +252,8 @@ void handle_shutdown(error_code_t error) {
                 print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
                 break;
             }
-            if(!IS_ERROR(error_code)){
-                remove_routing_data(routing_table, current_child->id, id);
-            }
             current_child = find_direct_routing_data(routing_table, id, current_child);
+            remove_routing_data(routing_table, current_child->id, id);
         }
     }
 

@@ -20,9 +20,6 @@
 
 // Macros - can be used instead of doing very small functions
 
-//checks if values has changed
-#define HAS_STATE_CHANGED(new_state) state!=new_state //Checks if the state has changed
-
 //current seconds open
 #define CURRENT_SECONDS_OPEN    time(NULL) - last_opened
 #define LAST_SECONDS_OPEN       last_closed - last_opened
