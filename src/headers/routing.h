@@ -159,6 +159,8 @@ routing_data_t* find_all_routing_data(routing_table_t table, device_id_t parent_
  * 
  * @param table The routing table where to search
  * @param last Pointer to the last returned child, where to start the search, if `NULL` the search starts from the beginning
+ * 
+ * @returns Each time it returns a pointer to the routing information of the next element, `NULL` if there are no more elements
  */
 routing_data_t* find_unreachable_routing_data(routing_table_t table, routing_data_t *last);
 

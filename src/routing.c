@@ -122,14 +122,7 @@ routing_data_t* find_unreachable_routing_data(routing_table_t table, routing_dat
     for(; b < UNIQUE_ID_HASHES; b++) {
         if(current == NULL) {
             current = table[b];
-            if(current != NULL) {
-                return current;
-            }
-            else {
-                continue;
-            }
         }
-        current = current->next;
         if(current != NULL) {
             return current;
         }

@@ -412,7 +412,7 @@ error_code_t check_user_command(user_command_t *user_command) {
     }
     if(pthread_mutex_unlock(&data_mutex) != 0) {
         force_exit = true;
-        return UNABLE_TO_LOCK_MUTEX;
+        return UNABLE_TO_UNLOCK_MUTEX;
     }
     return error_code;
 }
