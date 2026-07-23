@@ -592,7 +592,7 @@ void create_link_response(){
     else if(LINK_SUBCOMMAND(request.command_code)==LINK_REMOVE_CHILD){
         //the request argument is the child id to remove
         response.arguments[CHILD_ID_ARGUMENT] = request.argument; //to give always a feedback
-        response.arguments_size = 1;
+        response.arguments_size = 2;
         //the child scalars are shared with the child-responses thread, so they are accessed under the lock
         lock_data();
         if(has_child && request.argument == child_id){
@@ -608,6 +608,8 @@ void create_link_response(){
         else{
             response.response_code = DEVICE_NOT_FOUND;
         }
+        //losing the child changes the declared type, so the parent learns the new one from this response
+        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
         unlock_data();
     }
     else{
