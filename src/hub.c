@@ -245,7 +245,7 @@ void handle_shutdown(error_code_t error) {
         print_error(STDERR_FILENO, error_code, id, "in shutdown");
     }
 
-    if(children != 0){
+    if(has_children){
         routing_data_t *current_child = find_direct_routing_data(routing_table, id, NULL);
         while(current_child != NULL){
             if(close(current_child->next_hop_fd) < 0){
@@ -270,11 +270,13 @@ void handle_shutdown(error_code_t error) {
     exit(error_code);
 }
 
-void sigterm_handler(){
+void sigterm_handler(int sig_num){
+    (void)sig_num;
     handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
-void sigpipe_handler(){
+void sigpipe_handler(int sig_num){
+    (void)sig_num;
     handle_shutdown(BROKEN_PIPE);
 }
 

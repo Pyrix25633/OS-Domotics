@@ -56,13 +56,15 @@ void handle_shutdown(error_code_t error) {
     exit(error_code);
 }
 
-void sigterm_handler(){
+void sigterm_handler(int sig_num){
+    (void)sig_num;
     handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
-void sigpipe_handler(){
+void sigpipe_handler(int sig_num){
+    (void)sig_num;
     handle_shutdown(BROKEN_PIPE);
-} 
+}
 
 error_code_t read_pipe(){
     ssize_t size = read(rcv_requests_fd, buffer_read, MAX_REQUEST_SIZE);
