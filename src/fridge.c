@@ -209,6 +209,8 @@ void handle_shutdown(error_code_t error) {
     if(!IS_ERROR(error_code)) {
         error_code = error;
     }
+
+    dprintf(STDERR_FILENO, "Exiting with code: %u\n", error_code);
     exit(error_code);
 }
 

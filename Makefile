@@ -56,4 +56,4 @@ clean:
 
 # Executes scenario, runs Controller which then reads if present the `./commands.scenario` file
 run: | clean build
-	./bin/controller
+	./bin/controller $(ARGS)

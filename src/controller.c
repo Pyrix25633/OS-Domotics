@@ -393,6 +393,8 @@ error_code_t check_user_command(user_command_t *user_command) {
 }
 
 error_code_t execute_user_command(user_command_t *user_command) {
+    //simulate_processing_time(); // TODO: check if to be done
+
     if(IS_MESSAGE(user_command->code)) {
         request.command_code = user_command->message_code;
         request.argument = user_command->argument;
@@ -873,6 +875,7 @@ void* responses_routine(void *arg) {
         }
 
         if(!IS_ERROR(response.response_code) && IS_LINK(response.command_code)) {
+            output("Update with link response");
             error_code = update_with_link_response(&response);
         }
         output_response(&response);
@@ -1038,11 +1041,23 @@ void* sigchld_routine(void *arg) {
      So they are terminated using `SIGTERM`
     */
     while(current != NULL) {
+        /*
+         When a child process exists with OK it is not removed from the routing information, as that is handled
+         by it's delete response through pipes
+         It can happen that when receiving multiple SIGCHLD a child that exited successfully, and so is not removed,
+         is waited for multiple times, from the second time on it returns with errno ECHILD, it is expected 
+        */
         if((status = waitpid(current->pid, &exit_code, WNOHANG)) < 0) {
-            print_error(STDERR_FILENO, UNABLE_TO_WAIT, id, "while checking child process status");
+            if(errno != ECHILD) { // Unexpected error, meanwhile ECHILD is possible as mentioned above
+                print_error(STDERR_FILENO, UNABLE_TO_WAIT, id, "while checking child process status");
+            }
         }
-        if(status > 0 && (WIFEXITED(exit_code) || WIFSIGNALED(exit_code))) { // Terminated, handle termination of children
-            // Send notification to parent, to avoid it crashing with SIGPIPE when writing on pipe with no readers
+        else if(status > 0 && ((WIFEXITED(exit_code) && IS_ERROR(WEXITSTATUS(status))) || WIFSIGNALED(status))) {
+            output("%d exited with %d, signaled: %s", current->id, WEXITSTATUS(status), WIFSIGNALED(status) ? "true" : "false");
+            /*
+             Terminated with error, handle termination of children
+             Send notification to parent, to avoid it crashing with SIGPIPE when writing on pipe with no readers
+            */
             request.destination = current->id;
             write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
             // Remove pipes and shutdown children

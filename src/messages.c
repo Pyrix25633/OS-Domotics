@@ -114,8 +114,8 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
     response->response_code = response_code;
     response->arguments_size = 0;
 
-    // Parse arguments if it's a successful response and should have arguments
-    if(HAS_RESPONSE_ARGUMENTS(command_code) && response->response_code == OK) {
+    // Parse arguments if the response should have arguments
+    if(HAS_RESPONSE_ARGUMENTS(command_code) && !(IS_INFO(response->command_code) && IS_ERROR(response->response_code))) {
         unsigned i = 0;
         int parsed;
         token = strtok_r(NULL, " ", &last);
@@ -134,7 +134,7 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
         response->arguments_size = i;
     }
 
-    if(IS_INFO(response->command_code) && response->arguments_size < 2) {
+    if(IS_INFO(response->command_code) && !IS_ERROR(response->response_code) && response->arguments_size < 2) {
         return RESPONSE_FORMAT_ERROR;
     }
 

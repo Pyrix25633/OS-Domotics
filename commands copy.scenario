@@ -1,0 +1,20 @@
+add bulb
+add bulb
+add bulb
+add window
+add window
+add fridge
+
+add hub
+add hub
+add timer
+
+link 1 to 7
+link 2 to 7
+link 3 to 7
+
+link 4 to 8
+link 5 to 8
+
+sleep 6
+link 8 to 9
