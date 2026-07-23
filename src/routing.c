@@ -54,7 +54,7 @@ error_code_t insert_indirect_routing_data_pid(routing_table_t table, device_id_t
 }
 
 error_code_t insert_indirect_routing_data(routing_table_t table, device_id_t id, device_type_t type, device_id_t parent_id) {
-    insert_indirect_routing_data_pid(table, id, NO_PID, type, parent_id);
+    return insert_indirect_routing_data_pid(table, id, NO_PID, type, parent_id);
 }
 
 routing_data_t* find_routing_data(routing_table_t table, device_id_t id) {

@@ -992,7 +992,7 @@ error_code_t end_responses_fifo() {
 }
 
 error_code_t end_child_device_fifos(routing_data_t *device) {
-    error_code_t error_code;
+    error_code_t error_code = OK;
     char pipe_name[PIPE_NAME_MAX_LENGTH];
     if(IS_ERROR(create_fifo_name(device->id, DIRECTION_DOWN, pipe_name, PIPE_NAME_MAX_LENGTH))
         || (remove(pipe_name) < 0 && errno != ENOENT)) {
@@ -1132,7 +1132,6 @@ void* sigchld_routine(void *arg) {
     int exit_code;
     int status;
     device_id_t current_id;
-    device_id_t current_parent_id;
     bool remove;
     error_code_t error_code = OK;
     error_code_t tmp;
@@ -1184,10 +1183,9 @@ void* sigchld_routine(void *arg) {
             remove = true;
         }
         current_id = current->id;
-        current_parent_id = current->parent_id;
         current = find_all_routing_data(routing_table, id, current);
         if(remove) {
-            remove_routing_data(routing_table, current_id, current_parent_id);
+            remove_routing_data_from_bucket(GET_BUCKET(routing_table, current_id), current_id);
             tmp = export_routing_table(routing_table, id);
             if(IS_ERROR(tmp)) {
                 error_code = tmp;
