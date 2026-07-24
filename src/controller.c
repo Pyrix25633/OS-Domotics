@@ -514,7 +514,7 @@ error_code_t execute_add_command(device_type_t type) {
         last_device_id = new_id;
         char device_type[DEVICE_TYPE_SIZE];
         format_device_type(type, device_type);
-        output("Successfully created %s with ID: %u, PID: %u", device_type, new_id, pid);
+        output("@ Successfully created %s with ID: %u, PID: %u", device_type, new_id, pid);
         return error_code;
     }
     else { // New device
@@ -736,7 +736,7 @@ error_code_t update_with_delete_response(response_t *response) {
     }
 
     error_code_t error_code = OK;
-    if(waitpid(device->pid, NULL, 0) < 0) {
+    if(waitpid(device->pid, NULL, WNOHANG) < 0) {
         error_code = UNABLE_TO_WAIT;
     }
     // No need to handle cascading deletion here, it is already handled by Hub and Timer
@@ -745,7 +745,7 @@ error_code_t update_with_delete_response(response_t *response) {
     if(IS_ERROR(tmp)) {
         error_code = tmp;
     }
-    
+
     routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
     remove_routing_data(routing_table, device->id, device->parent_id);
     if(parent != NULL) {
@@ -939,17 +939,25 @@ void* responses_routine(void *arg) {
             continue;
         }
 
-        if(!IS_ERROR(response.response_code) && IS_LINK(response.command_code)) {
-            error_code = update_with_link_response(&response);
-        }
-        if(!IS_ERROR(error_code)) {
+        if(!IS_ERROR(error_code)) { // Parsed successfully and mutex locked
+            if(!IS_ERROR(response.response_code) && IS_LINK(response.command_code)) {
+                error_code = update_with_link_response(&response);
+                if(IS_ERROR(error_code)) {
+                    print_error(STDERR_FILENO, error_code, id, "while updating with link response");
+                }
+            }
+
             output_response(&response);
+
+            if(!IS_ERROR(response.response_code) && IS_DELETE(response.command_code)) {
+                error_code = update_with_delete_response(&response);
+                if(IS_ERROR(error_code)) {
+                    print_error(STDERR_FILENO, error_code, id, "while updating with link response");
+                }
+            }
         }
         else {
             print_error(STDERR_FILENO, error_code, id, "while parsing response");
-        }
-        if(!IS_ERROR(response.response_code) && IS_DELETE(response.command_code)) {
-            error_code = update_with_delete_response(&response);
         }
 
         if(pthread_mutex_unlock(&data_mutex) != 0) {
@@ -1160,7 +1168,7 @@ void* sigchld_routine(void *arg) {
         else if(status > 0 && ((WIFEXITED(exit_code) && IS_ERROR(WEXITSTATUS(exit_code))) || WIFSIGNALED(exit_code))) {
             char device_type[DEVICE_TYPE_SIZE];
             format_device_type(current->type, device_type);
-            output("%s with ID %d exited with error code: 0x%2x", device_type, current->id, WEXITSTATUS(exit_code));
+            output("# %s with ID %d exited with error code: 0x%2x", device_type, current->id, WEXITSTATUS(exit_code));
             /*
              Terminated with error, handle termination of children
              Send notification to parent, to avoid it crashing with SIGPIPE when writing on pipe with no readers
