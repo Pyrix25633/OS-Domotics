@@ -16,7 +16,8 @@ linked_list_t *pending_responses = NULL;
 // - Auxiliary device data -
 
 device_id_t parent_id = CONTROLLER_ID;
-volatile bool force_exit = false;
+volatile bool force_exit = false; //the compiler does not optimize this variable (volatile)
+bool is_bottom_up_thread = false;
 
 // - IPC data -
 
@@ -29,11 +30,11 @@ int rcv_responses_children_fd; // all the children write on a same pipe
 // - Thread -
 
 pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_t children_thread;
+pthread_t bottom_up_thread;
 
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
-    set_signal_handler(SIGPIPE, sigpipe_handler); //when a device write on a pipe but no device is listening anymore due to crash or child removed
+    set_signal_handler(SIGPIPE, SIG_IGN); //when a device write on a pipe but no device is listening anymore due to crash or child removed
     set_signal_handler(SIGINT, sigterm_handler);
 
     id = get_id_from_arguments(argc, argv);
@@ -44,7 +45,7 @@ int main(int argc, char *argv[]) {
 
     error_code_t error_code = OK;
 
-    if(pthread_create(&children_thread, NULL, bottom_up_handler, NULL) != 0){
+    if(pthread_create(&bottom_up_thread, NULL, bottom_up_handler, NULL) != 0){
         error_code = UNABLE_TO_CREATE_THREAD;
     }
     else{
@@ -76,7 +77,6 @@ error_code_t top_down_handler(){
             is_request = false;
             to_be_forwarded = false;
             response.arguments_size = 0;
-
             error_code = read_pipe(rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE);
             if(!IS_ERROR(error_code)){
                 error_code = parse_request(&request, request_buffer, MAX_REQUEST_SIZE);
@@ -174,8 +174,8 @@ void* bottom_up_handler(void* arg){
     //the responses up towards the parent of the hub
     char response_buffer[MAX_RESPONSE_SIZE];
     response_t response;
-    command_code_t code;
-    error_code_t error_code;
+    command_code_t code = NULL_COMMAND;
+    error_code_t error_code = UNEXPECTED_SHUTDOWN;
 
     linked_list_t *solved_response = NULL;
     linked_list_t *previous_response = NULL;
@@ -201,7 +201,6 @@ void* bottom_up_handler(void* arg){
             if(IS_LINK(code)){
                 if(pthread_mutex_lock(&data_mutex) < 0){
                     response.response_code = UNABLE_TO_LOCK_MUTEX;
-                    
                 }
                 else{
                     link_response(&response);
@@ -231,6 +230,7 @@ void* bottom_up_handler(void* arg){
                         delete_response(&response, solved_response);
                         force_exit = true;
                     }
+                    
                     response.source = id;
 
                     if(solved_response == pending_responses){
@@ -254,7 +254,8 @@ void* bottom_up_handler(void* arg){
             write_pipe_response(&response, response_buffer);
         }
     }
-    pthread_exit(NULL);
+    is_bottom_up_thread = true;
+    handle_shutdown(OK);
     return NULL;
 }
 
@@ -262,7 +263,7 @@ void handle_shutdown(error_code_t error) {
     error_code_t error_code = OK;
     device_id_t current_child_id;
 
-    if(pthread_cancel(children_thread) != 0){
+    if(!is_bottom_up_thread && pthread_cancel(bottom_up_thread) != 0){
         error_code = UNABLE_TO_CANCEL_THREAD;
         print_error(STDERR_FILENO, error_code, id, "in shutdown");
     }
@@ -280,7 +281,6 @@ void handle_shutdown(error_code_t error) {
             remove_routing_data(routing_table, current_child_id, id);
         }
     }
-
     error_code = end_device_fifos(id, rcv_requests_parent_fd, snd_responses_parent_fd, rcv_responses_children_fd);
     if(IS_ERROR(error_code)){
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
@@ -288,18 +288,12 @@ void handle_shutdown(error_code_t error) {
     else{ 
         error_code = error; 
     }
-
     exit(error_code);
 }
 
 void sigterm_handler(int sig_num){
     (void)sig_num;
     handle_shutdown(UNEXPECTED_SHUTDOWN);
-}
-
-void sigpipe_handler(int sig_num){
-    (void)sig_num;
-    handle_shutdown(BROKEN_PIPE);
 }
 
 //TODO .h
@@ -415,7 +409,7 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
                     *solved_response = current_pending; //TODO togliere dai pending quando ricevo una risposta di delete
                 }
             }
-            response->response_code = error_code;
+            //response->response_code = error_code;
             if(*found) return; //i have to exit if i found the id otherwise i would complete other requests with only one response
         }
         *previous_response = current_pending;
@@ -432,8 +426,9 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
 void create_link(request_t *request, response_t *response, bool *parent_changed){
     if(LINK_SUBCOMMAND(request->command_code)==LINK_REMOVE_CHILD){
         response->response_code = link_remove_child(request->argument);
+        response->arguments[DEVICE_TYPE_ARGUMENT] = device_type;
         response->arguments[CHILD_ID_ARGUMENT] = request->argument;
-        response->arguments_size = 1;
+        response->arguments_size = 2;
     }   
     else{
         response->response_code = link_change_parent(request, response, parent_changed);
@@ -470,7 +465,6 @@ int send_to_child(response_t *response, device_id_t destination){
 
 error_code_t link_remove_child(device_id_t child_id){
     error_code_t error_code = OK;
-    dprintf(STDERR_FILENO, "%d id: %d\n", child_id, id);
     routing_data_t *routing_information = find_direct_child(child_id);
     if(children == 0 || routing_information == NULL){
         error_code = CHILD_NOT_FOUND;

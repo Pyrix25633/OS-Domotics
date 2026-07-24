@@ -280,12 +280,6 @@ void* bottom_up_handler(void* arg);
 void sigterm_handler(int sig_num);
 
 /**
- * Handles the shutdown caused by a `SIGPIPE` signal
- * @param sig_num Signal number, unused
- */
-void sigpipe_handler(int sig_num);
-
-/**
  * Handles the shutdown also cleaning up IPC files, best practice to do
  * 
  * @param error The error to handle
