@@ -197,9 +197,13 @@ error_code_t check_user_command(user_command_t *user_command);
 error_code_t execute_user_command(user_command_t *user_command);
 
 /**
- * Lists all device info
+ * Counts the number of directly connected devices, and optionally outputs data about all devices
+ * 
+ * @param output_data If device data has to be printed
+ * 
+ * @returns The number of directly connected devices
  */
-void execute_list_command();
+u_int16_t execute_list_command(bool output_data);
 
 /**
  * Created a new device
@@ -225,7 +229,7 @@ error_code_t execute_add_command(device_type_t type);
  * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
  * `OK` otherwise
  */
-error_code_t execute_delete_command();
+error_code_t execute_exit_command();
 
 /**
  * Executes scenario, reads `commands.scenario` file and parses each line
@@ -274,6 +278,7 @@ error_code_t update_with_link_response(response_t *response);
  * @param response The received response
  * 
  * @returns `CHILD_NOT_FOUND` if the device could not be found,
+ * `UNABLE_TO_WAIT` it the process could not be waited,
  * `UNABLE_TO_CLOSE_PIPE` if the pipe of the old direct child could not be closed,
  * `UNABLE_TO_REMOVE_PIPE` if the pipe could not be removed,
  * `OK` otherwise
@@ -283,7 +288,7 @@ error_code_t update_with_delete_response(response_t *response);
 /**
  * Updates the devices type to empty if possible
  * 
- * @param device Device that was updated
+ * @param device Device that was updated, can be `NULL`
  */
 void update_type_to_empty(routing_data_t *device);
 
@@ -390,13 +395,6 @@ error_code_t shutdown_devices(device_id_t parent_id, bool complete);
  * @param sig_num Signal number, unused
  */
 void sigterm_handler(int signum);
-
-/**
- * Handles the shutdown caused by a `SIGPIPE` signal
- * 
- * @param sig_num Signal number, unused
- */
-void sigpipe_handler(int signum);
 
 /**
  * Handles the shutdown of a child process, logical direct or indirect child device
