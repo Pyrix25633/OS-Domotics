@@ -394,7 +394,15 @@ error_code_t shutdown_devices(device_id_t parent_id, bool complete);
  * 
  * @param sig_num Signal number, unused
  */
-void sigterm_handler(int signum);
+void sigterm_handler(int sig_num);
+
+/**
+ * Handles the resizing of the terminal notified by a `SIGWINCH` signal
+ * 
+ * @param sig_num Signal number, unused
+ */
+void sigwinch_handler(int sig_num);
+
 
 /**
  * Handles the shutdown of a child process, logical direct or indirect child device
@@ -403,7 +411,7 @@ void sigterm_handler(int signum);
  * 
  * @param sig_num Signal number, unused
  */
-void sigchld_handler(int signum);
+void sigchld_handler(int sig_num);
 
 /**
  * Handles the shutdown of a child process, logical direct or indirect child device

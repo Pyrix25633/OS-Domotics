@@ -1118,6 +1118,21 @@ void sigterm_handler(int sig_num) {
     handle_shutdown(UNEXPECTED_SHUTDOWN, false);
 }
 
+void sigwinch_handler(int sig_num) {
+    (void)sig_num; // Unused parameter
+
+    // Not checking for some errors as nothing can be done and no error can be returned by a signal handler
+    endwin();
+    clear();
+
+    refresh();
+
+    error_code_t error_code = create_windows();
+    if(IS_ERROR(error_code)) {
+        print_error(STDERR_FILENO, error_code, id, "while resizing terminal");
+    }
+}
+
 void sigchld_handler(int sig_num) {
     (void)sig_num; // Unused parameter
     pthread_t sigchld_thread;
@@ -1232,6 +1247,8 @@ error_code_t start_ncurses(int argc, char *argv[]) {
     }
 
     initscr();
+
+    set_signal_handler(SIGWINCH, sigwinch_handler);
 
     error_code_t error_code = redirect_stderr();
     if(IS_ERROR(error_code)) { // Restore original streams
@@ -1381,6 +1398,12 @@ error_code_t end_ncurses() {
     if(IS_ERROR(error)) {
         error_code = error;
     }
+
+    set_signal_handler(SIGWINCH, SIG_IGN); // Remove terminal resize handler
+
+    // Not checking for errors in the following calls as nothing can be done
+    delwin(output_win);
+    delwin(input_win);
 
     endwin();
 
