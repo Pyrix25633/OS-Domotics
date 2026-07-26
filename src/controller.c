@@ -736,7 +736,7 @@ error_code_t update_with_delete_response(response_t *response) {
     }
 
     error_code_t error_code = OK;
-    if(waitpid(device->pid, NULL, WNOHANG) < 0) {
+    if(waitpid(device->pid, NULL, WNOHANG) < 0 && errno != ECHILD) { // The SIGCHLD handler may have already waited, or not
         error_code = UNABLE_TO_WAIT;
     }
     // No need to handle cascading deletion here, it is already handled by Hub and Timer
