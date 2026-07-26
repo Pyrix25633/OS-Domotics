@@ -735,11 +735,19 @@ error_code_t update_with_delete_response(response_t *response) {
         return CHILD_NOT_FOUND;
     }
 
+    /*
+     On a successful delete routing information is removed
+     If the response is processed before the `SIGCHLD`, the wait will not be performed since the
+     device has been removed from the routing table, so a wait has to be tried here
+     It could fail with errno `ECHILD` if the wait has already been performed by the `SIGCHLD` handler
+     Here a successful exit is handled, only exits with errors are handled by the `SIGCHLD`
+     No need to handle cascading deletion here, it is already handled by Hubs and Timers for a successful
+     delete, or by the `SIGCHLD` handler for an unexpected termination
+    */
     error_code_t error_code = OK;
-    if(waitpid(device->pid, NULL, WNOHANG) < 0 && errno != ECHILD) { // The SIGCHLD handler may have already waited, or not
+    if(waitpid(device->pid, NULL, WNOHANG) < 0 && errno != ECHILD) {
         error_code = UNABLE_TO_WAIT;
     }
-    // No need to handle cascading deletion here, it is already handled by Hub and Timer
 
     error_code_t tmp = end_child_device_fifos(device); // Close and remove pipes, if not already done by the device
     if(IS_ERROR(tmp)) {
