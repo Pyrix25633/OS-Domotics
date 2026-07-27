@@ -38,7 +38,7 @@ int main(int argc, char *argv[]) {
     set_signal_handler(SIGINT, sigterm_handler);
 
     id = get_id_from_arguments(argc, argv);
-    start_device_fifos(id,&rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
+    start_device_fifos(id, &rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
     srand(time(NULL));
     init_routing_table(routing_table);
     device_type = HUB_DEVICE;
@@ -51,7 +51,6 @@ int main(int argc, char *argv[]) {
     else{
         error_code = top_down_handler();
     }
-
     handle_shutdown(error_code);
 }
 
@@ -126,6 +125,11 @@ error_code_t top_down_handler(){
                             else if(IS_DELETE(code)){
                                 force_exit = true;
                             }
+                            else if(IS_LINK(code) && LINK_SUBCOMMAND(code)==LINK_CHANGE_PARENT){
+                                response.response_code = link_change_parent(&request, &response, &parent_changed);
+                                response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
+                                response.arguments_size = 2;
+                            }
                             else{
                                 response.response_code = UNEXPECTED_COMMAND;
                             }
@@ -183,7 +187,6 @@ void* bottom_up_handler(void* arg){
     bool found, is_complete;
 
     while(!force_exit){
-
         found = false;
         is_complete = false;
 
@@ -210,46 +213,47 @@ void* bottom_up_handler(void* arg){
                     }
                 }
             }
-            else{
+            else{ 
                 //i need to check if it's a response that i was waiting for or not (forward up)
                 if(pthread_mutex_lock(&data_mutex) < 0){
                     response.response_code = UNABLE_TO_LOCK_MUTEX;
                 }
-                else{                     
+                else{                  
                     //double pointers
-                    check_pending_complete(&response, &found, &is_complete, &solved_response, &previous_response);
+                check_pending_complete(&response, &found, &is_complete, &solved_response, &previous_response);
                     if(pthread_mutex_unlock(&data_mutex) < 0){
                         response.response_code = UNABLE_TO_UNLOCK_MUTEX;
                         force_exit = true;
                     }       
-                }         
-                if(found && is_complete && !force_exit){
-                    if(IS_INFO(code)) {info_response(&response, solved_response);}
-                    else if(IS_SWITCH(code)) {switch_response(&response, solved_response);}
-                    else if(IS_DELETE(code)) {
-                        delete_response(&response, solved_response);
-                        force_exit = true;
-                    }
-                    
-                    response.source = id;
-
-                    if(solved_response == pending_responses){
-                        pending_responses = solved_response->next;
-                    }
-                    else if(previous_response != NULL){
-                        previous_response->next = solved_response->next;
-                    }
-                    free(solved_response->pending_devices);
-                    free(solved_response);
                 }
-                //if i receive a delete response from a child I need to remove it from the routing table and close its pipe
-                else if(!force_exit && IS_DELETE(code) && !found){
-                    error_code = link_remove_child(response.source);
-                    if(IS_ERROR(error_code)) print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
+                if(!force_exit){
+                    if(is_complete){
+                        if(IS_INFO(code)) {info_response(&response, solved_response);}
+                        else if(IS_SWITCH(code)) {switch_response(&response, solved_response);}
+                        else if(IS_DELETE(code)) {
+                            delete_response(&response, solved_response);
+                            force_exit = true;
+                        }
+                        response.source = id;
+
+                        if(solved_response == pending_responses){
+                            pending_responses = solved_response->next;
+                        }
+                        else if(previous_response != NULL){
+                            previous_response->next = solved_response->next;
+                        }
+                        free(solved_response->pending_devices);
+                        free(solved_response);
+                    }
+                    //if i receive a delete response from a child I need to remove it from the routing table and close its pipe
+                    else if(IS_DELETE(code) && !found){
+                        error_code = link_remove_child(response.source);
+                        if(IS_ERROR(error_code)) print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
+                    }
                 }
             }
         }
-        if(!(found && !is_complete)){
+        if(is_complete || !found){
             simulate_processing_time();
             write_pipe_response(&response, response_buffer);
         }
@@ -260,10 +264,10 @@ void* bottom_up_handler(void* arg){
 }
 
 void handle_shutdown(error_code_t error) {
-    error_code_t error_code = OK;
+    error_code_t error_code  = OK;
     device_id_t current_child_id;
 
-    if(!is_bottom_up_thread && pthread_cancel(bottom_up_thread) != 0){
+    if(!is_bottom_up_thread && pthread_cancel(bottom_up_thread) != 0 && pthread_join(bottom_up_thread, NULL) != 0){
         error_code = UNABLE_TO_CANCEL_THREAD;
         print_error(STDERR_FILENO, error_code, id, "in shutdown");
     }
@@ -281,6 +285,7 @@ void handle_shutdown(error_code_t error) {
             remove_routing_data(routing_table, current_child_id, id);
         }
     }
+
     error_code = end_device_fifos(id, rcv_requests_parent_fd, snd_responses_parent_fd, rcv_responses_children_fd);
     if(IS_ERROR(error_code)){
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
@@ -372,15 +377,16 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
     while(current_pending != NULL){
         *is_complete = true;
         *found = false;
-        if(current_pending->command_code == response->command_code){
-            for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
+        for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
+            if(current_pending->command_code == response->command_code){
                 //there is one or more that are missed
                 if((current_pending->pending_devices[i] != response->source) && (current_pending->pending_devices[i] != NO_ID)){
                     *is_complete = false;
                 }
-                //founded
+                //found
                 else if(current_pending->pending_devices[i] == response->source){
                     current_pending->pending_devices[i] = NO_ID; //set it as found
+
                     //if it's the first that arrives it sets the state as the one founded
                     if(current_pending->state==UNDEFINED_STATE){
                         current_pending->state = response->arguments[STATE_ARGUMENT];
@@ -394,14 +400,14 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
                         current_pending->max_time = response->arguments[OPEN_SECONDS_ARGUMENT];
                     }
                     if(IS_DELETE(response->command_code)){
-                       error_code = link_remove_child(response->source);
+                        error_code = link_remove_child(response->source);
                         if(IS_ERROR(error_code)) current_pending->has_error = true;
                     }
                     //if it's a control device the response code can be OK while the additional argument can provide an error
                     if(IS_CONTROL(response->arguments[DEVICE_TYPE_ARGUMENT])){
                         if((IS_INFO(response->command_code) &&  response->arguments_size == 3 && response->arguments[ADDITIONAL_INFO_ARGUMENT] == CHILD_ERROR) || 
-                           (IS_SWITCH(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_SWITCH_ARGUMENT] == CHILD_ERROR) ||
-                           (IS_DELETE(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_DELETE_ARGUMENT] == CHILD_ERROR)){
+                            (IS_SWITCH(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_SWITCH_ARGUMENT] == CHILD_ERROR) ||
+                            (IS_DELETE(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_DELETE_ARGUMENT] == CHILD_ERROR)){
                             current_pending->has_error = true;
                         }
                     }
@@ -415,32 +421,25 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
         *previous_response = current_pending;
         current_pending = current_pending->next;
     }
+    *is_complete = false;
 }
-
-//TODO
-//empty hub --> empty timer not ok
-//empty timer --> empty hub ok
-//empty hub --> empty hub not ok
-//TODO double removal
 
 void create_link(request_t *request, response_t *response, bool *parent_changed){
     if(LINK_SUBCOMMAND(request->command_code)==LINK_REMOVE_CHILD){
         response->response_code = link_remove_child(request->argument);
-        response->arguments[DEVICE_TYPE_ARGUMENT] = device_type;
         response->arguments[CHILD_ID_ARGUMENT] = request->argument;
-        response->arguments_size = 2;
     }   
     else{
         response->response_code = link_change_parent(request, response, parent_changed);
     }
+    response->arguments[DEVICE_TYPE_ARGUMENT] = device_type;
+    response->arguments_size = 2;
 }
 
 error_code_t link_change_parent(request_t *request, response_t *response, bool *parent_changed){
     error_code_t error_code = OK;
     u_int16_t new_parent_id = request->argument;
     response->arguments[PARENT_ID_ARGUMENT] = new_parent_id;
-    response->arguments[DEVICE_TYPE_ARGUMENT] = device_type;
-    response->arguments_size = 2;
     
     if(parent_id != new_parent_id){
         error_code = change_snd_responses_pipe(new_parent_id, &snd_responses_parent_fd);
