@@ -745,7 +745,9 @@ error_code_t update_with_delete_response(response_t *response) {
      delete, or by the `SIGCHLD` handler for an unexpected termination
     */
     error_code_t error_code = OK;
-    if(waitpid(device->pid, NULL, WNOHANG) < 0 && errno != ECHILD) {
+    pid_t pid = device->pid;
+    pid_t status;
+    if((status = waitpid(pid, NULL, WNOHANG)) < 0 && errno != ECHILD) {
         error_code = UNABLE_TO_WAIT;
     }
 
@@ -765,6 +767,16 @@ error_code_t update_with_delete_response(response_t *response) {
     tmp = export_routing_table(routing_table, id);
     if(IS_ERROR(tmp)) {
         error_code = tmp;
+    }
+    /*
+     If status was 0 the state didn't change, the process didn't complete the exit yet
+     Now after having performed all necessary actions it can be waited in blocking mode
+     if that was the case
+    */
+    if(status == 0) {
+        if(waitpid(pid, NULL, 0) < 0) {
+            error_code = UNABLE_TO_WAIT;
+        }
     }
     return error_code;
 }
@@ -1191,7 +1203,12 @@ void* sigchld_routine(void *arg) {
         else if(status > 0 && ((WIFEXITED(exit_code) && IS_ERROR(WEXITSTATUS(exit_code))) || WIFSIGNALED(exit_code))) {
             char device_type[DEVICE_TYPE_SIZE];
             format_device_type(current->type, device_type);
-            output("# %s with ID %d exited with error code: 0x%2x", device_type, current->id, WEXITSTATUS(exit_code));
+            if(WIFEXITED(exit_code)) {
+                output("# %s with ID %u exited with error code: 0x%2x", device_type, current->id, WEXITSTATUS(exit_code));
+            }
+            else {
+                output("# %s with ID %u crashed", device_type, current->id);
+            }
             /*
              Terminated with error, handle termination of children
              Send notification to parent, to avoid it crashing with SIGPIPE when writing on pipe with no readers
