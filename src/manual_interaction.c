@@ -54,7 +54,9 @@ int main(int argc, char *argv[]) {
         exit(UNABLE_TO_WRITE_PIPE);
     }
 
-    printf("Command request successfully sent to device %d\n", user_command.target); // TODO: maybe change specifying the device type
+    char device_type[DEVICE_TYPE_SIZE];
+    format_device_type(type, device_type);
+    printf("Command request successfully sent to %s with ID %u\n", device_type, user_command.target);
     printf("The response will be sent to the Controller\n");
 
     return OK;

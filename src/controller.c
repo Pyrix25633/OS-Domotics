@@ -37,8 +37,6 @@ routing_table_t routing_table;
 int stderr_read_fd;
 int original_stderr_fd;
 
-// TODO: try to handle terminal resize with ncurses
-
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
     set_signal_handler(SIGINT, sigterm_handler);
@@ -60,24 +58,26 @@ int main(int argc, char *argv[]) {
         force_exit = true; // Fatal error
     }
 
-    output("Controller ID: %d", id);
-    output("Available commands:");
-    output("- add <type>");
-    output("- list");
-    output("- sleep <seconds>");
-    output("- info <id>");
-    output("- switch <id> <label> <position>");
-    output("- set <id> <label> <value>");
-    output("- link <id1> to <id2>");
-    output("- del <id>");
-    output("- exit");
+    if(!force_exit) {
+        output("Controller ID: %d", id);
+        output("Available commands:");
+        output("- add <type>");
+        output("- list");
+        output("- sleep <seconds>");
+        output("- info <id>");
+        output("- switch <id> <label> <position>");
+        output("- set <id> <label> <value>");
+        output("- link <id1> to <id2>");
+        output("- del <id>");
+        output("- exit");
 
-    error_code = execute_scenario();
-    if(IS_ERROR(error_code)) {
-        print_error(STDERR_FILENO, error_code, id, "while executing scenario");
+        error_code = execute_scenario();
+        if(IS_ERROR(error_code)) {
+            print_error(STDERR_FILENO, error_code, id, "while executing scenario");
+        }
+
+        output("--- Scenario executed ---");
     }
-
-    output("--- Scenario executed ---");
 
     while(!force_exit) {
         input(user_buffer, USER_BUFFER_SIZE);

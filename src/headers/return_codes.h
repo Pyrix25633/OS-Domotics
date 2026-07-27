@@ -19,9 +19,6 @@ typedef u_int8_t error_code_t;
 
 #define ERROR_MASK              0xF0
 
-// TODO: Find and add all possible errors, categorizing them
-// ? The error subdivision can be changed if needed
-
 // - CAUSED BY USER -
 
 #define USER_ERROR               0x10

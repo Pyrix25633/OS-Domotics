@@ -41,12 +41,12 @@
  * @param argc Number of arguments received
  * @param argv Argument vector of length `argc`, each string is terminated by `'\0'`
  * 
- * TODO: Determine all other possible exit values, add them every time you find out another error that requires complete
- * termination of the process can occur
- * 
  * @returns `UNABLE_TO_CREATE_PIPE` if the pipe where the Controller receives
  * responses from children could not be created and opened,
  * `UNABLE_TO_RESTORE_STDERR` if it was impossible to restore `stderr` after failing to redirect it,
+ * `UNABLE_TO_CREATE_THREAD` if the thread dedicated to reading responses could not be created,
+ * `UNABLE_TO_LOCK_UNLOCK_MUTEX` if the mutex could not be unlocked,
+ * `UNABLE_TO_READ_PIPE` if the responses pipe could not be read,
  * `OK` otherwise
  */
 int main(int argc, char *argv[]);

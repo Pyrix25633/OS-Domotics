@@ -15,3 +15,21 @@ add hub
 
 add timer
 add timer
+
+sleep 1
+link 2 to 9
+link 3 to 9
+link 4 to 9
+link 5 to 10
+link 6 to 10
+link 7 to 11
+link 8 to 11
+
+sleep 6
+link 9 to 12
+link 10 to 13
+
+sleep 6
+link 13 to 11
+
+sleep 7
