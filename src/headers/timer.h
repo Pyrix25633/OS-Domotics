@@ -162,7 +162,7 @@ void release_child(response_t *child_response);
  * @param arg Unused
  * @returns `NULL`
  */
-void *child_responses_handler(void *arg);
+void *child_responses_routine(void *arg);
 
 /**
  * Turns a child reply to a request the timer made for mirroring into the timer own response and sends it up
@@ -189,7 +189,7 @@ error_code_t send_child_switch(bool activate);
  * @param arg Unused
  * @returns `NULL`
  */
-void *schedule_handler(void *arg);
+void *schedule_routine(void *arg);
 
 /**
  * Cancels the schedule thread and starts a new one, so it re-reads the current begin and end times

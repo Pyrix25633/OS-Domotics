@@ -72,14 +72,14 @@ int main(int argc, char *argv[]) {
     srand(time(NULL)); //set random seed with the current time so it's always different
 
     //start the bottom-up thread that reads the child responses and forwards them up to the parent
-    if(pthread_create(&child_responses_thread, NULL, child_responses_handler, NULL) != 0){
+    if(pthread_create(&child_responses_thread, NULL, child_responses_routine, NULL) != 0){
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating the child responses thread");
         handle_shutdown(UNABLE_TO_CREATE_THREAD);
     }
     child_thread_running = true;
 
     //start the schedule thread that switches the child on at begin and off at end
-    if(pthread_create(&schedule_thread, NULL, schedule_handler, NULL) != 0){
+    if(pthread_create(&schedule_thread, NULL, schedule_routine, NULL) != 0){
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating the schedule thread");
         handle_shutdown(UNABLE_TO_CREATE_THREAD);
     }
@@ -339,7 +339,7 @@ error_code_t drop_child(){
 }
 
 //bottom-up thread: reads the responses coming from the child and forwards them up to the parent
-void *child_responses_handler(void *arg){
+void *child_responses_routine(void *arg){
     (void)arg; //unused
     char child_buffer[MAX_RESPONSE_SIZE]; //raw bytes from the child, forwarded up unchanged
     char parse_buffer[MAX_RESPONSE_SIZE]; //copy to parse, parse_response inserts terminators in the buffer
@@ -460,7 +460,7 @@ error_code_t send_child_switch(bool activate){
 }
 
 //schedule thread: sleeps until the next begin or end and switches the child on or off, repeating each day
-void *schedule_handler(void *arg){
+void *schedule_routine(void *arg){
     (void)arg; //unused
     while(!force_exit){
         lock_data();
@@ -737,7 +737,7 @@ void reschedule(){
         }
         schedule_thread_running = false;
     }
-    if(pthread_create(&schedule_thread, NULL, schedule_handler, NULL) != 0){
+    if(pthread_create(&schedule_thread, NULL, schedule_routine, NULL) != 0){
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while restarting the schedule thread");
         return;
     }
