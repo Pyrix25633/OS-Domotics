@@ -571,7 +571,7 @@ error_code_t execute_scenario() {
     while(fgets(user_buffer, USER_BUFFER_SIZE, scenario_file) != NULL && !force_exit) {
         last = strlen(user_buffer) - 1;
         if(user_buffer[last] == '\n') {
-            user_buffer[last] = '\0'; // Remove new line, which not read in normal user input
+            user_buffer[last] = '\0'; // Remove new line, which is not read in normal user input
         }
         process_user_command(&user_command, user_buffer); // Errors are only printed
     }
@@ -756,6 +756,22 @@ error_code_t update_with_delete_response(response_t *response) {
         error_code = tmp;
     }
 
+    // Wait all direct and indirect children
+    routing_data_t *child = find_all_routing_data(routing_table, device->id, NULL);
+    pid_t child_status;
+    while(child != NULL) {
+        if((child_status = waitpid(child->pid, NULL, WNOHANG)) < 0 && errno != ECHILD) {
+            error_code = UNABLE_TO_WAIT;
+        }
+        else if(child_status == 0) { // Hasn't exited yet, wait in blocking mode
+            if(waitpid(child->pid, NULL, 0) < 0) {
+                error_code = UNABLE_TO_WAIT;
+            }
+        }
+
+        child = find_all_routing_data(routing_table, device->id, child);
+    }
+
     routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
     remove_routing_data(routing_table, device->id, device->parent_id);
     if(parent != NULL) {
@@ -773,6 +789,7 @@ error_code_t update_with_delete_response(response_t *response) {
      Now after having performed all necessary actions it can be waited in blocking mode
      if that was the case
     */
+
     if(status == 0) {
         if(waitpid(pid, NULL, 0) < 0) {
             error_code = UNABLE_TO_WAIT;
