@@ -20,11 +20,19 @@
 // Default values
 
 #define MAX_TIMER_ARGUMENTS     4    //state, on/open time of the child, begin and end
-#define MAX_PENDING_REQUESTS    8    //commands that can be awaiting a child reply at the same time
 #define MINUTES_IN_A_DAY        1440 //begin and end are minutes from midnight, so they must be less than this
 #define SECONDS_IN_A_DAY        (MINUTES_IN_A_DAY * 60) //used by the schedule thread to wait until the next day
 #define DEFAULT_BEGIN           0    //midnight, so any end is always greater than the default begin
 #define DEFAULT_END             (MINUTES_IN_A_DAY - 1) //23:59, so any begin is always smaller than the default end
+
+// Types
+
+//a command sent to the child and still awaiting its reply; the awaited commands form a simple linked list, the
+//timer has a single child so no aggregation is needed and only the command code has to be tracked
+typedef struct pending_node_t {
+    command_code_t command_code;
+    struct pending_node_t *next;
+} pending_node_t;
 
 /**
  * Main function of the Timer Program
@@ -72,7 +80,7 @@ void unlock_data();
  *
  * @param code The command code sent to the child
  *
- * @returns `true` if the command was recorded, `false` if there is no room left
+ * @returns `true` if the command was recorded, `false` if the allocation failed
  */
 bool add_pending(command_code_t code);
 

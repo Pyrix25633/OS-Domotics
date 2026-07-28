@@ -30,8 +30,7 @@ bool parent_changed = false; //set when a link changes the parent, so the child 
 
 //the parent can send new requests before the child has answered the previous ones, so every command sent
 //down is kept until its own reply comes back, not just the last one
-command_code_t pending_commands[MAX_PENDING_REQUESTS]; //shared: commands sent to the child and not yet answered
-size_t pending_count = 0;             //shared: how many entries pending_commands currently holds
+pending_node_t *pending_commands = NULL; //shared: linked list of commands sent to the child and not yet answered
 bool defer_response = false;          //main thread only: the response will come from the child reply, not from execute_command
 
 // - IPC data -
@@ -160,27 +159,45 @@ void unlock_data(){
 
 //records a command sent to the child among the ones whose reply is awaited, the caller must already hold the lock
 bool add_pending(command_code_t code){
-    if(pending_count >= MAX_PENDING_REQUESTS){
+    pending_node_t *node = malloc(sizeof(pending_node_t));
+    if(node == NULL){
         return false;
     }
-    pending_commands[pending_count] = code;
-    pending_count++;
+    node->command_code = code;
+    node->next = NULL;
+    //appended at the end, so the oldest awaited command of a kind is matched first, keeping the request order
+    if(pending_commands == NULL){
+        pending_commands = node;
+    }
+    else{
+        pending_node_t *last = pending_commands;
+        while(last->next != NULL){
+            last = last->next;
+        }
+        last->next = node;
+    }
     return true;
 }
 
 //removes the first awaited command matching the given one and tells whether it was found; a child that is a
 //control device can complete different commands out of order, so the match is done on the command and not
-//simply on the oldest entry, the following entries are shifted back to keep the order of the requests,
-//the caller must already hold the lock
+//simply on the oldest entry, the caller must already hold the lock
 bool take_pending(command_code_t code){
-    for(size_t i = 0; i < pending_count; i++){
-        if((pending_commands[i] & COMMAND_MASK) == (code & COMMAND_MASK)){
-            pending_count--;
-            for(size_t j = i; j < pending_count; j++){
-                pending_commands[j] = pending_commands[j + 1];
+    pending_node_t *current = pending_commands;
+    pending_node_t *previous = NULL;
+    while(current != NULL){
+        if((current->command_code & COMMAND_MASK) == (code & COMMAND_MASK)){
+            if(previous == NULL){
+                pending_commands = current->next;
             }
+            else{
+                previous->next = current->next;
+            }
+            free(current);
             return true;
         }
+        previous = current;
+        current = current->next;
     }
     return false;
 }
