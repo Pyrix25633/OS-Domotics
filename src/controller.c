@@ -763,7 +763,11 @@ error_code_t update_with_delete_response(response_t *response) {
         if((child_status = waitpid(child->pid, NULL, WNOHANG)) < 0 && errno != ECHILD) {
             error_code = UNABLE_TO_WAIT;
         }
-        else if(child_status == 0) { // Hasn't exited yet, wait in blocking mode
+        tmp = end_child_device_fifos(child);
+        if(IS_ERROR(tmp)) {
+            error_code = tmp;
+        }
+        if(child_status == 0) { // Hasn't exited yet, wait in blocking mode
             if(waitpid(child->pid, NULL, 0) < 0) {
                 error_code = UNABLE_TO_WAIT;
             }
