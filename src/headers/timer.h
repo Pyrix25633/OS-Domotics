@@ -61,17 +61,21 @@ void sigterm_handler(int sig_num);
 /**
  * Locks the mutex that guards the data shared between the threads
  *
- * The mutex is statically initialized, so a failure means the shared state is no longer reliable:
- * the error is printed and the exit is requested, the shutdown is then performed by the main thread
+ * The mutex is statically initialized, so a failure should not happen; if it does the error is printed and the
+ * caller must not access the shared data. A failed lock is not fatal on its own, the command is answered with an error
+ *
+ * @returns `true` if the mutex was locked, `false` otherwise
  */
-void lock_data();
+bool lock_data();
 
 /**
  * Unlocks the mutex that guards the data shared between the threads
  *
- * On failure the error is printed and the exit is requested, as for `lock_data`
+ * On failure the error is printed and the exit is requested, as a stuck mutex can not be recovered
+ *
+ * @returns `true` if the mutex was unlocked, `false` otherwise
  */
-void unlock_data();
+bool unlock_data();
 
 /**
  * Records a command sent to the child among the ones whose reply is still awaited
