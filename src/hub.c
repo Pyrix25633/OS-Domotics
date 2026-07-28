@@ -178,17 +178,20 @@ void* bottom_up_handler(void* arg){
     //the responses up towards the parent of the hub
     char response_buffer[MAX_RESPONSE_SIZE];
     response_t response;
+    response_t response_delete;
     command_code_t code = NULL_COMMAND;
     error_code_t error_code = UNEXPECTED_SHUTDOWN;
 
     linked_list_t *solved_response = NULL;
     linked_list_t *previous_response = NULL;
 
-    bool found, is_complete;
+    bool found, is_complete, check_others, is_delete;
 
     while(!force_exit){
         found = false;
         is_complete = false;
+        is_delete = false;
+        check_others = true; //to enter the cycle
 
         error_code = read_pipe(rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE);
         if(!IS_ERROR(error_code)){
@@ -212,48 +215,58 @@ void* bottom_up_handler(void* arg){
                         force_exit = true;
                     }
                 }
+                is_delete = false;
             }
-            else{ 
-                //i need to check if it's a response that i was waiting for or not (forward up)
-                if(pthread_mutex_lock(&data_mutex) < 0){
-                    response.response_code = UNABLE_TO_LOCK_MUTEX;
-                }
-                else{                  
-                    //double pointers
-                check_pending_complete(&response, &found, &is_complete, &solved_response, &previous_response);
-                    if(pthread_mutex_unlock(&data_mutex) < 0){
-                        response.response_code = UNABLE_TO_UNLOCK_MUTEX;
-                        force_exit = true;
-                    }       
-                }
-                if(!force_exit){
-                    if(is_complete){
-                        if(IS_INFO(code)) {info_response(&response, solved_response);}
-                        else if(IS_SWITCH(code)) {switch_response(&response, solved_response);}
-                        else if(IS_DELETE(code)) {
-                            delete_response(&response, solved_response);
-                            force_exit = true;
-                        }
-                        response.source = id;
-
-                        if(solved_response == pending_responses){
-                            pending_responses = solved_response->next;
-                        }
-                        else if(previous_response != NULL){
-                            previous_response->next = solved_response->next;
-                        }
-                        free(solved_response->pending_devices);
-                        free(solved_response);
+            else{
+                while(check_others){
+                    //i need to check if it's a response that i was waiting for or not (forward up)
+                    if(pthread_mutex_lock(&data_mutex) < 0){
+                        response.response_code = UNABLE_TO_LOCK_MUTEX;
                     }
-                    //if i receive a delete response from a child I need to remove it from the routing table and close its pipe
-                    else if(IS_DELETE(code) && !found){
-                        error_code = link_remove_child(response.source);
-                        if(IS_ERROR(error_code)) print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
+                    else{
+                        check_pending_complete(&response, &response_delete, &found, &is_complete, &is_delete, &check_others, &solved_response, &previous_response);
+                        if(pthread_mutex_unlock(&data_mutex) < 0){
+                            response.response_code = UNABLE_TO_UNLOCK_MUTEX;
+                            force_exit = true;
+                        }       
+                    }
+                    if(!force_exit){
+                        if(is_complete){
+                            code = solved_response->command_code;
+                            response.command_code = code;
+                            if(IS_INFO(code)) {
+                                info_response(&response, solved_response);
+                            }
+                            else if(IS_SWITCH(code)) {switch_response(&response, solved_response);}
+                            else if(IS_DELETE(code)) {
+                                delete_response(&response, solved_response);
+                                force_exit = true;
+                            }
+                            response.source = id;
+
+                            if(solved_response == pending_responses){
+                                pending_responses = solved_response->next;
+                            }
+                            else if(previous_response != NULL){
+                                previous_response->next = solved_response->next;
+                            }
+                            free(solved_response->pending_devices);
+                            free(solved_response);
+                            solved_response = NULL;
+                        }
+                        //if i receive a delete response from a child I need to remove it from the routing table and close its pipe
+                        if(is_delete){
+                            if(found && is_complete){
+                                simulate_processing_time();
+                                write_pipe_response(&response, response_buffer);
+                            }
+                            else if(!found) check_others = false;
+                        }
                     }
                 }
             }
         }
-        if(is_complete || !found){
+        if((is_complete || !found) && !is_delete){
             simulate_processing_time();
             write_pipe_response(&response, response_buffer);
         }
@@ -366,7 +379,11 @@ void delete_response(response_t *response, linked_list_t *solved_response){
     }
 }
 
-void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t **solved_response, linked_list_t **previous_response){
+void check_pending_complete(response_t *response, response_t *response_delete, bool *found, bool *is_complete, bool *is_delete, bool *check_others, linked_list_t **solved_response, linked_list_t **previous_response){
+    char response_buffer[MAX_RESPONSE_SIZE]; //in order to send the delete first
+    *is_complete = false;
+    *check_others = false;
+    *found = false;
     //no pending responses
     if(pending_responses == NULL) return;
     linked_list_t *current_pending = pending_responses;
@@ -377,8 +394,9 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
     while(current_pending != NULL){
         *is_complete = true;
         *found = false;
-        for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
-            if(current_pending->command_code == response->command_code){
+        //pending with same command_code found
+        if((current_pending->command_code == response->command_code) && *is_delete == false){
+            for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
                 //there is one or more that are missed
                 if((current_pending->pending_devices[i] != response->source) && (current_pending->pending_devices[i] != NO_ID)){
                     *is_complete = false;
@@ -412,11 +430,36 @@ void check_pending_complete(response_t *response, bool *found, bool *is_complete
                         }
                     }
                     *found = true;
-                    *solved_response = current_pending; //TODO togliere dai pending quando ricevo una risposta di delete
+                    *solved_response = current_pending;
                 }
             }
-            //response->response_code = error_code;
-            if(*found) return; //i have to exit if i found the id otherwise i would complete other requests with only one response
+            //i have to exit if i found the id otherwise i would complete other requests with only one response
+            //but i need to check if is_complete so between all pending devices
+            if(*found) return;
+        }
+        else if(IS_DELETE(response->command_code) || *is_delete){
+            *check_others = true;
+            if(*is_delete == false){
+                *response_delete = *response;
+                *is_delete = true;
+                error_code = link_remove_child(response_delete->source);
+                if(IS_ERROR(error_code)) print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
+                simulate_processing_time();
+                write_pipe_response(response_delete, response_buffer);
+            }
+            for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
+                //there is one or more that are missed
+                if((current_pending->pending_devices[i] != response_delete->source) && (current_pending->pending_devices[i] != NO_ID)){
+                    *is_complete = false;
+                }
+                //found
+                else if(current_pending->pending_devices[i] == response_delete->source){
+                    current_pending->pending_devices[i] = NO_ID; //set it as found
+                    *found = true;
+                    *solved_response = current_pending;
+                }
+            }
+            if(*found) return;
         }
         *previous_response = current_pending;
         current_pending = current_pending->next;
@@ -614,4 +657,8 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
     else if(write(snd_request_fd, buffer_write, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending request");
     }
+}
+
+void func(){
+    
 }

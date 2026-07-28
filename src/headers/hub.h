@@ -233,10 +233,11 @@ void link_response(response_t *response);
  * @param response the received response, it will be modified
  * @param found it will be set as `true` if it was founded in the missing ones
  * @param is_complete it will be set as `true` if the pending response is now complete and can be sent
+ * @param is_delete it will be set as `true` if the response is a delete received from a child that it was not pending
  * @param found_request it will be initialized with the pending response if it was missing
  * @param before_response it will be initialized with the response before the pending response
  */
-void check_pending_complete(response_t *response, bool *found, bool *is_complete, linked_list_t **found_request, linked_list_t **before_response);
+void check_pending_complete(response_t *response, response_t *response_delete, bool *found, bool *is_complete, bool *is_delete, bool *check_others, linked_list_t **found_request, linked_list_t **before_response);
 
 /**
  * The pending response has be resolved and the arguments of the info response are set
