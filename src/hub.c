@@ -32,6 +32,8 @@ int rcv_responses_children_fd; // all the children write on a same pipe
 pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_t bottom_up_thread;
 
+//TODO mettere i mutex e vedere che cosa succede
+
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
     set_signal_handler(SIGPIPE, SIG_IGN); //when a device write on a pipe but no device is listening anymore due to crash or child removed
@@ -95,6 +97,10 @@ error_code_t top_down_handler(){
                     if(has_children){
                         if(IS_INFO(code)){
                             error_code_t error_code = forward_to_children(&request);
+                            if(pthread_mutex_unlock(&data_mutex) < 0){
+                                error_code = UNABLE_TO_UNLOCK_MUTEX;
+                                force_exit = true;
+                            }                            
                             if(IS_ERROR(error_code)){
                                 response.response_code = error_code;
                                 simulate_processing_time();
@@ -108,6 +114,10 @@ error_code_t top_down_handler(){
                                 (SWITCH_LABEL(code)==SWITCH_OPEN || SWITCH_LABEL(code)==SWITCH_CLOSE))){
 
                                 error_code_t error_code = forward_to_children(&request);
+                                if(pthread_mutex_unlock(&data_mutex) < 0){
+                                    error_code = UNABLE_TO_UNLOCK_MUTEX;
+                                    force_exit = true;
+                                }   
                                 if(IS_ERROR(error_code)){
                                     response.response_code = error_code;
                                 }                            
@@ -121,6 +131,11 @@ error_code_t top_down_handler(){
                         }
                         if(IS_DELETE(code)){
                             error_code_t error_code = forward_to_children(&request);
+                            //TODO forse è meglio metterla dentro a forward_to_children?
+                            if(pthread_mutex_unlock(&data_mutex) < 0){
+                                error_code = UNABLE_TO_UNLOCK_MUTEX;
+                                force_exit = true;
+                            }   
                             if(IS_ERROR(error_code)){
                                 response.response_code = error_code;
                                 simulate_processing_time();
