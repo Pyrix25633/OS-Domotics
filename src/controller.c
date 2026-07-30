@@ -1238,6 +1238,10 @@ void* sigchld_routine(void *arg) {
                 request.destination = current->parent_id;
                 request.argument = current->id;
                 tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
+                if(IS_ERROR(tmp)) {
+                    error_code = tmp;
+                    print_error(STDERR_FILENO, error_code, id, "while notifying parent of dead device");
+                }
             }
             // Remove pipes and shutdown children
             tmp = end_child_device_fifos(current);
