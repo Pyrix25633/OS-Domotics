@@ -11,7 +11,7 @@ device_type_t device_type;
 routing_table_t routing_table;
 u_int32_t children;
 bool has_children = false;
-linked_list_t *pending_responses = NULL;
+pending_t *pending_responses = NULL;
 
 // - Auxiliary device data -
 
@@ -63,18 +63,12 @@ error_code_t top_down_handler(){
 
     request_t request;
     response_t response;
-    command_code_t code;
     error_code_t error_code = UNEXPECTED_SHUTDOWN;
-    bool is_request = false;
-    bool parent_changed = false;
-    bool to_be_forwarded = false;
-    int child_fd;
 
     response.source = id;
 
+        //it takes the last error
         while(!force_exit){
-            is_request = false;
-            to_be_forwarded = false;
             response.arguments_size = 0;
             error_code = read_pipe(rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE);
             if(!IS_ERROR(error_code)){
@@ -83,92 +77,172 @@ error_code_t top_down_handler(){
             if(IS_ERROR(error_code)){
                 response.command_code = NULL_COMMAND;
                 response.response_code = error_code;
+                simulate_processing_time();
+                write_pipe_response(&response, response_buffer);
             }
-            else{//no errors occurred
-                code = request.command_code;
-                response.command_code = code;
-                response.response_code = OK;
+            //no errors occurred while reading the request
+            command_code_t code = request.command_code;
+            response.command_code = code;
+            response.response_code = OK;
 
-                //trying to get the mutex
-                if(pthread_mutex_lock(&data_mutex) < 0){
-                    error_code = UNABLE_TO_LOCK_MUTEX;
-                    response.response_code = error_code;
+            //trying to get the mutex
+            if(pthread_mutex_lock(&data_mutex) < 0){
+                error_code = UNABLE_TO_LOCK_MUTEX;
+                response.response_code = error_code;
+            }
+            else{
+                if(request.destination == id){
+                    if(has_children){
+                        if(IS_INFO(code)){
+                            error_code_t error_code = forward_to_children(&request);
+                            if(IS_ERROR(error_code)){
+                                response.response_code = error_code;
+                                simulate_processing_time();
+                                write_pipe_response(&response, response_buffer);
+                            }
+                            continue;
+                        }
+                        if(IS_SWITCH(code)){
+                            if(((IS_BULB_LIKE(device_type) && SWITCH_LABEL(code)==SWITCH_POWER)) ||
+                                ((IS_FRIDGE_LIKE(device_type) || IS_WINDOW_LIKE(device_type)) &&
+                                (SWITCH_LABEL(code)==SWITCH_OPEN || SWITCH_LABEL(code)==SWITCH_CLOSE))){
+
+                                error_code_t error_code = forward_to_children(&request);
+                                if(IS_ERROR(error_code)){
+                                    response.response_code = error_code;
+                                }                            
+                            }
+                            else{
+                                response.response_code = UNEXPECTED_COMMAND;
+                            }
+                            simulate_processing_time();
+                            write_pipe_response(&response, response_buffer);
+                            continue;
+                        }
+                        if(IS_DELETE(code)){
+                            error_code_t error_code = forward_to_children(&request);
+                            if(IS_ERROR(error_code)){
+                                response.response_code = error_code;
+                                simulate_processing_time();
+                                write_pipe_response(&response, response_buffer);
+                            }
+                            force_exit = true;
+                            continue;
+                        }
+                        response.response_code = UNEXPECTED_COMMAND;
+                        simulate_processing_time();
+                        write_pipe_response(&response, response_buffer);
+                    }
+                    else{//the hub doesn't have children
+                        bool parent_changed = false;
+                        if(IS_INFO(code)){
+                            response.arguments_size = 2;
+                            response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
+                            response.arguments[OPEN_SECONDS_ARGUMENT] = 0;
+                        }
+                        else if(IS_DELETE(code)){
+                            force_exit = true;
+                        }
+                        else if(IS_LINK(code) && LINK_SUBCOMMAND(code)==LINK_CHANGE_PARENT){
+                            response.arguments[PARENT_ID_ARGUMENT] = request.argument;
+                            response.response_code = link_change_parent(request.argument, &parent_changed);
+                            response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
+                            response.arguments_size = 2;
+                        }
+                        else{
+                            response.response_code = UNEXPECTED_COMMAND;
+                        }
+                        simulate_processing_time();
+                        write_pipe_response(&response, response_buffer);
+                        if(parent_changed){
+                            replay_history(&response);
+                        }
+                        continue;
+                    }
                 }
                 else{
-                    if (has_children){
-                        if(request.destination == id){ //the destination is the parent
-                            if(IS_INFO(code)) {
-                                forward_request(&request, &response, &to_be_forwarded, request_buffer);
-                            }
-                            else if(IS_SWITCH(code)) { create_switch(&request, &response, &to_be_forwarded, request_buffer); }
-                            else if(IS_LINK(code)) { create_link(&request, &response, &parent_changed); }
-                            else if(IS_DELETE(code)) { forward_request(&request, &response, &to_be_forwarded, request_buffer); }
-                            else{
-                                response.response_code = UNEXPECTED_COMMAND;
-                            }
-                        }
-                        else{
-                            int temp = send_to_child(&response, request.destination);
-                            if(temp >= 0){
-                                child_fd = temp;
-                                is_request = true;
-                            }
-                        }
-                    }
-                    else{
-                        if(request.destination == id){
-                            if(IS_INFO(code)){
-                                response.arguments_size = 2;
-                                response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
-                                response.arguments[OPEN_SECONDS_ARGUMENT] = 0;
-                            }
-                            else if(IS_DELETE(code)){
-                                force_exit = true;
-                            }
-                            else if(IS_LINK(code) && LINK_SUBCOMMAND(code)==LINK_CHANGE_PARENT){
-                                response.response_code = link_change_parent(&request, &response, &parent_changed);
-                                response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
-                                response.arguments_size = 2;
-                            }
-                            else{
-                                response.response_code = UNEXPECTED_COMMAND;
-                            }
-                        }
-                        else{
-                            response.response_code = CHILD_NOT_FOUND;
-                        }
-                    }
-                    if(pthread_mutex_unlock(&data_mutex) < 0){
-                        error_code = UNABLE_TO_UNLOCK_MUTEX;
-                        response.response_code = error_code;
-                        force_exit = true;
-                    }
-                }                
-
-                if(!to_be_forwarded){
-                    simulate_processing_time();
-                    (is_request ? write_pipe_request(&request, request_buffer, child_fd) : write_pipe_response(&response, response_buffer));
+                    send_to_child(&request);
+                    continue;
                 }
-
-                if(pthread_mutex_lock(&data_mutex) < 0){
-                    error_code = UNABLE_TO_LOCK_MUTEX;
-                    response.response_code = error_code;
-                }
-                else {
-                    if (parent_changed) {
-                        replay_history(&response, response_buffer);
-                        parent_changed = false;
-                    }
-                    if(pthread_mutex_unlock(&data_mutex) < 0){
-                        error_code = UNABLE_TO_UNLOCK_MUTEX;
-                        response.response_code = error_code;
-                        write_pipe_response(&response, response_buffer);
-                        force_exit = true;
-                    }
-                }
-            }  
+            }                
         }
     return error_code;
+}
+
+error_code_t forward_to_children(request_t *request){
+    char request_buffer[MAX_REQUEST_SIZE];
+
+    routing_data_t *direct_child = find_direct_routing_data(routing_table, id, NULL);
+    pending_t *pending = init_pending(request->command_code);
+    if(pending == NULL) return UNABLE_TO_ALLOCATE_HEAP;
+
+    //forward to all direct children
+
+    u_int32_t i = 0;
+
+    while(direct_child != NULL){
+        request->destination = direct_child->id;
+        write_pipe_request(request, request_buffer, direct_child->next_hop_fd);
+        pending->pending_devices[i] = direct_child->id;
+        i++;
+        direct_child = find_direct_routing_data(routing_table, id, direct_child);
+    }
+
+    //add the pending to the list
+
+    if(pending_responses == NULL){
+        pending_responses = pending;
+        return OK;
+    }
+
+    pending_t *current = pending_responses;
+
+    while(current->next != NULL){
+        current = current->next;
+    }
+    current->next = pending;
+
+    return OK;
+}
+
+pending_t* init_pending(command_code_t command_code){
+    pending_t *pending = malloc(sizeof(pending_t));
+    if(pending == NULL) return NULL;
+
+    pending->pending_devices_size = children;
+    pending->pending_devices = malloc(sizeof(device_id_t)*pending->pending_devices_size);
+    if(pending->pending_devices == NULL) return NULL;
+
+    pending->command_code = command_code;
+    pending->next = NULL;
+    pending->max_time = 0;
+    pending->has_error = false;
+    pending->is_complete = false;
+    pending->state = UNDEFINED_STATE;
+
+    return pending;
+}
+
+void send_to_child(request_t *request){
+    response_t response;
+    char request_buffer[MAX_REQUEST_SIZE];
+    char response_buffer[MAX_RESPONSE_SIZE];
+
+    routing_data_t *routing_information = find_routing_data(routing_table, request->destination);
+    if(routing_information == NULL){
+        response.source = id;
+        response.command_code = request->command_code;
+        response.response_code = ROUTE_NOT_FOUND;
+        response.arguments_size = 1;
+        response.arguments[CHILD_ID_ARGUMENT] = request->destination;
+        simulate_processing_time();
+        write_pipe_response(&response, response_buffer);
+    }
+    else{
+        simulate_processing_time();
+        write_pipe_request(request, request_buffer, routing_information->next_hop_fd);
+    }
+    
 }
 
 void* bottom_up_handler(void* arg){
@@ -178,21 +252,11 @@ void* bottom_up_handler(void* arg){
     //the responses up towards the parent of the hub
     char response_buffer[MAX_RESPONSE_SIZE];
     response_t response;
-    response_t response_delete;
     command_code_t code = NULL_COMMAND;
     error_code_t error_code = UNEXPECTED_SHUTDOWN;
 
-    linked_list_t *solved_response = NULL;
-    linked_list_t *previous_response = NULL;
-
-    bool found, is_complete, check_others, is_delete;
-
     while(!force_exit){
-        found = false;
-        is_complete = false;
-        is_delete = false;
-        check_others = true; //to enter the cycle
-
+        
         error_code = read_pipe(rcv_responses_children_fd, response_buffer, MAX_RESPONSE_SIZE);
         if(!IS_ERROR(error_code)){
             error_code = parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
@@ -215,65 +279,170 @@ void* bottom_up_handler(void* arg){
                         force_exit = true;
                     }
                 }
-                is_delete = false;
             }
             else{
-                while(check_others){
-                    //i need to check if it's a response that i was waiting for or not (forward up)
-                    if(pthread_mutex_lock(&data_mutex) < 0){
-                        response.response_code = UNABLE_TO_LOCK_MUTEX;
-                    }
-                    else{
-                        check_pending_complete(&response, &response_delete, &found, &is_complete, &is_delete, &check_others, &solved_response, &previous_response);
-                        if(pthread_mutex_unlock(&data_mutex) < 0){
-                            response.response_code = UNABLE_TO_UNLOCK_MUTEX;
-                            force_exit = true;
-                        }       
-                    }
-                    if(!force_exit){
-                        if(is_complete){
-                            code = solved_response->command_code;
-                            response.command_code = code;
-                            if(IS_INFO(code)) {
-                                info_response(&response, solved_response);
-                            }
-                            else if(IS_SWITCH(code)) {switch_response(&response, solved_response);}
-                            else if(IS_DELETE(code)) {
-                                delete_response(&response, solved_response);
-                                force_exit = true;
-                            }
-                            response.source = id;
+                //TODO mettere i mutex --> non quando scrivo sulla pipe altrimenti può causare errori
 
-                            if(solved_response == pending_responses){
-                                pending_responses = solved_response->next;
-                            }
-                            else if(previous_response != NULL){
-                                previous_response->next = solved_response->next;
-                            }
-                            free(solved_response->pending_devices);
-                            free(solved_response);
-                            solved_response = NULL;
+                pending_t* previous = NULL;
+                pending_t* pending = check_pending(&response, &previous);
+
+                if(pending != NULL){
+                    //setto i parametri della pending con la risposta ricevuta
+                    pending_update(pending, &response);
+
+                    if(pending->is_complete){
+                        //formatto la risposta in base al codice giusto
+                        format_response_type(&response, pending);
+                        free_pending(&pending, previous);
+                        simulate_processing_time();
+                        write_pipe_response(&response, response_buffer);
+                    }
+                    continue;
+                }
+                else{
+                    if(IS_DELETE(response.command_code)){
+                        error_code = link_remove_child(response.source);
+                        //i don't have to modify the response
+                        if(IS_ERROR(error_code)){
+                            print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
                         }
-                        //if i receive a delete response from a child I need to remove it from the routing table and close its pipe
-                        if(is_delete){
-                            if(found && is_complete){
-                                simulate_processing_time();
-                                write_pipe_response(&response, response_buffer);
-                            }
-                            else if(!found) check_others = false;
-                        }
+                        simulate_processing_time();
+                        write_pipe_response(&response, response_buffer);
+                        check_complete_and_send(&response);
+                        continue;
                     }
                 }
             }
         }
-        if((is_complete || !found) && !is_delete){
-            simulate_processing_time();
-            write_pipe_response(&response, response_buffer);
-        }
+        simulate_processing_time();
+        write_pipe_response(&response, response_buffer);
     }
     is_bottom_up_thread = true;
     handle_shutdown(OK);
     return NULL;
+}
+
+//NULL se non lo trova, la pending altrimenti
+//se la trova setta il NO_ID e setta is_complete = true se non viene mai messo a false dopo
+pending_t* check_pending(response_t* response, pending_t **previous){
+    *previous = NULL;
+    if(pending_responses == NULL) return NULL;
+
+    pending_t *current_pending = pending_responses;
+    bool found = false;
+
+    while(current_pending != NULL){
+        if(current_pending->command_code == response->command_code){
+            current_pending->is_complete = true;
+            for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
+                if(current_pending->pending_devices[i] == response->source){
+                    current_pending->pending_devices[i] = NO_ID; //found
+                    found = true;
+                }
+                else if(current_pending->pending_devices[i] != NO_ID){
+                    current_pending->is_complete = false;
+                }
+            }
+            if(found) return current_pending;
+        }
+        *previous = current_pending;
+        current_pending = current_pending->next;
+    }
+    return NULL;
+}
+
+void pending_update(pending_t *pending, response_t *response){
+    //state update
+    if(pending->state == UNDEFINED_STATE){
+        pending->state = response->arguments[STATE_ARGUMENT];
+    }
+    else if(pending->state != response->arguments[STATE_ARGUMENT]){
+        pending->state = STATE_MANUAL_OVERRIDE;
+    }
+    //max time update
+    if(response->arguments[OPEN_SECONDS_ARGUMENT] > pending->max_time){
+        pending->max_time = response->arguments[OPEN_SECONDS_ARGUMENT];
+    }
+    //check for errors
+    if(IS_ERROR(response->response_code)){
+        pending->has_error = true;
+    }
+    //if it's a control device the response code can be OK while the additional argument can provide an error
+    if(IS_CONTROL(response->arguments[DEVICE_TYPE_ARGUMENT])){
+        if((IS_INFO(response->command_code) &&  response->arguments_size == 3 && response->arguments[ADDITIONAL_INFO_ARGUMENT] == CHILD_ERROR) || 
+            (IS_SWITCH(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_SWITCH_ARGUMENT] == CHILD_ERROR) ||
+            (IS_DELETE(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_DELETE_ARGUMENT] == CHILD_ERROR)){
+            pending->has_error = true;
+        }
+    }
+}
+
+void format_response_type(response_t *response, pending_t *pending){
+    response->source = id;
+    command_code_t code = response->command_code;
+    if(IS_INFO(code)) {
+        info_response(response, pending);
+    }
+    else if(IS_SWITCH(code)) {switch_response(response, pending);}
+    else if(IS_DELETE(code)) {
+        delete_response(response, pending);
+        force_exit = true;
+    }
+}
+
+void check_complete_and_send(response_t *response){
+    pending_t *previous = NULL;
+    pending_t *pending = check_pending_2(response, &previous);
+    char response_buffer[MAX_RESPONSE_SIZE];
+    while(pending != NULL){
+        dprintf(STDERR_FILENO, "ciao\n");
+        if(pending->is_complete){
+            response->command_code = pending->command_code;
+            dprintf(STDERR_FILENO, "%d\n", pending->command_code);
+            format_response_type(response, pending);
+            simulate_processing_time();
+            write_pipe_response(response, response_buffer);
+        }
+        free_pending(&pending, previous);
+        pending = check_pending_2(response, &previous);
+    }
+}
+
+pending_t* check_pending_2(response_t* response, pending_t **previous){
+    *previous = NULL;
+    if(pending_responses == NULL) return NULL;
+
+    pending_t *current_pending = pending_responses;
+    bool found = false;
+
+    while(current_pending != NULL){
+        dprintf(STDERR_FILENO,"pending cmd=%d complete=%d\n",current_pending->command_code,current_pending->is_complete);
+        current_pending->is_complete = true;
+        for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
+            if(current_pending->pending_devices[i] == response->source){
+                current_pending->pending_devices[i] = NO_ID; //found
+                found = true;
+            }
+            else if(current_pending->pending_devices[i] != NO_ID){
+                current_pending->is_complete = false;
+                dprintf(STDERR_FILENO,"pending id: %d\n",current_pending->pending_devices[i]);
+            }
+        }
+        if(found) return current_pending;
+        *previous = current_pending;
+        current_pending = current_pending->next;
+    }
+    return NULL;
+}
+
+void free_pending(pending_t **pending, pending_t *previous){
+    
+    if(previous == NULL) pending_responses = (*pending)->next;
+    else previous->next = (*pending)->next;
+
+    free((*pending)->pending_devices);
+    free(*pending);
+    *pending = NULL;
 }
 
 void handle_shutdown(error_code_t error) {
@@ -354,7 +523,7 @@ void add_child(response_t *response){
     response->response_code = error_code;
 }
 
-void info_response(response_t *response, linked_list_t *solved_response){
+void info_response(response_t *response, pending_t *solved_response){
     response->arguments[STATE_ARGUMENT] = solved_response->state;
     response->arguments[OPEN_SECONDS_ARGUMENT] = solved_response->max_time;
     response->arguments_size = 2;
@@ -364,7 +533,7 @@ void info_response(response_t *response, linked_list_t *solved_response){
     }
 }
 
-void switch_response(response_t *response, linked_list_t *solved_response){
+void switch_response(response_t *response, pending_t *solved_response){
     response->arguments_size = 0;
     if(solved_response->has_error){
         response->arguments[ADDITIONAL_SWITCH_ARGUMENT] = CHILD_ERROR;
@@ -372,117 +541,15 @@ void switch_response(response_t *response, linked_list_t *solved_response){
     }
 }
 
-void delete_response(response_t *response, linked_list_t *solved_response){
+void delete_response(response_t *response, pending_t *solved_response){
     if(solved_response->has_error){
         response->arguments[ADDITIONAL_DELETE_ARGUMENT] = CHILD_ERROR;
         response->arguments_size = 1;
     }
 }
 
-void check_pending_complete(response_t *response, response_t *response_delete, bool *found, bool *is_complete, bool *is_delete, bool *check_others, linked_list_t **solved_response, linked_list_t **previous_response){
-    char response_buffer[MAX_RESPONSE_SIZE]; //in order to send the delete first
-    *is_complete = false;
-    *check_others = false;
-    *found = false;
-    //no pending responses
-    if(pending_responses == NULL) return;
-    linked_list_t *current_pending = pending_responses;
+error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed){
     error_code_t error_code = OK;
-    *previous_response = NULL;
-    *solved_response = NULL;
-
-    while(current_pending != NULL){
-        *is_complete = true;
-        *found = false;
-        //pending with same command_code found
-        if((current_pending->command_code == response->command_code) && *is_delete == false){
-            for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
-                //there is one or more that are missed
-                if((current_pending->pending_devices[i] != response->source) && (current_pending->pending_devices[i] != NO_ID)){
-                    *is_complete = false;
-                }
-                //found
-                else if(current_pending->pending_devices[i] == response->source){
-                    current_pending->pending_devices[i] = NO_ID; //set it as found
-
-                    //if it's the first that arrives it sets the state as the one founded
-                    if(current_pending->state==UNDEFINED_STATE){
-                        current_pending->state = response->arguments[STATE_ARGUMENT];
-                    }
-                    //the state founded it's different from the others --> manual override
-                    else if(current_pending->state != response->arguments[STATE_ARGUMENT] && current_pending->state != STATE_MANUAL_OVERRIDE){
-                            current_pending->state = STATE_MANUAL_OVERRIDE;
-                    }
-                    //updating the max_time
-                    if(response->arguments[OPEN_SECONDS_ARGUMENT] > current_pending->max_time){
-                        current_pending->max_time = response->arguments[OPEN_SECONDS_ARGUMENT];
-                    }
-                    if(IS_DELETE(response->command_code)){
-                        error_code = link_remove_child(response->source);
-                        if(IS_ERROR(error_code)) current_pending->has_error = true;
-                    }
-                    //if it's a control device the response code can be OK while the additional argument can provide an error
-                    if(IS_CONTROL(response->arguments[DEVICE_TYPE_ARGUMENT])){
-                        if((IS_INFO(response->command_code) &&  response->arguments_size == 3 && response->arguments[ADDITIONAL_INFO_ARGUMENT] == CHILD_ERROR) || 
-                            (IS_SWITCH(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_SWITCH_ARGUMENT] == CHILD_ERROR) ||
-                            (IS_DELETE(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_DELETE_ARGUMENT] == CHILD_ERROR)){
-                            current_pending->has_error = true;
-                        }
-                    }
-                    *found = true;
-                    *solved_response = current_pending;
-                }
-            }
-            //i have to exit if i found the id otherwise i would complete other requests with only one response
-            //but i need to check if is_complete so between all pending devices
-            if(*found) return;
-        }
-        else if(IS_DELETE(response->command_code) || *is_delete){
-            *check_others = true;
-            if(*is_delete == false){
-                *response_delete = *response;
-                *is_delete = true;
-                error_code = link_remove_child(response_delete->source);
-                if(IS_ERROR(error_code)) print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
-                simulate_processing_time();
-                write_pipe_response(response_delete, response_buffer);
-            }
-            for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
-                //there is one or more that are missed
-                if((current_pending->pending_devices[i] != response_delete->source) && (current_pending->pending_devices[i] != NO_ID)){
-                    *is_complete = false;
-                }
-                //found
-                else if(current_pending->pending_devices[i] == response_delete->source){
-                    current_pending->pending_devices[i] = NO_ID; //set it as found
-                    *found = true;
-                    *solved_response = current_pending;
-                }
-            }
-            if(*found) return;
-        }
-        *previous_response = current_pending;
-        current_pending = current_pending->next;
-    }
-    *is_complete = false;
-}
-
-void create_link(request_t *request, response_t *response, bool *parent_changed){
-    if(LINK_SUBCOMMAND(request->command_code)==LINK_REMOVE_CHILD){
-        response->response_code = link_remove_child(request->argument);
-        response->arguments[CHILD_ID_ARGUMENT] = request->argument;
-    }   
-    else{
-        response->response_code = link_change_parent(request, response, parent_changed);
-    }
-    response->arguments[DEVICE_TYPE_ARGUMENT] = device_type;
-    response->arguments_size = 2;
-}
-
-error_code_t link_change_parent(request_t *request, response_t *response, bool *parent_changed){
-    error_code_t error_code = OK;
-    u_int16_t new_parent_id = request->argument;
-    response->arguments[PARENT_ID_ARGUMENT] = new_parent_id;
     
     if(parent_id != new_parent_id){
         error_code = change_snd_responses_pipe(new_parent_id, &snd_responses_parent_fd);
@@ -492,17 +559,6 @@ error_code_t link_change_parent(request_t *request, response_t *response, bool *
         }
     }
     return error_code;
-}
-
-int send_to_child(response_t *response, device_id_t destination){
-    routing_data_t *routing_information = find_routing_data(routing_table, destination);
-    if(routing_information == NULL){
-        response->response_code = ROUTE_NOT_FOUND;
-        response->arguments_size = 1;
-        response->arguments[CHILD_ID_ARGUMENT] = destination;
-        return -1;
-    }
-    return routing_information->next_hop_fd;
 }
 
 error_code_t link_remove_child(device_id_t child_id){
@@ -553,46 +609,8 @@ error_code_t link_remove_child_received(device_id_t child_id){
     return error_code;
 }
 
-void forward_request(request_t *request, response_t *response, bool *to_be_forwarded, char* buffer_write){
-    routing_data_t *direct_child = find_direct_routing_data(routing_table, id, NULL);
-    linked_list_t *pending = init_pending_requests(request->command_code, response);
-    if(pending == NULL) return;
-
-    u_int32_t i = 0;
-    
-    *to_be_forwarded = true; //nothing to send
-
-    while(direct_child != NULL) {
-        request->destination = direct_child->id;
-        write_pipe_request(request, buffer_write, direct_child->next_hop_fd);
-        pending->pending_devices[i] = direct_child->id;
-        direct_child = find_direct_routing_data(routing_table, id, direct_child);
-        i++;
-    }
-    add_request(pending);
-}
-
-linked_list_t* init_pending_requests(command_code_t command_code, response_t *response){
-    linked_list_t *pending = malloc(sizeof(linked_list_t));
-    if(pending == NULL){
-        response->response_code = UNABLE_TO_ALLOCATE_HEAP;
-        return NULL;
-    }
-    pending->pending_devices_size = children;
-    pending->pending_devices = malloc(sizeof(device_id_t)*pending->pending_devices_size);
-    if(pending->pending_devices == NULL){
-        response->response_code = UNABLE_TO_ALLOCATE_HEAP;
-        return NULL;
-    }
-    pending->command_code = command_code;
-    pending->next = NULL;
-    pending->max_time = 0;
-    pending->has_error = false;
-    pending->state = UNDEFINED_STATE;
-    return pending;
-}
-
-void replay_history(response_t *response, char *response_buffer){
+void replay_history(response_t *response){
+    char response_buffer[MAX_RESPONSE_SIZE];
     routing_data_t *routing_information = find_all_routing_data(routing_table, id, NULL);
     while(routing_information != NULL){
         response->source = routing_information->id;
@@ -604,28 +622,16 @@ void replay_history(response_t *response, char *response_buffer){
     }
 }
 
-void add_request(linked_list_t *pending){
+void add_request(pending_t *pending){
     if(pending_responses == NULL) {
         pending_responses = pending;
         return;
     }
-    linked_list_t *current = pending_responses;
+    pending_t *current = pending_responses;
     while(current->next != NULL) {
         current = current->next;
     }
     current->next = pending;
-}
-
-void create_switch(request_t *request, response_t *response, bool* to_be_forwarded, char* buffer_write){
-    if(((IS_BULB_LIKE(device_type) && SWITCH_LABEL(request->command_code)==SWITCH_POWER)) ||
-        ((IS_FRIDGE_LIKE(device_type) || IS_WINDOW_LIKE(device_type)) &&
-        (SWITCH_LABEL(request->command_code)==SWITCH_OPEN || SWITCH_LABEL(request->command_code)==SWITCH_CLOSE))){
-
-        forward_request(request, response, to_be_forwarded, buffer_write);
-    }
-    else{
-        response->response_code = UNEXPECTED_COMMAND;
-    }
 }
 
 error_code_t read_pipe(int fd, char* buffer, size_t buffer_size){

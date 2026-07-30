@@ -19,15 +19,16 @@
 #define ADDITIONAL_SWITCH_ARGUMENT 0
 #define ADDITIONAL_DELETE_ARGUMENT 0
 
-typedef struct linked_list_t {
+typedef struct pending_t {
     command_code_t command_code;
     device_id_t *pending_devices;
     size_t pending_devices_size;
     control_device_state_t state;
     u_int16_t max_time;
-    struct linked_list_t *next;
+    struct pending_t *next;
     bool has_error;
-} linked_list_t;
+    bool is_complete;
+} pending_t;
 
 /**
  * Main function of the Hub Program
@@ -66,7 +67,7 @@ error_code_t top_down_handler();
 error_code_t read_pipe(int fd, char* buffer, size_t buffer_size);
 
 /**
- * A new pending request is created (linked_list_t), then for every direct child it forwards the request and inserts its id in a list to know which
+ * A new pending request is created (pending_t), then for every direct child it forwards the request and inserts its id in a list to know which
  * responses are arrived and which are not, it can fail and an error is set in the response
  * 
  * @param request the request received that has to be modified to be forwarded
@@ -80,10 +81,9 @@ void forward_request(request_t *request, response_t *response, bool *is_forward_
  * It creates and initialize with default values the pending requests list, it can fail
  * 
  * @param command_code the command_code of the pending request
- * @param response if the malloc fails an error must be set in the response
  * @return the initialized pending requests list
  */
-linked_list_t* init_pending_requests(command_code_t command_code, response_t *response);
+pending_t* init_pending(command_code_t command_code);
 
 /**
  * It formats the request and writes the string created in the pipe managing the errors that can occur
@@ -99,7 +99,7 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
  * 
  * @param pending The list of pending requests
  */
-void add_request(linked_list_t *pending);
+void add_request(pending_t *pending);
 
 /**
  * It manage what to do when a switch request occur, it can be forwarded if the device type 
@@ -158,22 +158,20 @@ error_code_t close_pipe(int fd);
  * It takes the new parent id from the request, if it's different the pipe to talk to the parent is changed
  * and also the current parent id then a partial response is created by adding the parent id and the device type
  * 
- * @param request the request received from the parent
- * @param response the response to send back
+ * @param new_parent_id the new parent id received from the request
  * @param parent_changed to set as true if the parent has changed to perform a replay history
  * @return the error code to send in the response
  */
-error_code_t link_change_parent(request_t *request, response_t *response, bool *parent_changed);
+error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed);
 
 /**
  * It search if the child exists between its children, if not, an error response is created, otherwise it returns a file descriptor 
  * to which send the request
  * 
- * @param response The response to send back
- * @param destination The id of the child to search
+ * @param request The request to forward
  * @return The file descriptor to which send the request or `-1` if no child was found
  */
-int send_to_child(response_t *response, device_id_t destination);
+void send_to_child(request_t *request);
 
 /**
  * It formats the response and writes the string created in the pipe to send a response to the parent
@@ -191,9 +189,8 @@ void write_pipe_response(response_t* response, char* buffer_write);
  * as if it was done by the child itself
  * 
  * @param response the response to send back
- * @param response_buffer the buffer to write the responses
  */
-void replay_history(response_t *response, char *response_buffer);
+void replay_history(response_t *response);
 
 /**
  * It tries to find the child in the routing table, if it succeeds the routing information is removed,
@@ -223,29 +220,12 @@ void add_child(response_t *response);
 void link_response(response_t *response);
 
 /**
- * Checks if a response is still missing to complete a pending response, if it does the pending response is updated
- * 
- * If it's a delete response the routing table is also updated
- * 
- * If the response is from a control device the response code can be OK while the additional argument can provide an error
- * so this is also checked
- * 
- * @param response the received response, it will be modified
- * @param found it will be set as `true` if it was founded in the missing ones
- * @param is_complete it will be set as `true` if the pending response is now complete and can be sent
- * @param is_delete it will be set as `true` if the response is a delete received from a child that it was not pending
- * @param found_request it will be initialized with the pending response if it was missing
- * @param before_response it will be initialized with the response before the pending response
- */
-void check_pending_complete(response_t *response, response_t *response_delete, bool *found, bool *is_complete, bool *is_delete, bool *check_others, linked_list_t **found_request, linked_list_t **before_response);
-
-/**
  * The pending response has be resolved and the arguments of the info response are set
  * 
  * @param response The response to modify in order to be sent later
  * @param solved_response The solved pending response
  */
-void info_response(response_t *response, linked_list_t *solved_response);
+void info_response(response_t *response, pending_t *solved_response);
 
 /**
  *  The pending response has be resolved and the arguments of the switch response are set
@@ -253,7 +233,7 @@ void info_response(response_t *response, linked_list_t *solved_response);
  * @param response The response to modify in order to be sent later
  * @param solved_response The solved pending response
  */
-void switch_response(response_t *response, linked_list_t *solved_response);
+void switch_response(response_t *response, pending_t *solved_response);
 
 /**
  *  The pending response has be resolved and the arguments of the delete response are set
@@ -261,7 +241,7 @@ void switch_response(response_t *response, linked_list_t *solved_response);
  * @param response The response to modify in order to be sent later
  * @param solved_response The solved pending response
  */
-void delete_response(response_t *response, linked_list_t *solved_response);
+void delete_response(response_t *response, pending_t *solved_response);
 
 /**
  * It receives the responses from the children and if the response given is not in the pending ones it will be forwarded upwards, otherwise
@@ -286,5 +266,20 @@ void sigterm_handler(int sig_num);
  * @param error The error to handle
  */
 void handle_shutdown(error_code_t error);
+
+//TODO
+void pending_update(pending_t *pending, response_t *response);
+
+void format_response_type(response_t *response, pending_t *pending);
+
+pending_t* check_pending(response_t* response, pending_t **previous);
+
+pending_t* check_pending_2(response_t* response, pending_t **previous);
+
+void check_complete_and_send(response_t *response);
+
+void free_pending(pending_t **pending, pending_t *previous);
+
+error_code_t forward_to_children(request_t *request);
 
 #endif
