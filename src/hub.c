@@ -299,34 +299,60 @@ void* bottom_up_handler(void* arg){
                 //TODO mettere i mutex --> non quando scrivo sulla pipe altrimenti può causare errori
 
                 pending_t* previous = NULL;
-                pending_t* pending = check_pending(&response, &previous);
-
-                if(pending != NULL){
-                    //setto i parametri della pending con la risposta ricevuta
-                    pending_update(pending, &response);
-
-                    if(pending->is_complete){
-                        //formatto la risposta in base al codice giusto
-                        format_response_type(&response, pending);
-                        free_pending(&pending, previous);
-                        simulate_processing_time();
-                        write_pipe_response(&response, response_buffer);
-                    }
-                    continue;
+                //trying to get the mutex
+                if(pthread_mutex_lock(&data_mutex) < 0){
+                    response.response_code = UNABLE_TO_LOCK_MUTEX;
                 }
                 else{
-                    if(IS_DELETE(response.command_code)){
-                        error_code = link_remove_child(response.source);
-                        //i don't have to modify the response
-                        if(IS_ERROR(error_code)){
-                            print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
+                    pending_t* pending = check_pending(&response, &previous);
+
+                    if(pending != NULL){
+                        //setto i parametri della pending con la risposta ricevuta
+                        pending_update(pending, &response);
+
+                        if(pending->is_complete){
+
+                            //the response is formatted based on the correct command code
+                            format_response_type(&response, pending);
+                            free_pending(&pending, previous);
+                            //mutex unlock
+                            if(pthread_mutex_unlock(&data_mutex) < 0){
+                                error_code = UNABLE_TO_UNLOCK_MUTEX;
+                                force_exit = true;
+                            }                            
+                            if(IS_ERROR(error_code)){
+                                response.response_code = error_code;
+                            }
+                            //send the response
+                            simulate_processing_time();
+                            write_pipe_response(&response, response_buffer);
                         }
-                        simulate_processing_time();
-                        write_pipe_response(&response, response_buffer);
-                        check_complete_and_send(&response);
                         continue;
                     }
+                    else{
+                        if(IS_DELETE(response.command_code)){
+                            error_code = link_remove_child(response.source);
+                            //i don't have to modify the response
+                            if(IS_ERROR(error_code)){
+                                print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
+                            }
+                            //mutex unlock
+                            if(pthread_mutex_unlock(&data_mutex) < 0){
+                                error_code = UNABLE_TO_UNLOCK_MUTEX;
+                                force_exit = true;
+                            }                            
+                            if(IS_ERROR(error_code)){
+                                response.response_code = error_code;
+                            }
+                            simulate_processing_time();
+                            write_pipe_response(&response, response_buffer);
+
+                            check_complete_and_send(&response);
+                            continue;
+                        }
+                    }
                 }
+
             }
         }
         simulate_processing_time();
@@ -406,20 +432,46 @@ void format_response_type(response_t *response, pending_t *pending){
 }
 
 void check_complete_and_send(response_t *response){
+    response_t *child_response = response;
     pending_t *previous = NULL;
-    pending_t *pending = check_pending_2(response, &previous);
-    char response_buffer[MAX_RESPONSE_SIZE];
-    while(pending != NULL){
-        dprintf(STDERR_FILENO, "ciao\n");
-        if(pending->is_complete){
-            response->command_code = pending->command_code;
-            dprintf(STDERR_FILENO, "%d\n", pending->command_code);
-            format_response_type(response, pending);
-            simulate_processing_time();
-            write_pipe_response(response, response_buffer);
-        }
-        free_pending(&pending, previous);
-        pending = check_pending_2(response, &previous);
+    pending_t *pending = NULL;
+    //mutex lock
+    if(pthread_mutex_lock(&data_mutex) < 0){
+        response->response_code = UNABLE_TO_LOCK_MUTEX;
+    }
+    else{
+        pending = check_pending_2(child_response, &previous);
+        //mutex unlock
+        if(pthread_mutex_unlock(&data_mutex) < 0){
+            response->response_code = UNABLE_TO_UNLOCK_MUTEX;
+            force_exit = true;
+            return;
+        }   
+        char response_buffer[MAX_RESPONSE_SIZE];
+        while(pending != NULL){
+            dprintf(STDERR_FILENO, "ciao\n");
+            if(pending->is_complete){
+                response->command_code = pending->command_code;
+                dprintf(STDERR_FILENO, "%d\n", pending->command_code);
+                format_response_type(response, pending);
+                simulate_processing_time();
+                write_pipe_response(response, response_buffer);
+                free_pending(&pending, previous);
+            }
+            //mutex lock
+            if(pthread_mutex_lock(&data_mutex) < 0){
+                response->response_code = UNABLE_TO_LOCK_MUTEX;
+            }
+            else{
+                pending = check_pending_2(child_response, &previous);
+                //mutex unlock
+                if(pthread_mutex_unlock(&data_mutex) < 0){
+                    response->response_code = UNABLE_TO_UNLOCK_MUTEX;
+                    force_exit = true;
+                    return;
+                }   
+            }
+        }                 
     }
 }
 
@@ -637,18 +689,6 @@ void replay_history(response_t *response){
     }
 }
 
-void add_request(pending_t *pending){
-    if(pending_responses == NULL) {
-        pending_responses = pending;
-        return;
-    }
-    pending_t *current = pending_responses;
-    while(current->next != NULL) {
-        current = current->next;
-    }
-    current->next = pending;
-}
-
 error_code_t read_pipe(int fd, char* buffer, size_t buffer_size){
     ssize_t size = read(fd, buffer, buffer_size);
     if(size == 0){
@@ -678,8 +718,4 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
     else if(write(snd_request_fd, buffer_write, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending request");
     }
-}
-
-void func(){
-    
 }

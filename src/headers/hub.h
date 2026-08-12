@@ -25,9 +25,9 @@ typedef struct pending_t {
     size_t pending_devices_size;
     control_device_state_t state;
     u_int16_t max_time;
-    struct pending_t *next;
     bool has_error;
     bool is_complete;
+    struct pending_t *next;
 } pending_t;
 
 /**
@@ -64,18 +64,7 @@ error_code_t top_down_handler();
  * 
  *  - `UNABLE_TO_READ_PIPE` If errors occurred
  */
-error_code_t read_pipe(int fd, char* buffer, size_t buffer_size);
-
-/**
- * A new pending request is created (pending_t), then for every direct child it forwards the request and inserts its id in a list to know which
- * responses are arrived and which are not, it can fail and an error is set in the response
- * 
- * @param request the request received that has to be modified to be forwarded
- * @param response the response to send back
- * @param is_forward_request it will be set as true in order to not send a request or a response yet
- * @param buffer_write used to write the response to forward
- */
-void forward_request(request_t *request, response_t *response, bool *is_forward_request, char* buffer_write);
+error_code_t read_pipe(int fd, char *buffer, size_t buffer_size);
 
 /**
  * It creates and initialize with default values the pending requests list, it can fail
@@ -93,34 +82,6 @@ pending_t* init_pending(command_code_t command_code);
  * @param snd_request_fd The file descriptor that identifies the pipe
  */
 void write_pipe_request(request_t* request, char* buffer_write, int snd_request_fd);
-
-/**
- * Adds a new request to the pending requests list, at the beginning if the list is empty or at the end otherwise
- * 
- * @param pending The list of pending requests
- */
-void add_request(pending_t *pending);
-
-/**
- * It manage what to do when a switch request occur, it can be forwarded if the device type 
- * it's correct otherwise it creates an error response to send back
- * 
- * @param request the request received from the parent
- * @param response the response to create to send back
- * @param to_be_forwarded true if no response or request need to be send immediately, when the request is forwarded
- * @param buffer_write the buffer to write the request for the children
- */ 
-void create_switch(request_t *request, response_t *response, bool* to_be_forwarded, char* buffer_write);
-
-/**
- * It checks the type of link request and performs the correct operation
- * 
- * @param request the request received from the parent
- * @param response the response to send back
- * @param parent_changed to set as true if the parent has changed to perform a replay history
- */
-void create_link(request_t *request, response_t *response, bool *parent_changed);
-
 
 /**
  * Closes a pipe used to reach a direct child that has being moved 
