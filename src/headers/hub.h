@@ -130,9 +130,9 @@ error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed)
  * to which send the request
  * 
  * @param request The request to forward
- * @return The file descriptor to which send the request or `-1` if no child was found
+ * @return an error_code //TODO
  */
-void send_to_child(request_t *request);
+error_code_t send_to_child(request_t *request);
 
 /**
  * It formats the response and writes the string created in the pipe to send a response to the parent

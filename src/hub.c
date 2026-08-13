@@ -167,6 +167,14 @@ error_code_t top_down_handler(){
                         else{
                             response.response_code = UNEXPECTED_COMMAND;
                         }
+                        //mutex unlock
+                        if(pthread_mutex_unlock(&data_mutex) < 0){
+                                error_code = UNABLE_TO_UNLOCK_MUTEX;
+                                force_exit = true;
+                            }                            
+                        if(IS_ERROR(error_code)){
+                            response.response_code = error_code;
+                        }
                         simulate_processing_time();
                         write_pipe_response(&response, response_buffer);
                         if(parent_changed){
@@ -176,7 +184,7 @@ error_code_t top_down_handler(){
                     }
                 }
                 else{
-                    send_to_child(&request);
+                    error_code = send_to_child(&request);
                     continue;
                 }
             }                
@@ -238,12 +246,24 @@ pending_t* init_pending(command_code_t command_code){
     return pending;
 }
 
-void send_to_child(request_t *request){
+error_code_t send_to_child(request_t *request){
+    error_code_t error_code = OK;
     response_t response;
     char request_buffer[MAX_REQUEST_SIZE];
     char response_buffer[MAX_RESPONSE_SIZE];
 
     routing_data_t *routing_information = find_routing_data(routing_table, request->destination);
+    if(pthread_mutex_unlock(&data_mutex) < 0){
+        error_code = UNABLE_TO_UNLOCK_MUTEX;
+        force_exit = true;
+    }   
+    if(IS_ERROR(error_code)){
+        response.response_code = error_code;
+        simulate_processing_time();
+        write_pipe_response(&response, response_buffer);
+        return error_code;
+    }
+                
     if(routing_information == NULL){
         response.source = id;
         response.command_code = request->command_code;
@@ -257,7 +277,7 @@ void send_to_child(request_t *request){
         simulate_processing_time();
         write_pipe_request(request, request_buffer, routing_information->next_hop_fd);
     }
-    
+    return error_code;
 }
 
 void* bottom_up_handler(void* arg){
@@ -311,7 +331,6 @@ void* bottom_up_handler(void* arg){
                         pending_update(pending, &response);
 
                         if(pending->is_complete){
-
                             //the response is formatted based on the correct command code
                             format_response_type(&response, pending);
                             free_pending(&pending, previous);
@@ -326,6 +345,13 @@ void* bottom_up_handler(void* arg){
                             //send the response
                             simulate_processing_time();
                             write_pipe_response(&response, response_buffer);
+                        }
+                        else{
+                            //mutex unlock
+                            if(pthread_mutex_unlock(&data_mutex) < 0){
+                                error_code = UNABLE_TO_UNLOCK_MUTEX;
+                                force_exit = true;
+                            }                       
                         }
                         continue;
                     }
@@ -352,7 +378,9 @@ void* bottom_up_handler(void* arg){
                         }
                     }
                 }
-
+                if(pthread_mutex_unlock(&data_mutex) < 0){
+                    force_exit = true;
+                } 
             }
         }
         simulate_processing_time();
@@ -432,7 +460,7 @@ void format_response_type(response_t *response, pending_t *pending){
 }
 
 void check_complete_and_send(response_t *response){
-    response_t *child_response = response;
+    response_t child_response = *response;
     pending_t *previous = NULL;
     pending_t *pending = NULL;
     //mutex lock
@@ -440,7 +468,7 @@ void check_complete_and_send(response_t *response){
         response->response_code = UNABLE_TO_LOCK_MUTEX;
     }
     else{
-        pending = check_pending_2(child_response, &previous);
+        pending = check_pending_2(&child_response, &previous);
         //mutex unlock
         if(pthread_mutex_unlock(&data_mutex) < 0){
             response->response_code = UNABLE_TO_UNLOCK_MUTEX;
@@ -449,10 +477,8 @@ void check_complete_and_send(response_t *response){
         }   
         char response_buffer[MAX_RESPONSE_SIZE];
         while(pending != NULL){
-            dprintf(STDERR_FILENO, "ciao\n");
             if(pending->is_complete){
                 response->command_code = pending->command_code;
-                dprintf(STDERR_FILENO, "%d\n", pending->command_code);
                 format_response_type(response, pending);
                 simulate_processing_time();
                 write_pipe_response(response, response_buffer);
@@ -463,7 +489,7 @@ void check_complete_and_send(response_t *response){
                 response->response_code = UNABLE_TO_LOCK_MUTEX;
             }
             else{
-                pending = check_pending_2(child_response, &previous);
+                pending = check_pending_2(&child_response, &previous);
                 //mutex unlock
                 if(pthread_mutex_unlock(&data_mutex) < 0){
                     response->response_code = UNABLE_TO_UNLOCK_MUTEX;
@@ -483,7 +509,6 @@ pending_t* check_pending_2(response_t* response, pending_t **previous){
     bool found = false;
 
     while(current_pending != NULL){
-        dprintf(STDERR_FILENO,"pending cmd=%d complete=%d\n",current_pending->command_code,current_pending->is_complete);
         current_pending->is_complete = true;
         for(u_int32_t i = 0; i < current_pending->pending_devices_size; i++){
             if(current_pending->pending_devices[i] == response->source){
@@ -492,7 +517,6 @@ pending_t* check_pending_2(response_t* response, pending_t **previous){
             }
             else if(current_pending->pending_devices[i] != NO_ID){
                 current_pending->is_complete = false;
-                dprintf(STDERR_FILENO,"pending id: %d\n",current_pending->pending_devices[i]);
             }
         }
         if(found) return current_pending;
