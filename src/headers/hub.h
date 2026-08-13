@@ -67,7 +67,7 @@ error_code_t top_down_handler();
 error_code_t read_pipe(int fd, char *buffer, size_t buffer_size);
 
 /**
- * It creates and initialize with default values the pending requests list, it can fail
+ * It creates and initialize with default values the pending requests list, it can fail due to malloc
  * 
  * @param command_code the command_code of the pending request
  * @return the initialized pending requests list
@@ -130,9 +130,13 @@ error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed)
  * to which send the request
  * 
  * @param request The request to forward
- * @return an error_code //TODO
+ * @param next_hop_fd The file descriptor of the destination
+ * @return
+ *  - `OK` if no errors occurred
+ * 
+ *  - `ROUTE_NOT_FOUND` if the child wasn't found
  */
-error_code_t send_to_child(request_t *request);
+error_code_t send_to_child(request_t *request, int next_hop_fd);
 
 /**
  * It formats the response and writes the string created in the pipe to send a response to the parent
@@ -228,19 +232,70 @@ void sigterm_handler(int sig_num);
  */
 void handle_shutdown(error_code_t error);
 
-//TODO
-void pending_update(pending_t *pending, response_t *response);
+/**
+ * Opens a pipe to send request to a child
+ * 
+ * @param device_id the id of the child
+ * @param snd_requests_child the file descriptor in which the number is put after the open
+ * @return
+ *  - `OK` if it succeeds
+ * 
+ *  - `UNABLE_TO_OPEN_PIPE` if it fails
+ */
+error_code_t open_pipe(device_id_t device_id, int *snd_requests_child);
 
+/**
+ * The current pending is updated based on the received response
+ * 
+ * @param pending the pending to update
+ * @param response the received response
+ */
+void update_pending(pending_t *pending, response_t *response);
+
+/**
+ * It formats the response with the pending data based on the response type
+ * 
+ * @param response the response to format
+ * @param pending the pending to take the data from
+ */
 void format_response_type(response_t *response, pending_t *pending);
 
-pending_t* check_pending(response_t* response, pending_t **previous);
+/**
+ * Checks if a response can match a pending device response in the pending list
+ * 
+ * @param response to take the command code and the source
+ * @param previous in which to put the previous pending in the list to manage a pending deletion correctly
+ * @param ignore_command `TRUE` if the command code is not to be considered `FALSE` otherwise
+ * @return the pending that has the device id in the pending device
+ */
+pending_t* check_pending(response_t* response, pending_t **previous, bool ignore_command);
 
-pending_t* check_pending_2(response_t* response, pending_t **previous);
-
+/**
+ * Checks if a device that is being deleted can match a pending device response in the pending list
+ * if it does every pending in the list sets the device response as arrived
+ * 
+ * @param response the response to be sent
+ */
 void check_complete_and_send(response_t *response);
 
+/**
+ * Deletes a pending in the pending list
+ * 
+ * @param pending the pending to be removed from the list
+ * @param previous the previous pending to manage the deletion correctly
+ */
 void free_pending(pending_t **pending, pending_t *previous);
 
+/**
+ * Forwards a request to the children to get their information about it, in order to send
+ * an aggregate response later the response to send is put in the pending list
+ * 
+ * @param request the response to be sent
+ * @return
+ *  - `OK` if it succeeds
+ * 
+ *  - `UNABLE_TO_ALLOCATE_HEAP` if it fails
+ */
 error_code_t forward_to_children(request_t *request);
 
 #endif
