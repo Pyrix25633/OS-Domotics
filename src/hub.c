@@ -87,7 +87,7 @@ error_code_t top_down_handler(){
         response.response_code = OK;
 
         //trying to get the mutex
-        if(pthread_mutex_lock(&data_mutex) < 0){
+        if(pthread_mutex_lock(&data_mutex) !=0){
             error_code = UNABLE_TO_LOCK_MUTEX;
             response.response_code = error_code;
             simulate_processing_time();
@@ -104,7 +104,7 @@ error_code_t top_down_handler(){
                             simulate_processing_time();
                             write_pipe_response(&response, response_buffer);
                         }
-                        if(pthread_mutex_unlock(&data_mutex) < 0){
+                        if(pthread_mutex_unlock(&data_mutex) !=0){
                             error_code = UNABLE_TO_UNLOCK_MUTEX;
                             force_exit = true;
                         }     
@@ -119,13 +119,13 @@ error_code_t top_down_handler(){
                         }
                         else if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD){
                             response.arguments[CHILD_ID_ARGUMENT] = request.argument;
-                            response.response_code = link_remove_child(request.argument);
+                            response.response_code = remove_child(request.argument, true);
                         }
                         else{
                             response.response_code = UNEXPECTED_COMMAND;
                             simulate_processing_time();
                             write_pipe_response(&response, response_buffer);
-                            if(pthread_mutex_unlock(&data_mutex) < 0){
+                            if(pthread_mutex_unlock(&data_mutex) !=0){
                                 error_code = UNABLE_TO_UNLOCK_MUTEX;
                                 force_exit = true;
                             } 
@@ -139,7 +139,7 @@ error_code_t top_down_handler(){
                             replay_history(&response);
                             response.source = id;
                         }
-                        if(pthread_mutex_unlock(&data_mutex) < 0){
+                        if(pthread_mutex_unlock(&data_mutex) !=0){
                             error_code = UNABLE_TO_UNLOCK_MUTEX;
                             force_exit = true;
                         }
@@ -163,7 +163,7 @@ error_code_t top_down_handler(){
                             simulate_processing_time();
                             write_pipe_response(&response, response_buffer);
                         }
-                        if(pthread_mutex_unlock(&data_mutex) < 0){
+                        if(pthread_mutex_unlock(&data_mutex) !=0){
                             error_code = UNABLE_TO_UNLOCK_MUTEX;
                         }     
                         continue;
@@ -176,7 +176,7 @@ error_code_t top_down_handler(){
                             write_pipe_response(&response, response_buffer);
                             force_exit = true;
                         }
-                        if(pthread_mutex_unlock(&data_mutex) < 0){
+                        if(pthread_mutex_unlock(&data_mutex) !=0){
                             error_code = UNABLE_TO_UNLOCK_MUTEX;
                         }     
                         continue;
@@ -185,7 +185,7 @@ error_code_t top_down_handler(){
                     simulate_processing_time();
                     write_pipe_response(&response, response_buffer);
 
-                    if(pthread_mutex_unlock(&data_mutex) < 0){
+                    if(pthread_mutex_unlock(&data_mutex) !=0){
                         error_code = UNABLE_TO_UNLOCK_MUTEX;
                         force_exit = true;
                     }
@@ -216,7 +216,7 @@ error_code_t top_down_handler(){
                         replay_history(&response);
                         response.source = id;
                     }
-                    if(pthread_mutex_unlock(&data_mutex) < 0){
+                    if(pthread_mutex_unlock(&data_mutex) !=0){
                         error_code = UNABLE_TO_UNLOCK_MUTEX;
                         force_exit = true;
                     }    
@@ -231,7 +231,7 @@ error_code_t top_down_handler(){
                     write_pipe_response(&response, response_buffer);
                     return error_code;
                 }//else
-                if(pthread_mutex_unlock(&data_mutex) < 0){
+                if(pthread_mutex_unlock(&data_mutex) !=0){
                     error_code = UNABLE_TO_UNLOCK_MUTEX;
                     force_exit = true;
                     continue;
@@ -327,7 +327,7 @@ void* bottom_up_handler(void* arg){
         if(!IS_ERROR(error_code)){
             error_code = parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
         }
-        if(pthread_mutex_lock(&data_mutex) < 0){
+        if(pthread_mutex_lock(&data_mutex) !=0){
             response.response_code = UNABLE_TO_LOCK_MUTEX;
             response.command_code = NULL_COMMAND;
         }
@@ -337,7 +337,7 @@ void* bottom_up_handler(void* arg){
                 response.command_code = NULL_COMMAND;
                 response.response_code = error_code;
             }
-            else if(!IS_ERROR(response.response_code)){
+            else{
                 code = response.command_code;
                 
                 if(IS_LINK(code)){
@@ -357,21 +357,21 @@ void* bottom_up_handler(void* arg){
                             free_pending(&pending, previous);
                             write_pipe_response(&response, response_buffer);
                         }
-                        if(pthread_mutex_unlock(&data_mutex) < 0){
+                        if(pthread_mutex_unlock(&data_mutex) !=0){
                             force_exit = true;
                         }
                         continue;
                     }
                     else{
                         if(IS_DELETE(response.command_code)){
-                            error_code = link_remove_child(response.source);
+                            error_code = remove_child(response.source, false);
                             //i don't have to modify the response
                             if(IS_ERROR(error_code)){
                                 print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
                             }
                             write_pipe_response(&response, response_buffer);
                             check_complete_and_send(&response);
-                            if(pthread_mutex_unlock(&data_mutex) < 0){
+                            if(pthread_mutex_unlock(&data_mutex) !=0){
                                 force_exit = true;
                             }
                             continue;
@@ -380,7 +380,7 @@ void* bottom_up_handler(void* arg){
                 }
             }
             write_pipe_response(&response, response_buffer);
-            if(pthread_mutex_unlock(&data_mutex) < 0){
+            if(pthread_mutex_unlock(&data_mutex) !=0){
                 force_exit = true;
             }
         }
@@ -435,9 +435,10 @@ void update_pending(pending_t *pending, response_t *response){
     if(IS_ERROR(response->response_code)){
         pending->has_error = true;
     }
-    device_type_t type = find_routing_data(routing_table, response->source)->type;
-    //if it's a hub device the response code can be OK while the additional argument can provide an error
-    if(IS_HUB(type)){
+
+    routing_data_t *routing_information = find_routing_data(routing_table, response->source);
+    //if it's a hub Ah device the response code can be OK while the additional argument can provide an error
+    if(routing_information != NULL && IS_HUB(routing_information->type)){
         if((IS_INFO(response->command_code) &&  response->arguments_size == 3 && response->arguments[ADDITIONAL_INFO_ARGUMENT] == CHILD_ERROR) || 
             (IS_SWITCH(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_SWITCH_ARGUMENT] == CHILD_ERROR) ||
             (IS_DELETE(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_DELETE_ARGUMENT] == CHILD_ERROR)){
@@ -601,13 +602,13 @@ error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed)
     return error_code;
 }
 
-error_code_t link_remove_child(device_id_t child_id){
+error_code_t remove_child(device_id_t child_id, bool direct){
     error_code_t error_code = OK;
-    routing_data_t *routing_information = find_direct_child(child_id);
+    routing_data_t *routing_information = find_child(child_id, direct);
     if(children == 0 || routing_information == NULL){
         error_code = CHILD_NOT_FOUND;
     }
-    else if(routing_information != NULL){
+    else if(direct && routing_information != NULL){
         error_code = close_pipe(routing_information->next_hop_fd);
     }
     
@@ -626,13 +627,13 @@ error_code_t close_pipe(int fd){
     return (close(fd) < 0 ? UNABLE_TO_CLOSE_PIPE : OK);
 }
 
-routing_data_t* find_direct_child(device_id_t child_id){
-    routing_data_t *child = find_direct_routing_data(routing_table, id, NULL);
+routing_data_t* find_child(device_id_t child_id, bool direct){
+    routing_data_t *child = (direct ? find_direct_routing_data(routing_table, id, NULL) : find_all_routing_data(routing_table, id, NULL));
     while(child != NULL){
         if(child->id == child_id){
             return child;
         }
-        child = find_direct_routing_data(routing_table, id, child);
+        child = (direct ? find_direct_routing_data(routing_table, id, NULL) : find_all_routing_data(routing_table, id, NULL));;
     }
     return NULL;
 }

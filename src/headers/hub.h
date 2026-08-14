@@ -87,6 +87,7 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
  * Closes a pipe used to reach a direct child that has being moved 
  *
  * @param child_id the id of the child
+ * @param direct To specify if the search needs to be between its direct children or not
  * @returns
  *  - `OK` if no errors occurred
  * 
@@ -94,15 +95,16 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
  * 
  * - `UNABLE_TO_CLOSE_PIPE` if the pipe couldn't be close
  */ 
-error_code_t link_remove_child(device_id_t child_id);
+error_code_t remove_child(device_id_t child_id, bool direct);
 
 /**
  * Finds the routing data information of a direct child given the child id
  * 
  * @param child_id The device id of the child
+ * @param direct To specify if the search needs to be between its direct children or not
  * @return The routing data information found, can be NULL if the searched child has not be found
  */
-routing_data_t* find_direct_child(device_id_t child_id);
+routing_data_t* find_child(device_id_t child_id, bool direct);
 
 /**
  * Closes a pipe
