@@ -340,7 +340,7 @@ void* bottom_up_handler(void* arg){
             else{
                 code = response.command_code;
                 
-                if(IS_LINK(code)){
+                if(IS_LINK(code) && !IS_ERROR(response.response_code)){
                     link_response(&response);
                 }
                 else{
@@ -608,17 +608,19 @@ error_code_t remove_child(device_id_t child_id, bool direct){
     if(children == 0 || routing_information == NULL){
         error_code = CHILD_NOT_FOUND;
     }
-    else if(direct && routing_information != NULL){
+    else if(routing_information != NULL && routing_information->parent_id == id){
         error_code = close_pipe(routing_information->next_hop_fd);
     }
     
     if(!IS_ERROR(error_code)) {
-        remove_routing_data(routing_table, child_id, routing_information->parent_id);
-        children--;
-        if(children == 0) {
-            has_children = false;
-            device_type = HUB_DEVICE;
+        if(routing_information->parent_id == id){
+            children--;
+            if(children == 0) {
+                has_children = false;
+                device_type = HUB_DEVICE;
+            }
         }
+        remove_routing_data(routing_table, child_id, routing_information->parent_id);
     }
     return error_code;
 }
@@ -633,7 +635,7 @@ routing_data_t* find_child(device_id_t child_id, bool direct){
         if(child->id == child_id){
             return child;
         }
-        child = (direct ? find_direct_routing_data(routing_table, id, NULL) : find_all_routing_data(routing_table, id, NULL));;
+        child = (direct ? find_direct_routing_data(routing_table, id, child) : find_all_routing_data(routing_table, id, child));;
     }
     return NULL;
 }
