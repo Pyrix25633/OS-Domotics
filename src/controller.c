@@ -665,7 +665,14 @@ error_code_t update_with_link_response(response_t *response) {
     if(source == NULL) {
         return CHILD_NOT_FOUND;
     }
-    if(source->parent_id == response->arguments[PARENT_ID_ARGUMENT]) { // Parent didn't change
+    if(source->parent_id == response->arguments[PARENT_ID_ARGUMENT]) { // Parent didn't change, update file descriptor
+        if(source->parent_id != id) {
+            routing_data_t *parent = find_routing_data(routing_table, source->parent_id);
+            if(parent == NULL) {
+                return ROUTE_NOT_FOUND;
+            }
+            source->next_hop_fd = parent->next_hop_fd;
+        }
         return OK;
     }
 
@@ -718,7 +725,6 @@ error_code_t update_with_link_response(response_t *response) {
     if(source == NULL) {
         return CHILD_NOT_FOUND;
     }
-
     update_type_to_not_empty(source);
     error_code_t tmp = export_routing_table(routing_table, id);
     if(IS_ERROR(tmp)) {

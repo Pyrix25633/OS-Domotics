@@ -119,7 +119,7 @@ error_code_t top_down_handler(){
                         }
                         else if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD){
                             response.arguments[CHILD_ID_ARGUMENT] = request.argument;
-                            response.response_code = remove_child(request.argument, true);
+                            response.response_code = remove_child(request.argument);
                         }
                         else{
                             response.response_code = UNEXPECTED_COMMAND;
@@ -224,7 +224,7 @@ error_code_t top_down_handler(){
                 }
             }
             else{
-                routing_data_t *routing_information = find_routing_data(routing_table, request.destination); 
+                routing_data_t *routing_information = find_routing_data(routing_table, request.destination);
                 if(IS_ERROR(error_code)){
                     response.response_code = error_code;
                     simulate_processing_time();
@@ -364,7 +364,7 @@ void* bottom_up_handler(void* arg){
                     }
                     else{
                         if(IS_DELETE(response.command_code)){
-                            error_code = remove_child(response.source, false);
+                            error_code = remove_child(response.source);
                             //i don't have to modify the response
                             if(IS_ERROR(error_code)){
                                 print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
@@ -536,7 +536,7 @@ error_code_t open_pipe(device_id_t device_id, int *snd_requests_child){
 
 void link_response(response_t *response){
     if(LINK_SUBCOMMAND(response->command_code)==LINK_REMOVE_CHILD){
-        response->response_code = link_remove_child_received(response->arguments[CHILD_ID_ARGUMENT]);
+        response->response_code = link_remove_child_received(response);
     }
     else{
         add_child(response);
@@ -602,25 +602,28 @@ error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed)
     return error_code;
 }
 
-error_code_t remove_child(device_id_t child_id, bool direct){
+error_code_t remove_child(device_id_t child_id){
     error_code_t error_code = OK;
-    routing_data_t *routing_information = find_child(child_id, direct);
-    if(children == 0 || routing_information == NULL){
+    routing_data_t *child = find_routing_data(routing_table, child_id);
+    if(children == 0 || child == NULL){
         error_code = CHILD_NOT_FOUND;
     }
-    else if(routing_information != NULL && routing_information->parent_id == id){
-        error_code = close_pipe(routing_information->next_hop_fd);
+    else if(child != NULL && child->parent_id == id){
+        error_code = close_pipe(child->next_hop_fd);
     }
     
     if(!IS_ERROR(error_code)) {
-        if(routing_information->parent_id == id){
+        if(child->parent_id == id){
             children--;
             if(children == 0) {
                 has_children = false;
                 device_type = HUB_DEVICE;
             }
         }
-        remove_routing_data(routing_table, child_id, routing_information->parent_id);
+        //vedere se posso mettere response source perché la uso anche nella delete
+        //response.source per link
+        //routing_information->parent_id per delete
+        remove_routing_data(routing_table, child_id, child->parent_id);
     }
     return error_code;
 }
@@ -629,25 +632,14 @@ error_code_t close_pipe(int fd){
     return (close(fd) < 0 ? UNABLE_TO_CLOSE_PIPE : OK);
 }
 
-routing_data_t* find_child(device_id_t child_id, bool direct){
-    routing_data_t *child = (direct ? find_direct_routing_data(routing_table, id, NULL) : find_all_routing_data(routing_table, id, NULL));
-    while(child != NULL){
-        if(child->id == child_id){
-            return child;
-        }
-        child = (direct ? find_direct_routing_data(routing_table, id, child) : find_all_routing_data(routing_table, id, child));;
-    }
-    return NULL;
-}
-
-error_code_t link_remove_child_received(device_id_t child_id){
+error_code_t link_remove_child_received(response_t* response){
     error_code_t error_code = OK;
-    routing_data_t *routing_information = find_routing_data(routing_table,child_id);
+    routing_data_t *routing_information = find_routing_data(routing_table,response->arguments[CHILD_ID_ARGUMENT]);
     if(routing_information == NULL){
         error_code = ROUTE_NOT_FOUND;
     }
     else{
-        remove_routing_data(routing_table, child_id, routing_information->parent_id);
+        remove_routing_data(routing_table, response->arguments[CHILD_ID_ARGUMENT],response->source);
     }
     return error_code;
 }
