@@ -141,6 +141,16 @@ error_code_t drop_child();
 void release_unreachable_child();
 
 /**
+ * Recomputes the declared type of the timer from the type of its child
+ *
+ * A leaf child always keeps the type it declared, while a control-device child changes its own type as its
+ * branch is filled or emptied, so its current type is taken from the routing table, which tracks the subtree
+ *
+ * The caller must already hold the lock and the child data must be valid
+ */
+void refresh_child_type();
+
+/**
  * Acquires the child if the response is its change-parent response naming the timer as the new parent
  *
  * Sets the child scalars and the declared type under the lock, does nothing for any other response

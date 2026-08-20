@@ -262,6 +262,17 @@ void release_unreachable_child(){
     unlock_data();
 }
 
+//the declared type carries the leaf bits of the child, so the parent knows which switch label the branch takes.
+//a leaf child keeps the type it declared, while a control-device child changes its own type as its branch is
+//filled or emptied, so its current type is read from the routing table, the caller must already hold the lock
+void refresh_child_type(){
+    routing_data_t *child = find_routing_data(routing_table, child_id);
+    if(child != NULL){
+        child_type = child->type;
+    }
+    device_type = TIMER_DEVICE | CHILD_TYPE(child_type);
+}
+
 //a change-parent response naming the timer as the new parent identifies the single child to acquire,
 //replayed responses of deeper descendants carry another parent id and are only forwarded up
 void acquire_child(response_t *child_response){
@@ -288,7 +299,6 @@ void acquire_child(response_t *child_response){
     child_id = new_child_id;
     child_type = new_child_type;
     snd_requests_child_fd = new_child_fd;
-    device_type = TIMER_DEVICE | new_child_type; //the declared type keeps the child leaf bits for the switch label
     
     //a control-device child brings its own subtree: it is tracked in the routing table so the whole branch can be
     //replayed to a new parent, a leaf child has no descendants and needs only the scalars above (hybrid approach)
@@ -298,6 +308,7 @@ void acquire_child(response_t *child_response){
         && IS_ERROR(insert_direct_routing_data(routing_table, new_child_id, new_child_type, id, new_child_fd))){
         print_error(STDERR_FILENO, UNABLE_TO_ALLOCATE_HEAP, id, "while adding the child to the routing table");
     }
+    refresh_child_type(); //the child is in place, so the declared type can be built from it
     has_child = true; //set last, the main thread checks it before using the other child scalars
     unlock_data();
 }
