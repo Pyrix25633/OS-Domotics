@@ -335,6 +335,17 @@ void acquire_descendant(response_t *child_response){
         return;
     }
     error_code_t error_code = insert_indirect_routing_data(routing_table, descendant_id, descendant_type, descendant_parent);
+    if(!IS_ERROR(error_code)){
+        //the branch below is no longer empty, so the type of every node up to the child is recomputed: the walk
+        //stops by itself at the child, because the timer is not part of its own routing table
+        routing_data_t *descendant = find_routing_data(routing_table, descendant_id);
+        if(descendant != NULL){
+            update_type_to_not_empty(routing_table, descendant);
+        }
+        if(has_child){
+            refresh_child_type(); //the child type changed with its branch, so the declared type follows it
+        }
+    }
     unlock_data();
     //ROUTE_NOT_FOUND is the expected "not in the subtree" outcome and is ignored, only real errors are printed
     if(IS_ERROR(error_code) && error_code != ROUTE_NOT_FOUND){
