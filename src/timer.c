@@ -376,7 +376,17 @@ void release_child(response_t *child_response){
         routing_data_t *node = find_routing_data(routing_table, child_response->source);
         //remove_routing_data cascades, so removing the top of a deleted branch also drops all its descendants
         if(node != NULL){
-            remove_routing_data(routing_table, child_response->source, node->parent_id);
+            //the removal frees the node, so its parent is read before it
+            device_id_t descendant_parent = node->parent_id;
+            remove_routing_data(routing_table, child_response->source, descendant_parent);
+            //the branch it belonged to may be empty now, so the type of every node up to the child is recomputed
+            routing_data_t *parent = find_routing_data(routing_table, descendant_parent);
+            if(parent != NULL){
+                update_type_to_empty(routing_table, parent);
+            }
+            if(has_child){
+                refresh_child_type(); //the child type changed with its branch, so the declared type follows it
+            }
         }
     }
     unlock_data();
