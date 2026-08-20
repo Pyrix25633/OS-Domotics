@@ -217,4 +217,21 @@ error_code_t export_routing_table(routing_table_t table, device_id_t parent_id);
  */
 error_code_t find_device_type(device_id_t id, device_type_t* type);
 
+/**
+ * Updates the devices type to empty if possible
+ * 
+ * @param table Routing table where to search
+ * @param device Device that was updated, can be `NULL`
+ */
+void update_type_to_empty(routing_table_t table, routing_data_t *device);
+
+/**
+ * Updates the devices type to not empty if possible
+ * 
+ * @param table Routing table where to search
+ * @param device Device that was updated
+ */
+void update_type_to_not_empty(routing_table_t table, routing_data_t *device);
+
+
 #endif

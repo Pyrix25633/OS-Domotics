@@ -119,7 +119,7 @@ error_code_t top_down_handler(){
                         }
                         else if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD){
                             response.arguments[CHILD_ID_ARGUMENT] = request.argument;
-                            response.response_code = remove_child(request.argument);
+                            response.response_code = remove_child(request.argument, id);
                         }
                         else{
                             response.response_code = UNEXPECTED_COMMAND;
@@ -236,7 +236,7 @@ error_code_t top_down_handler(){
                     force_exit = true;
                     continue;
                 }  
-                error_code = send_to_child(&request,(routing_information == NULL ? -1 : routing_information->next_hop_fd));
+                error_code = send_to_child(&request,(routing_information == NULL ? NO_ROUTE : routing_information->next_hop_fd));
             }
         }                
     }
@@ -295,7 +295,7 @@ error_code_t send_to_child(request_t *request, int next_hop_fd){
     char request_buffer[MAX_REQUEST_SIZE];
     char response_buffer[MAX_RESPONSE_SIZE];
                 
-    if(next_hop_fd == -1){
+    if(next_hop_fd == NO_ROUTE){
         response.source = id;
         response.command_code = request->command_code;
         response.response_code = ROUTE_NOT_FOUND;
@@ -364,7 +364,7 @@ void* bottom_up_handler(void* arg){
                     }
                     else{
                         if(IS_DELETE(response.command_code)){
-                            error_code = remove_child(response.source);
+                            error_code = remove_child(response.source, NO_ID);
                             //i don't have to modify the response
                             if(IS_ERROR(error_code)){
                                 print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
@@ -550,9 +550,13 @@ void add_child(response_t *response){
     if(response->arguments[PARENT_ID_ARGUMENT] == id){
         error_code = open_pipe(response->source, &child_fd);
         if(!IS_ERROR(error_code)){
+            //if I already have the device id in my routing table I need to close the pipe before replacing the data
+            routing_data_t *child = find_routing_data(routing_table, response->source);
+            if(child != NULL && child->parent_id == id) error_code = close_pipe(child->next_hop_fd);
+
             error_code = insert_direct_routing_data(routing_table, response->source, response->arguments[DEVICE_TYPE_ARGUMENT], id, child_fd);
-            if(!has_children) {
-                has_children = true;
+            if(device_type == HUB_DEVICE){
+                if(!has_children) has_children = true;
                 device_type = HUB_DEVICE | response->arguments[DEVICE_TYPE_ARGUMENT];
             }
             children++;
@@ -560,6 +564,13 @@ void add_child(response_t *response){
     }
     else{
         error_code = insert_indirect_routing_data(routing_table, response->source, response->arguments[DEVICE_TYPE_ARGUMENT], response->arguments[PARENT_ID_ARGUMENT]);
+        if(!IS_ERROR(error_code)){
+            update_type_to_not_empty(routing_table, find_routing_data(routing_table, response->source));
+            if(device_type == HUB_DEVICE){
+                if(!has_children) has_children = true;
+                device_type = HUB_DEVICE | response->arguments[DEVICE_TYPE_ARGUMENT];
+            }
+        }
     }
     response->response_code = error_code;
 }
@@ -602,30 +613,44 @@ error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed)
     return error_code;
 }
 
-error_code_t remove_child(device_id_t child_id){
-    error_code_t error_code = OK;
+error_code_t remove_child(device_id_t child_id, device_id_t parent_id){
     routing_data_t *child = find_routing_data(routing_table, child_id);
-    if(children == 0 || child == NULL){
-        error_code = CHILD_NOT_FOUND;
+    if(child == NULL){
+        return CHILD_NOT_FOUND;
     }
-    else if(child != NULL && child->parent_id == id){
-        error_code = close_pipe(child->next_hop_fd);
+    if((parent_id == NO_ID ? child->parent_id : parent_id) == id){
+        children--;
+        if(children == 0) has_children = false;
     }
-    
-    if(!IS_ERROR(error_code)) {
-        if(child->parent_id == id){
-            children--;
-            if(children == 0) {
-                has_children = false;
-                device_type = HUB_DEVICE;
-            }
+    device_id_t found_parent_id = child->parent_id;
+    remove_routing_data(routing_table, child_id, (parent_id == NO_ID ? child->parent_id : parent_id));
+    //if the new parent stills one of my child I need to update it's type
+    //otherwise I need to do it only upwards from its parent
+
+    //but if it's a delete I need to do it because I receive a delete response from the child
+    //and I can't separate the 2 things like with the link
+    if(find_routing_data(routing_table, child->parent_id) != NULL || parent_id == NO_ID){
+        update_type_to_empty(routing_table, find_routing_data(routing_table, found_parent_id));
+    }
+    update_type(child_id);
+    return OK;
+}
+
+void update_type(device_id_t child_id){
+    bool is_empty = true;
+    routing_data_t *child = find_direct_routing_data(routing_table, id, NULL);
+    while(child!=NULL){
+        if(child->id == child_id) {
+            child = find_direct_routing_data(routing_table, id, child);
+            continue;
         }
-        //vedere se posso mettere response source perché la uso anche nella delete
-        //response.source per link
-        //routing_information->parent_id per delete
-        remove_routing_data(routing_table, child_id, child->parent_id);
+        if(!IS_EMPTY(child->type)) {
+            is_empty = false;
+            break;
+        }
+        child = find_direct_routing_data(routing_table, id, child);
     }
-    return error_code;
+    if(is_empty) device_type = HUB_DEVICE;
 }
 
 error_code_t close_pipe(int fd){
@@ -639,7 +664,10 @@ error_code_t link_remove_child_received(response_t* response){
         error_code = ROUTE_NOT_FOUND;
     }
     else{
-        remove_routing_data(routing_table, response->arguments[CHILD_ID_ARGUMENT],response->source);
+        remove_routing_data(routing_table, response->arguments[CHILD_ID_ARGUMENT], response->source);
+        //for all the hierarchy
+        update_type_to_empty(routing_table, find_routing_data(routing_table, response->source));
+        update_type(response->arguments[CHILD_ID_ARGUMENT]);
     }
     return error_code;
 }

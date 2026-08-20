@@ -657,7 +657,7 @@ error_code_t update_with_link_response(response_t *response) {
             return RESPONSE_FORMAT_ERROR;
         }
         device->type = response->arguments[DEVICE_TYPE_ARGUMENT];
-        update_type_to_empty(device);
+        update_type_to_empty(routing_table, find_routing_data(routing_table, device->parent_id));
         return export_routing_table(routing_table, id);
     }
     // Link change parent
@@ -685,7 +685,7 @@ error_code_t update_with_link_response(response_t *response) {
         if(source == NULL) {
             return CHILD_NOT_FOUND;
         }
-        update_type_to_not_empty(source);
+        update_type_to_not_empty(routing_table, source);
         /*
          Data about the children of moved device will be updated automatically when the Controller
          receives the "replay history" messages of the moved device, if it is a control device
@@ -725,7 +725,7 @@ error_code_t update_with_link_response(response_t *response) {
     if(source == NULL) {
         return CHILD_NOT_FOUND;
     }
-    update_type_to_not_empty(source);
+    update_type_to_not_empty(routing_table, source);
     error_code_t tmp = export_routing_table(routing_table, id);
     if(IS_ERROR(tmp)) {
         error_code = tmp;
@@ -785,7 +785,7 @@ error_code_t update_with_delete_response(response_t *response) {
     routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
     remove_routing_data(routing_table, device->id, device->parent_id);
     if(parent != NULL) {
-        update_type_to_empty(parent);
+        update_type_to_empty(routing_table, parent);
     }
     if(pending_shutdown && find_direct_routing_data(routing_table, id, NULL) == NULL) { // Pending Controller exit and no more children
         force_exit = true;
@@ -806,49 +806,6 @@ error_code_t update_with_delete_response(response_t *response) {
         }
     }
     return error_code;
-}
-
-void update_type_to_empty(routing_data_t *device) {
-    routing_data_t *current = device;
-    while(current != NULL) { // Recalculate types up to topmost parent if necessary
-        if(IS_EMPTY(current->type)) {
-            return;
-        }
-
-        routing_data_t *child = find_direct_routing_data(routing_table, current->id, NULL);
-        bool empty = true;
-        while(child != NULL) {
-            if(!IS_EMPTY(child->type)) {
-                empty = false;
-                break;
-            }
-            child = find_direct_routing_data(routing_table, current->id, child);
-        }
-        if(empty) {
-            current->type = IS_HUB(current->type) ? HUB_DEVICE : TIMER_DEVICE;
-        }
-
-        current = find_routing_data(routing_table, current->parent_id);
-    }
-}
-
-void update_type_to_not_empty(routing_data_t *device) {
-    device_type_t child_type = device->type;
-    if(IS_EMPTY(child_type)) {
-        return; // Nothing to update
-    }
-    child_type &= LEAF_DEVICE_MASK; // Get children type
-    routing_data_t *parent = find_routing_data(routing_table, device->parent_id);
-    while(parent != NULL) { // Recalculate types up to topmost parent if necessary
-        if(!IS_EMPTY(parent->type)) {
-            // Already has a type, it shouldn't happen that it is incompatible, anyways nothing could be done
-            break;
-        }
-        // Parent is always a control device, just set children type
-        parent->type = (parent->type & CONTROL_DEVICE_MASK) | child_type;
-        parent = find_routing_data(routing_table, parent->parent_id);
-    }
-    return;
 }
 
 void format_info_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE], device_type_t type) {
@@ -1268,7 +1225,7 @@ void* sigchld_routine(void *arg) {
         current = find_unreachable_routing_data(routing_table, current);
         if(remove) {
             remove_routing_data_from_bucket(GET_BUCKET(routing_table, current_id), current_id);
-            update_type_to_empty(find_routing_data(routing_table, current_parent_id));
+            update_type_to_empty(routing_table, find_routing_data(routing_table, current_parent_id));
             tmp = export_routing_table(routing_table, id);
             if(IS_ERROR(tmp)) {
                 error_code = tmp;

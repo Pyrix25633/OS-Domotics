@@ -18,6 +18,7 @@
 #define ADDITIONAL_INFO_ARGUMENT 2
 #define ADDITIONAL_SWITCH_ARGUMENT 0
 #define ADDITIONAL_DELETE_ARGUMENT 0
+#define NO_ROUTE -1
 
 typedef struct pending_t {
     command_code_t command_code;
@@ -67,10 +68,10 @@ error_code_t top_down_handler();
 error_code_t read_pipe(int fd, char *buffer, size_t buffer_size);
 
 /**
- * It creates and initialize with default values the pending requests list, it can fail due to malloc
+ * It creates and initialize with default values a pending entry, it can fail due to malloc
  * 
- * @param command_code the command_code of the pending request
- * @return the initialized pending requests list
+ * @param command_code the command_code of the request
+ * @return the initialized pending entry
  */
 pending_t* init_pending(command_code_t command_code);
 
@@ -84,26 +85,18 @@ pending_t* init_pending(command_code_t command_code);
 void write_pipe_request(request_t* request, char* buffer_write, int snd_request_fd);
 
 /**
- * Closes a pipe used to reach a direct child that has being moved 
+ * It tries to remove the routing information of a child from the routing table,
+ * 
+ * the routing table is updated and also the device type
  *
- * @param child_id the id of the child
+ * @param child_id the id of the child to remove
+ * @param parent_id the id of the parent, set it to NO_ID if the child data is needed
  * @returns
  *  - `OK` if no errors occurred
  * 
- *  - `CHILD_NOT_FOUND` if it has no children or if it's not a direct child
- * 
- * - `UNABLE_TO_CLOSE_PIPE` if the pipe couldn't be close
+ *  - `CHILD_NOT_FOUND` if the child wasn't found
  */ 
-error_code_t remove_child(device_id_t child_id);
-
-/**
- * Finds the routing data information of a direct child given the child id
- * 
- * @param child_id The device id of the child
- * @param direct To specify if the search needs to be between its direct children or not
- * @return The routing data information found, can be NULL if the searched child has not be found
- */
-routing_data_t* find_child(device_id_t child_id, bool direct);
+error_code_t remove_child(device_id_t child_id, device_id_t parent_id);
 
 /**
  * Closes a pipe
@@ -117,8 +110,8 @@ routing_data_t* find_child(device_id_t child_id, bool direct);
 error_code_t close_pipe(int fd);
 
 /**
- * It takes the new parent id from the request, if it's different the pipe to talk to the parent is changed
- * and also the current parent id then a partial response is created by adding the parent id and the device type
+ * It takes the new parent id from the request, if it's different the pipe to communicate with the parent is changed
+ * and also the current parent id
  * 
  * @param new_parent_id the new parent id received from the request
  * @param parent_changed to set as true if the parent has changed to perform a replay history
@@ -127,11 +120,10 @@ error_code_t close_pipe(int fd);
 error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed);
 
 /**
- * It search if the child exists between its children, if not, an error response is created, otherwise it returns a file descriptor 
- * to which send the request
+ * It forwards the request to a child
  * 
  * @param request The request to forward
- * @param next_hop_fd The file descriptor of the destination
+ * @param next_hop_fd The file descriptor of the destination, can be set to `NO_ROUTE` to send an error response back to the parent
  * @return
  *  - `OK` if no errors occurred
  * 
@@ -151,7 +143,7 @@ void write_pipe_response(response_t* response, char* buffer_write);
 /**
  * A response to the new parent is sent for every direct and indirect children that the hub has
  * 
- * The response includes the parent id of the child, its device type and the source is as the child id
+ * The response includes the parent id of the child, its device type and the source is the child id
  * as if it was done by the child itself
  * 
  * @param response the response to send back
@@ -159,8 +151,9 @@ void write_pipe_response(response_t* response, char* buffer_write);
 void replay_history(response_t *response);
 
 /**
- * It tries to find the child in the routing table, if it succeeds the routing information is removed,
- * if it fails an error code is returned
+ * It reads the child id from the response and it tries to find the child in the routing table, 
+ * if it succeeds it tries to remove the routing information from the routing table, 
+ * the routing table is updated and also the device type 
  * 
  * @param response the received responses
  * @returns
@@ -171,22 +164,25 @@ void replay_history(response_t *response);
 error_code_t link_remove_child_received(response_t *response);
 
 /**
- * It adds the routing information of the new child, if it's a direct child it also open a pipe
+ * If the child to add was already one of its child it tries to close it's pipe, 
+ * then it adds the routing information of the new child to the routing table, 
+ * if it's a direct child it also open a pipe
+ * 
+ * The device type is updated
  * 
  * @param response the received response, will be modified
  */
 void add_child(response_t *response);
 
 /**
- *  If a LINK_REMOVE_CHILD response arrives the routing table is changed otherwise it's a LINK_CHANGE_PARENT response
- *  and new routing information need to be added to the routing table if it's a direct child a pipe is opened
+ *  It manages what to do based on the link response type received
  * 
  * @param response the received response, it will be modified
  */
 void link_response(response_t *response);
 
 /**
- * The pending response has be resolved and the arguments of the info response are set
+ * The pending response is resolved and the arguments of the info response are set
  * 
  * @param response The response to modify in order to be sent later
  * @param solved_response The solved pending response
@@ -194,7 +190,7 @@ void link_response(response_t *response);
 void info_response(response_t *response, pending_t *solved_response);
 
 /**
- *  The pending response has be resolved and the arguments of the switch response are set
+ *  The pending response is resolved and the arguments of the switch response are set
  * 
  * @param response The response to modify in order to be sent later
  * @param solved_response The solved pending response
@@ -202,7 +198,7 @@ void info_response(response_t *response, pending_t *solved_response);
 void switch_response(response_t *response, pending_t *solved_response);
 
 /**
- *  The pending response has be resolved and the arguments of the delete response are set
+ *  The pending response is resolved and the arguments of the delete response are set
  * 
  * @param response The response to modify in order to be sent later
  * @param solved_response The solved pending response
@@ -298,5 +294,16 @@ void free_pending(pending_t **pending, pending_t *previous);
  *  - `UNABLE_TO_ALLOCATE_HEAP` if it fails
  */
 error_code_t forward_to_children(request_t *request);
+
+/**
+ * It updates the device type, the `child_id` given is ignored in the search
+ * (used with link and delete response/request)
+ * 
+ * It searches between all direct children if at least one is not empty, 
+ * if all are empty the device type is updated otherwise it isn't
+ * 
+ * @param child_id the child id of the one to ignore
+ */
+void update_type(device_id_t child_id);
 
 #endif

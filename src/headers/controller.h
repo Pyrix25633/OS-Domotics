@@ -286,20 +286,6 @@ error_code_t update_with_link_response(response_t *response);
 error_code_t update_with_delete_response(response_t *response);
 
 /**
- * Updates the devices type to empty if possible
- * 
- * @param device Device that was updated, can be `NULL`
- */
-void update_type_to_empty(routing_data_t *device);
-
-/**
- * Updates the devices type to not empty if possible
- * 
- * @param device Device that was updated
- */
-void update_type_to_not_empty(routing_data_t *device);
-
-/**
  * Formats user message for received info response
  * 
  * @param response Received response

@@ -309,3 +309,44 @@ error_code_t find_device_type(device_id_t id, device_type_t* type) {
     }
     return found ? OK : DEVICE_NOT_FOUND;
 }
+
+void update_type_to_empty(routing_table_t table, routing_data_t *device) {
+    routing_data_t *current = device;
+    while(current != NULL) { // Recalculate types up to topmost parent if necessary
+        if(IS_EMPTY(current->type)) {
+            return;
+        }
+        routing_data_t *child = find_direct_routing_data(table, current->id, NULL);
+        bool empty = true;
+        while(child != NULL) {
+            if(!IS_EMPTY(child->type)) {
+                empty = false;
+                break;
+            }
+            child = find_direct_routing_data(table, current->id, child);
+        }
+        if(empty) {
+            current->type = IS_HUB(current->type) ? HUB_DEVICE : TIMER_DEVICE;
+        }
+
+        current = find_routing_data(table, current->parent_id);
+    }
+}
+
+void update_type_to_not_empty(routing_table_t table, routing_data_t *device) {
+    device_type_t child_type = device->type;
+    if(IS_EMPTY(child_type)) {
+        return; // Nothing to update
+    }
+    child_type &= LEAF_DEVICE_MASK; // Get children type
+    routing_data_t *parent = find_routing_data(table, device->parent_id);
+    while(parent != NULL) { // Recalculate types up to topmost parent if necessary
+        if(!IS_EMPTY(parent->type)) {
+            // Already has a type, it shouldn't happen that it is incompatible, anyways nothing could be done
+            break;
+        }
+        // Parent is always a control device, just set children type
+        parent->type = (parent->type & CONTROL_DEVICE_MASK) | child_type;
+        parent = find_routing_data(table, parent->parent_id);
+    }
+}
