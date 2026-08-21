@@ -80,7 +80,9 @@ int main(int argc, char *argv[]) {
     }
 
     while(!force_exit) {
-        input(user_buffer, USER_BUFFER_SIZE);
+        if(input(user_buffer, USER_BUFFER_SIZE) == 0) { // End of file, no more commands to execute
+            break;
+        }
         error_code = process_user_command(&user_command, user_buffer);
     }
 
