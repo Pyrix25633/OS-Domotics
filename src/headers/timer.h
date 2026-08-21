@@ -180,6 +180,20 @@ void acquire_descendant(response_t *child_response);
 void release_child(response_t *child_response);
 
 /**
+ * Removes from the routing table a descendant that its own parent reports as removed
+ *
+ * The response of a remove-child request travels up through the timer and is the only notice that a device
+ * left the subtree: without it the subtree replay would announce to a new parent a device that is no longer
+ * below the timer
+ *
+ * Does nothing for a response that is not a successful remove-child, or for a device that the sender does
+ * not have below itself
+ *
+ * @param child_response The response read from the child
+ */
+void release_removed_descendant(response_t *child_response);
+
+/**
  * Bottom-up thread body: reads the responses coming from the child and forwards them up to the parent
  * @param arg Unused
  * @returns `NULL`

@@ -392,6 +392,41 @@ void release_child(response_t *child_response){
     unlock_data();
 }
 
+//when a device is removed from a parent below the timer, that parent answers the remove-child request and its
+//response travels up through here: it is the only notice that the device left the subtree, so the node is dropped.
+//Without this the subtree replay would announce to a new parent a device that is no longer below the timer, and
+//the new parent would take over a device that belongs to somebody else
+void release_removed_descendant(response_t *child_response){
+    command_code_t code = child_response->command_code;
+    if(!((IS_LINK(code)) && LINK_SUBCOMMAND(code) == LINK_REMOVE_CHILD)){
+        return;
+    }
+    if(child_response->response_code != OK){
+        return; //the removal failed, the subtree is unchanged
+    }
+    device_id_t removed_id = child_response->arguments[CHILD_ID_ARGUMENT];
+    device_id_t removed_parent = child_response->source;
+
+    if(!lock_data()){
+        return;
+    }
+    routing_data_t *node = find_routing_data(routing_table, removed_id);
+    //only a node that the sender really has below itself is dropped, any other response is just forwarded
+    if(node != NULL && node->parent_id == removed_parent){
+        //remove_routing_data cascades, so a removed branch leaves with all of its descendants
+        remove_routing_data(routing_table, removed_id, removed_parent);
+        //the branch may be empty now, so the type of every node up to the child is recomputed
+        routing_data_t *parent = find_routing_data(routing_table, removed_parent);
+        if(parent != NULL){
+            update_type_to_empty(routing_table, parent);
+        }
+        if(has_child){
+            refresh_child_type(); //the child type changed with its branch, so the declared type follows it
+        }
+    }
+    unlock_data();
+}
+
 //forgets the child and goes back to the plain timer type, the caller must already hold the lock
 error_code_t drop_child(){
     //the whole subtree leaves with the child (cascades to all descendants, a leaf child was never tracked)
@@ -427,6 +462,8 @@ void *child_responses_routine(void *arg){
             acquire_descendant(&child_response);
             //a delete response drops the device that sent it, the direct child or a tracked descendant
             release_child(&child_response);
+            //a remove-child response travelling up says that a descendant left the subtree
+            release_removed_descendant(&child_response);
             //a reply to a request the timer sent for mirroring is turned into the timer own response, not forwarded
             if(handle_own_reply(&child_response)){
                 continue;
@@ -460,8 +497,11 @@ bool handle_own_reply(response_t *child_response){
         //replace whatever the child put after them
         if(lock_data()){
             //a live state different from the last one the timer commanded means the child was switched manually,
-            //so a manual override is reported instead of a definite state (the next command clears it on its own)
-            if(child_response->arguments[STATE_ARGUMENT] != state){
+            //so a manual override is reported instead of a definite state (the next command clears it on its own).
+            //a control device child with nothing below answers with an undefined state, which is not a divergence
+            //and is forwarded as it is
+            if(child_response->arguments[STATE_ARGUMENT] != state
+                && child_response->arguments[STATE_ARGUMENT] != UNDEFINED_STATE){
                 child_response->arguments[STATE_ARGUMENT] = STATE_MANUAL_OVERRIDE;
             }
             child_response->arguments[BEGIN_ARGUMENT] = begin;
