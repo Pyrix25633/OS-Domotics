@@ -139,7 +139,12 @@ error_code_t top_down_handler(){
                             replay_history(&response);
                             response.source = id;
                         }
-                        if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD) check_complete_and_send(&response);
+                        if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD) {
+                            //in the check_pending I take the response source to check it because it 
+                            //was in the bottom up but I need the child id (request argument) to be the source
+                            response.source = request.argument;
+                            check_complete_and_send(&response);
+                        }
                         if(pthread_mutex_unlock(&data_mutex) !=0){
                             error_code = UNABLE_TO_UNLOCK_MUTEX;
                             force_exit = true;
