@@ -29,6 +29,7 @@ int rcv_responses_fd;
 int next_hop_fd;
 volatile bool force_exit = false;
 volatile bool pending_shutdown = false;
+volatile atomic_flag handle_shutdown_called = ATOMIC_FLAG_INIT; // Used to prevent deadlock, since a mutex lock is not a cancellation point
 char request_buffer[MAX_REQUEST_SIZE];
 char response_buffer[MAX_RESPONSE_SIZE];
 request_t request;
@@ -1035,6 +1036,9 @@ error_code_t end_child_device_fifos(routing_data_t *device) {
 }
 
 void handle_shutdown(error_code_t error, bool in_responses_thread) {
+    if(atomic_flag_test_and_set(&handle_shutdown_called)) { // Already exiting, prevent deadlock
+        return;
+    }
     error_code_t error_code = OK;
     if(pthread_mutex_lock(&shutdown_mutex) != 0) {
         error_code = UNABLE_TO_LOCK_MUTEX;
@@ -1207,10 +1211,13 @@ void* sigchld_routine(void *arg) {
             if(current->parent_id != id) { // Parent is not the controller
                 request.destination = current->parent_id;
                 request.argument = current->id;
-                tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
-                if(IS_ERROR(tmp)) {
-                    error_code = tmp;
-                    print_error(STDERR_FILENO, error_code, id, "while notifying parent of dead device");
+                routing_data_t *parent = find_routing_data(routing_table, current->parent_id);
+                if(parent != NULL) { // Check that the parent has not crashed before notifying
+                    tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
+                    if(IS_ERROR(tmp)) {
+                        error_code = tmp;
+                        print_error(STDERR_FILENO, error_code, id, "while notifying parent of dead device");
+                    }
                 }
             }
             // Remove pipes and shutdown children

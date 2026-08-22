@@ -23,6 +23,7 @@
 #include <ncurses.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <stdatomic.h>
 
 #define STDERR_PIPE_NAME     "./ipc/stderr.fifo"
 #define STDERR_BUFFER_SIZE   512
