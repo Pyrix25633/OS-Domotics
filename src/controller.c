@@ -1381,8 +1381,7 @@ int input(char *buffer, size_t size) {
     else {
         size_t i = 0;
         do {
-            buffer[i] = getchar();
-            if(buffer[i] == EOF) {
+            if(read(STDIN_FILENO, &buffer[i], 1) <= 0) {
                 return EOF;
             }
             i++;
