@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
     }
 
     while(!force_exit) {
-        if(input(user_buffer, USER_BUFFER_SIZE) == 0) { // End of file, no more commands to execute
+        if(input(user_buffer, USER_BUFFER_SIZE) == EOF) { // End of file, no more commands to execute
             break;
         }
         error_code = process_user_command(&user_command, user_buffer);
@@ -1379,14 +1379,18 @@ int input(char *buffer, size_t size) {
         return wgetnstr(input_win, buffer, size);
     }
     else {
-        if(fgets(buffer, size, stdin) == NULL) {
-            return 0;
-        }
-        int n = strnlen(buffer, size);
-        if(n > 0) {
-            buffer[--n] = '\0'; // Remove '\n'
-        }
-        return n;
+        size_t i = 0;
+        do {
+            buffer[i] = getchar();
+            if(buffer[i] == EOF) {
+                return EOF;
+            }
+            i++;
+        } while(buffer[i - 1] != '\n' && i < size);
+
+        buffer[--i] = '\0'; // Remove '\n'
+
+        return i;
     }
 }
 
