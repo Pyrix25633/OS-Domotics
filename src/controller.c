@@ -80,8 +80,13 @@ int main(int argc, char *argv[]) {
     }
 
     while(!force_exit) {
-        if(input(user_buffer, USER_BUFFER_SIZE) == EOF) { // End of file, no more commands to execute
+        ssize_t n = input(user_buffer, USER_BUFFER_SIZE);
+        if(n == EOF) { // End of file, no more commands to execute
             break;
+        }
+        if(IS_RETURN_ERROR(n)) { // Other error
+            print_error(STDERR_FILENO, ERROR_FROM_RETURN(n), id, "while reading user input");
+            continue;
         }
         error_code = process_user_command(&user_command, user_buffer);
     }
@@ -1374,15 +1379,21 @@ int output(char *format, ...) {
     return n;
 }
 
-int input(char *buffer, size_t size) {
+ssize_t input(char *buffer, size_t size) {
+    ssize_t n;
     if(redirect) {
-        return wgetnstr(input_win, buffer, size);
+        n = wgetnstr(input_win, buffer, size);
+        return n != 0 ? -UNABLE_TO_READ_FILE : 0;
     }
     else {
         size_t i = 0;
         do {
-            if(read(STDIN_FILENO, &buffer[i], 1) <= 0) {
+            n = read(STDIN_FILENO, &buffer[i], 1);
+            if(n == 0) {
                 return EOF;
+            }
+            else if(n != 1) {
+                return -UNABLE_TO_READ_FILE;
             }
             i++;
         } while(buffer[i - 1] != '\n' && i < size);

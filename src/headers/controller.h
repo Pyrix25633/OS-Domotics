@@ -491,9 +491,11 @@ int output(char *format, ...);
  * @param buffer Where the input will be written
  * @param size Buffer size
  * 
- * @returns The number of chars read
+ * @returns The number of chars read (if positive),
+ * `EOF` if the stream has been closed,
+ * `-UNABLE_TO_READ_FILE` if there was an error while reading
  */
-int input(char *buffer, size_t size);
+ssize_t input(char *buffer, size_t size);
 
 /**
  * Ends `ncurses` restoring the terminal to normal mode

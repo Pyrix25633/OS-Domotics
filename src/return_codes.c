@@ -99,6 +99,7 @@ void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], ch
 
         case UNABLE_TO_OPEN_FILE:      strcpy(info, "unable to open file");          break;
         case UNABLE_TO_CLOSE_FILE:     strcpy(info, "unable to close file");         break;
+        case UNABLE_TO_READ_FILE:      strcpy(info, "unable to read file");          break;
         case UNABLE_TO_WRITE_FILE:     strcpy(info, "unable to write file");         break;
         case UNABLE_TO_RENAME_FILE:    strcpy(info, "unable to rename file");        break;
         case UNABLE_TO_REMOVE_FILE:    strcpy(info, "unable to remove file");        break;
