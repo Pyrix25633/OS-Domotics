@@ -139,6 +139,7 @@ error_code_t top_down_handler(){
                             replay_history(&response);
                             response.source = id;
                         }
+                        if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD) check_complete_and_send(&response);
                         if(pthread_mutex_unlock(&data_mutex) !=0){
                             error_code = UNABLE_TO_UNLOCK_MUTEX;
                             force_exit = true;
@@ -622,9 +623,8 @@ error_code_t remove_child(device_id_t child_id, device_id_t parent_id){
         children--;
         if(children == 0) has_children = false;
     }
-    dprintf(STDERR_FILENO, "children: %d\n", children);
     device_id_t found_parent_id = child->parent_id;
-    if(parent_id == NO_ID && found_parent_id == id) close_pipe(child->next_hop_fd);
+    if(found_parent_id == id) close_pipe(child->next_hop_fd);
     remove_routing_data(routing_table, child_id, (parent_id == NO_ID ? child->parent_id : parent_id));
     //if the new parent stills one of my child I need to update it's type
     //otherwise I need to do it only upwards from its parent
