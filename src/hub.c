@@ -418,7 +418,7 @@ pending_t* check_pending(response_t* response, pending_t **previous, bool ignore
 }
 
 void update_pending(pending_t *pending, response_t *response){
-    if(IS_INFO(response->command_code)){
+    if(IS_INFO(response->command_code) && response->arguments_size >= 2){
         //state update
         if(pending->state == UNDEFINED_STATE){
             pending->state = response->arguments[STATE_ARGUMENT];
@@ -622,15 +622,20 @@ error_code_t remove_child(device_id_t child_id, device_id_t parent_id){
         children--;
         if(children == 0) has_children = false;
     }
+    dprintf(STDERR_FILENO, "children: %d\n", children);
     device_id_t found_parent_id = child->parent_id;
+    if(parent_id == NO_ID && found_parent_id == id) close_pipe(child->next_hop_fd);
     remove_routing_data(routing_table, child_id, (parent_id == NO_ID ? child->parent_id : parent_id));
     //if the new parent stills one of my child I need to update it's type
     //otherwise I need to do it only upwards from its parent
 
     //but if it's a delete I need to do it because I receive a delete response from the child
     //and I can't separate the 2 things like with the link
-    if(find_routing_data(routing_table, child->parent_id) != NULL || parent_id == NO_ID){
-        update_type_to_empty(routing_table, find_routing_data(routing_table, found_parent_id));
+
+    routing_data_t *parent = find_routing_data(routing_table, found_parent_id);
+
+    if(parent_id == NO_ID || parent != NULL){
+        update_type_to_empty(routing_table, parent);
     }
     update_type(child_id);
     return OK;
