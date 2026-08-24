@@ -260,6 +260,7 @@ error_code_t forward_to_children(request_t *request){
         i++;
         direct_child = find_direct_routing_data(routing_table, id, direct_child);
     }
+    pending->pending_devices_size = i;
     //add the pending to the list
     if(pending_responses == NULL){
         pending_responses = pending;
@@ -277,8 +278,7 @@ pending_t* init_pending(command_code_t command_code){
     pending_t *pending = malloc(sizeof(pending_t));
     if(pending == NULL) return NULL;
 
-    pending->pending_devices_size = children;
-    pending->pending_devices = malloc(sizeof(device_id_t)*pending->pending_devices_size);
+    pending->pending_devices = malloc(sizeof(device_id_t)*children);
     if(pending->pending_devices == NULL) {
         free(pending);
         return NULL;
@@ -341,6 +341,8 @@ void* bottom_up_handler(void* arg){
             if(IS_ERROR(error_code)){
                 response.command_code = NULL_COMMAND;
                 response.response_code = error_code;
+                response.source = id;
+                response.arguments_size = 0;
             }
             else{
                 code = response.command_code;
@@ -568,8 +570,8 @@ void add_child(response_t *response){
             if(child != NULL && child->parent_id == id) pipe_error = close_pipe(child->next_hop_fd);
             error_code = insert_direct_routing_data(routing_table, response->source, response->arguments[DEVICE_TYPE_ARGUMENT], id, child_fd);
             if(device_type == HUB_DEVICE){
+                if(!has_children) has_children = true;
                 device_type = HUB_DEVICE | response->arguments[DEVICE_TYPE_ARGUMENT];
-                if(device_type != HUB_DEVICE && !has_children) has_children = true;
             }
             children++;
         }
