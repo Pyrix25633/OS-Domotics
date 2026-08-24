@@ -335,6 +335,8 @@ void* bottom_up_handler(void* arg){
         if(pthread_mutex_lock(&data_mutex) !=0){
             response.response_code = UNABLE_TO_LOCK_MUTEX;
             response.command_code = NULL_COMMAND;
+            response.source = id;
+            response.arguments_size = 0;
         }
         else{
             //if the response has errors then it's just forwarded
