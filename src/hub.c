@@ -1,7 +1,6 @@
 #define _XOPEN_SOURCE 700
 
 #include "hub.h"
-#include "stdio.h"
 
 // - Explicit control device data -
 
@@ -98,7 +97,7 @@ error_code_t top_down_handler(){
             if(request.destination == id){
                 if(has_children){
                     if(IS_INFO(code)){
-                        error_code_t error_code = forward_to_children(&request);                       
+                        error_code = forward_to_children(&request);                  
                         if(IS_ERROR(error_code)){
                             response.response_code = error_code;
                             simulate_processing_time();
@@ -171,11 +170,12 @@ error_code_t top_down_handler(){
                         }
                         if(pthread_mutex_unlock(&data_mutex) !=0){
                             error_code = UNABLE_TO_UNLOCK_MUTEX;
+                            force_exit = true;
                         }     
                         continue;
                     }
                     if(IS_DELETE(code)){
-                        error_code_t error_code = forward_to_children(&request);
+                        error_code = forward_to_children(&request);
                         if(IS_ERROR(error_code)){
                             response.response_code = error_code;
                             simulate_processing_time();
@@ -184,6 +184,7 @@ error_code_t top_down_handler(){
                         }
                         if(pthread_mutex_unlock(&data_mutex) !=0){
                             error_code = UNABLE_TO_UNLOCK_MUTEX;
+                            force_exit = true;
                         }     
                         continue;
                     }//else
@@ -231,18 +232,13 @@ error_code_t top_down_handler(){
             }
             else{
                 routing_data_t *routing_information = find_routing_data(routing_table, request.destination);
-                if(IS_ERROR(error_code)){
-                    response.response_code = error_code;
-                    simulate_processing_time();
-                    write_pipe_response(&response, response_buffer);
-                    return error_code;
-                }//else
+                int destination = (routing_information == NULL ? NO_ROUTE : routing_information->next_hop_fd);
                 if(pthread_mutex_unlock(&data_mutex) !=0){
                     error_code = UNABLE_TO_UNLOCK_MUTEX;
                     force_exit = true;
                     continue;
                 }  
-                error_code = send_to_child(&request,(routing_information == NULL ? NO_ROUTE : routing_information->next_hop_fd));
+                error_code = send_to_child(&request, destination);
             }
         }                
     }
@@ -283,7 +279,10 @@ pending_t* init_pending(command_code_t command_code){
 
     pending->pending_devices_size = children;
     pending->pending_devices = malloc(sizeof(device_id_t)*pending->pending_devices_size);
-    if(pending->pending_devices == NULL) return NULL;
+    if(pending->pending_devices == NULL) {
+        free(pending);
+        return NULL;
+    }
 
     pending->command_code = command_code;
     pending->next = NULL;
@@ -443,7 +442,7 @@ void update_pending(pending_t *pending, response_t *response){
     }
 
     routing_data_t *routing_information = find_routing_data(routing_table, response->source);
-    //if it's a hub Ah device the response code can be OK while the additional argument can provide an error
+    //if it's a hub device the response code can be OK while the additional argument could provide an error
     if(routing_information != NULL && IS_HUB(routing_information->type)){
         if((IS_INFO(response->command_code) &&  response->arguments_size == 3 && response->arguments[ADDITIONAL_INFO_ARGUMENT] == CHILD_ERROR) || 
             (IS_SWITCH(response->command_code) && response->arguments_size == 1 && response->arguments[ADDITIONAL_SWITCH_ARGUMENT] == CHILD_ERROR) ||
@@ -497,9 +496,16 @@ void handle_shutdown(error_code_t error) {
     error_code_t error_code  = OK;
     device_id_t current_child_id;
 
-    if(!is_bottom_up_thread && pthread_cancel(bottom_up_thread) != 0 && pthread_join(bottom_up_thread, NULL) != 0){
-        error_code = UNABLE_TO_CANCEL_THREAD;
-        print_error(STDERR_FILENO, error_code, id, "in shutdown");
+    if(!is_bottom_up_thread){
+        if(pthread_cancel(bottom_up_thread) != 0) {
+            error_code = UNABLE_TO_CANCEL_THREAD;
+        }
+        if(pthread_join(bottom_up_thread, NULL) != 0) {
+            error_code = UNABLE_TO_JOIN_THREAD;
+        }
+        if(IS_ERROR(error_code)) {
+            print_error(STDERR_FILENO, error_code, id, "while canceling bottom up thread");
+        }
     }
 
     if(has_children){
@@ -551,6 +557,7 @@ void link_response(response_t *response){
 
 void add_child(response_t *response){
     error_code_t error_code = OK;
+    error_code_t pipe_error = OK;
     int child_fd;
     //direct child
     if(response->arguments[PARENT_ID_ARGUMENT] == id){
@@ -558,12 +565,11 @@ void add_child(response_t *response){
         if(!IS_ERROR(error_code)){
             //if I already have the device id in my routing table I need to close the pipe before replacing the data
             routing_data_t *child = find_routing_data(routing_table, response->source);
-            if(child != NULL && child->parent_id == id) error_code = close_pipe(child->next_hop_fd);
-
+            if(child != NULL && child->parent_id == id) pipe_error = close_pipe(child->next_hop_fd);
             error_code = insert_direct_routing_data(routing_table, response->source, response->arguments[DEVICE_TYPE_ARGUMENT], id, child_fd);
             if(device_type == HUB_DEVICE){
-                if(!has_children) has_children = true;
                 device_type = HUB_DEVICE | response->arguments[DEVICE_TYPE_ARGUMENT];
+                if(device_type != HUB_DEVICE && !has_children) has_children = true;
             }
             children++;
         }
@@ -573,12 +579,11 @@ void add_child(response_t *response){
         if(!IS_ERROR(error_code)){
             update_type_to_not_empty(routing_table, find_routing_data(routing_table, response->source));
             if(device_type == HUB_DEVICE){
-                if(!has_children) has_children = true;
                 device_type = HUB_DEVICE | response->arguments[DEVICE_TYPE_ARGUMENT];
             }
         }
     }
-    response->response_code = error_code;
+    response->response_code = (pipe_error != OK && error_code == OK ? pipe_error : error_code);
 }
 
 void info_response(response_t *response, pending_t *solved_response){
