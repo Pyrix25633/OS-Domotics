@@ -15,7 +15,7 @@ WINDOW *input_win;
 // - Concurrency management data -
 
 pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to access and modify device data safely
-pthread_mutex_t shutdown_mutex = PTHREAD_MUTEX_INITIALIZER; // Used to ensure shutdown is not called concurrently to avoid remove, close, join an cancel errors
+volatile atomic_flag handle_shutdown_called = ATOMIC_FLAG_INIT; // Used to ensure shutdown is not called more than once to avoid remove, close, join an cancel errors
 pthread_t stderr_thread; // Used for reading from redirected `stderr`
 pthread_t responses_thread; // Used for reading device responses from pipe
 
@@ -29,7 +29,6 @@ int rcv_responses_fd;
 int next_hop_fd;
 volatile bool force_exit = false;
 volatile bool pending_shutdown = false;
-volatile atomic_flag handle_shutdown_called = ATOMIC_FLAG_INIT; // Used to prevent deadlock, since a mutex lock is not a cancellation point
 char request_buffer[MAX_REQUEST_SIZE];
 char response_buffer[MAX_RESPONSE_SIZE];
 request_t request;
@@ -92,7 +91,9 @@ int main(int argc, char *argv[]) {
         error_code = process_user_command(&user_command, user_buffer);
     }
 
-    handle_shutdown(error_code, false);
+    if(!pending_shutdown) { // If EOF but exit command has been executed and it's waiting the responses
+        handle_shutdown(error_code, false);
+    }
 }
 
 error_code_t process_user_command(user_command_t *user_command, char *string) {
@@ -1040,10 +1041,6 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
         return;
     }
     error_code_t error_code = OK;
-    if(pthread_mutex_lock(&shutdown_mutex) != 0) {
-        error_code = UNABLE_TO_LOCK_MUTEX;
-        print_error(STDERR_FILENO, error_code, id, "while acquiring shutdown mutex");
-    }
     error_code_t tmp = end_responses_fifo();
     if(IS_ERROR(tmp)) {
         error_code = tmp;
