@@ -1394,6 +1394,7 @@ ssize_t input(char *buffer, size_t size) {
     }
     else {
         size_t i = 0;
+        bool new_line = false;
         do {
             n = read(STDIN_FILENO, &buffer[i], 1);
             if(n == 0) {
@@ -1402,10 +1403,27 @@ ssize_t input(char *buffer, size_t size) {
             else if(n != 1) {
                 return -UNABLE_TO_READ_FILE;
             }
+            new_line = buffer[i] == '\n';
             i++;
-        } while(buffer[i - 1] != '\n' && i < size);
+        } while(!new_line && i < size - 1);
 
-        buffer[--i] = '\0'; // Remove '\n'
+        if(new_line) {
+            buffer[--i] = '\0'; // Remove '\n'
+        }
+        else {
+            char c;
+            do {
+                n = read(STDIN_FILENO, &c, 1);
+                if(n == 0) {
+                    return EOF;
+                }
+                else if(n != 1) {
+                    return -UNABLE_TO_READ_FILE;
+                }
+            } while(c != '\n');
+
+            return -BUFFER_TOO_SHORT;
+        }
 
         return i;
     }

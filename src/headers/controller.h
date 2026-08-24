@@ -494,7 +494,8 @@ int output(char *format, ...);
  * 
  * @returns The number of chars read (if positive),
  * `EOF` if the stream has been closed,
- * `-UNABLE_TO_READ_FILE` if there was an error while reading
+ * `-UNABLE_TO_READ_FILE` if there was an error while reading,
+ * `-BUFFER_TOO_SHORT` if the buffer was too short
  */
 ssize_t input(char *buffer, size_t size);
 
