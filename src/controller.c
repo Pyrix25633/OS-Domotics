@@ -94,6 +94,11 @@ int main(int argc, char *argv[]) {
     if(!pending_shutdown) { // If EOF but exit command has been executed and it's waiting the responses
         handle_shutdown(error_code, false);
     }
+    else {
+        if(pthread_join(responses_thread, NULL) != 0) {
+            print_error(STDERR_FILENO, UNABLE_TO_JOIN_THREAD, id, "while shutting down");
+        }
+    }
 }
 
 error_code_t process_user_command(user_command_t *user_command, char *string) {
