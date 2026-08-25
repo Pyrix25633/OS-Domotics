@@ -202,9 +202,11 @@ error_code_t execute_user_command(user_command_t *user_command);
  * 
  * @param output_data If device data has to be printed
  * 
- * @returns The number of directly connected devices
+ * @returns The number of directly connected devices (if positive),
+ * `-UNABLE_TO_LOCK_MUTEX` if the mutex could not be locked,
+ * `-UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked
  */
-u_int16_t execute_list_command(bool output_data);
+int32_t execute_list_command(bool output_data);
 
 /**
  * Created a new device

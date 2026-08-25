@@ -442,8 +442,14 @@ error_code_t check_user_command(user_command_t *user_command) {
 error_code_t execute_user_command(user_command_t *user_command) {
     if(IS_MESSAGE(user_command->code)) {
         if(user_command->code == INFO_COMMAND && user_command->target == id) {
-            output("Controller: state: %s, number of directly connected devices: %u",
-                state == STATE_ON ? "on" : "off", execute_list_command(false));
+            simulate_processing_time();
+            int32_t n = execute_list_command(false);
+            if(IS_RETURN_ERROR(n)) {
+                print_error(STDERR_FILENO, ERROR_FROM_RETURN(n), id, "while listing devices");
+                return ERROR_FROM_RETURN(n);
+            }
+            output("> Controller: state: %s, number of directly connected devices: %d",
+                state == STATE_ON ? "on" : "off", n);
             return OK;
         }
         // Forward request to destination
@@ -457,13 +463,20 @@ error_code_t execute_user_command(user_command_t *user_command) {
             return execute_add_command(user_command->argument);
         }
         else if(user_command->code == LIST_COMMAND) {
-            output("Controller: active devices:");
-            output("Number of directly connected devices: %u", execute_list_command(true));
+            simulate_processing_time();
+            output("> Controller: active devices:");
+            int32_t n = execute_list_command(true);
+            if(IS_RETURN_ERROR(n)) {
+                print_error(STDERR_FILENO, ERROR_FROM_RETURN(n), id, "while listing devices");
+                return ERROR_FROM_RETURN(n);
+            }
+            output("> Number of directly connected devices: %d", n);
         }
         else if(user_command->code == SWITCH_MAIN_COMMAND) {
             if(state != user_command->argument) {
+                simulate_processing_time();
                 state = user_command->argument;
-                output("Controller: system is now %s", state == STATE_ON ? "on" : "off");
+                output("> Controller: system is now %s", state == STATE_ON ? "on" : "off");
             }
         }
         else if(user_command->code == SLEEP_COMMAND) {
@@ -476,7 +489,10 @@ error_code_t execute_user_command(user_command_t *user_command) {
     return OK;
 }
 
-u_int16_t execute_list_command(bool output_data) {
+int32_t execute_list_command(bool output_data) {
+    if(pthread_mutex_lock(&data_mutex) != 0) {
+        return -UNABLE_TO_LOCK_MUTEX;
+    }
     routing_data_t *current = find_all_routing_data(routing_table, id, NULL);
     u_int16_t count = 0;
     while(current != NULL) { // Loop all devices
@@ -487,6 +503,10 @@ u_int16_t execute_list_command(bool output_data) {
             output_device(current);
         }
         current = find_all_routing_data(routing_table, id, current);
+    }
+    if(pthread_mutex_unlock(&data_mutex) != 0) {
+        force_exit = true;
+        return -UNABLE_TO_UNLOCK_MUTEX;
     }
     return count;
 }
@@ -559,7 +579,9 @@ error_code_t execute_exit_command() {
     if(direct == NULL) { // No children, can directly terminate
         force_exit = true;
     }
-    pending_shutdown = true;
+    else {
+        pending_shutdown = true;
+    }
     while(direct != NULL) {
         request.destination = direct->id;
         error_code = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, direct->next_hop_fd); // Send delete request to all direct children
@@ -599,7 +621,7 @@ error_code_t execute_scenario() {
 void output_device(routing_data_t *device) {
     char type[DEVICE_TYPE_SIZE];
     format_device_type(device->type, type);
-    output("%s, ID: %d, Parent ID: %d, PID: %d", type, device->id, device->parent_id, device->pid);
+    output("  %s, ID: %d, Parent ID: %d, PID: %d", type, device->id, device->parent_id, device->pid);
 }
 
 void output_response(response_t *response) {
