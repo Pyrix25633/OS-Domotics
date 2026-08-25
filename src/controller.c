@@ -442,6 +442,7 @@ error_code_t check_user_command(user_command_t *user_command) {
 error_code_t execute_user_command(user_command_t *user_command) {
     if(IS_MESSAGE(user_command->code)) {
         if(user_command->code == INFO_COMMAND && user_command->target == id) {
+            simulate_processing_time();
             int32_t n = execute_list_command(false);
             if(IS_RETURN_ERROR(n)) {
                 print_error(STDERR_FILENO, ERROR_FROM_RETURN(n), id, "while listing devices");
@@ -462,7 +463,6 @@ error_code_t execute_user_command(user_command_t *user_command) {
             return execute_add_command(user_command->argument);
         }
         else if(user_command->code == LIST_COMMAND) {
-            simulate_processing_time();
             output("> Controller: active devices:");
             int32_t n = execute_list_command(true);
             if(IS_RETURN_ERROR(n)) {
