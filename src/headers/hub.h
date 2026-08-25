@@ -306,4 +306,8 @@ error_code_t forward_to_children(request_t *request);
  */
 void update_type(device_id_t child_id);
 
+bool get_mutex(error_code_t *error_code);
+
+bool release_mutex(error_code_t *error_code);
+
 #endif

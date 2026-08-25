@@ -79,7 +79,7 @@ error_code_t top_down_handler(){
             simulate_processing_time();
             if(get_mutex(&error_code)){
                 write_pipe_response(&response, response_buffer);
-                release_mutex(error_code);
+                release_mutex(&error_code);
             }
             continue;
         }
@@ -744,16 +744,16 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
 bool get_mutex(error_code_t *error_code){
     if(pthread_mutex_lock(&data_mutex) != 0){
         *error_code = UNABLE_TO_LOCK_MUTEX;
-        print_error(STDERR_FILENO, error_code, id, "while trying to get the mutex");
+        print_error(STDERR_FILENO, *error_code, id, "while trying to get the mutex");
         return false;
     }
     return true;
 }
 
 bool release_mutex(error_code_t *error_code){
-    if(pthread_mutex_lock(&data_mutex) != 0){
+    if(pthread_mutex_unlock(&data_mutex) != 0){
         *error_code = UNABLE_TO_UNLOCK_MUTEX;
-        print_error(STDERR_FILENO, error_code, id, "while trying to release the mutex");
+        print_error(STDERR_FILENO, *error_code, id, "while trying to release the mutex");
         force_exit = true;
         return false;
     }
