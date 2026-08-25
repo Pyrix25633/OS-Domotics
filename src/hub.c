@@ -77,7 +77,10 @@ error_code_t top_down_handler(){
             response.command_code = NULL_COMMAND;
             response.response_code = error_code;
             simulate_processing_time();
-            write_pipe_response(&response, response_buffer);
+            if(get_mutex(&error_code)){
+                write_pipe_response(&response, response_buffer);
+                release_mutex(error_code);
+            }
             continue;
         }
         //no errors occurred while reading the request
@@ -86,26 +89,20 @@ error_code_t top_down_handler(){
         response.response_code = OK;
 
         //trying to get the mutex
-        if(pthread_mutex_lock(&data_mutex) !=0){
-            error_code = UNABLE_TO_LOCK_MUTEX;
-            response.response_code = error_code;
-            simulate_processing_time();
-            write_pipe_response(&response, response_buffer);
-            continue;
-        }
-        else{
+        if(get_mutex(&error_code)){
             if(request.destination == id){
                 if(has_children){
                     if(IS_INFO(code)){
                         error_code = forward_to_children(&request);                  
                         if(IS_ERROR(error_code)){
                             response.response_code = error_code;
-                            simulate_processing_time();
-                            write_pipe_response(&response, response_buffer);
-                        }
-                        if(pthread_mutex_unlock(&data_mutex) !=0){
-                            error_code = UNABLE_TO_UNLOCK_MUTEX;
-                            force_exit = true;
+                            if(release_mutex(&error_code)){
+                                simulate_processing_time();
+                                if(get_mutex(&error_code)) {
+                                    write_pipe_response(&response, response_buffer);
+                                    release_mutex(&error_code);
+                                }
+                            }
                         }     
                         continue;
                     }
@@ -122,31 +119,34 @@ error_code_t top_down_handler(){
                         }
                         else{
                             response.response_code = UNEXPECTED_COMMAND;
-                            simulate_processing_time();
-                            write_pipe_response(&response, response_buffer);
-                            if(pthread_mutex_unlock(&data_mutex) !=0){
-                                error_code = UNABLE_TO_UNLOCK_MUTEX;
-                                force_exit = true;
-                            } 
+                            if(release_mutex(&error_code)){
+                                simulate_processing_time();
+                                if(get_mutex(&error_code)) {
+                                    write_pipe_response(&response, response_buffer);
+                                    release_mutex(&error_code);
+                                }
+                            }
                             continue;
                         }
                         response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
                         response.arguments_size = 2;
-                        simulate_processing_time();
-                        write_pipe_response(&response, response_buffer);
-                        if(parent_changed){
-                            replay_history(&response);
-                            response.source = id;
-                        }
-                        if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD) {
-                            //in the check_pending I take the response source to check it because it 
-                            //was in the bottom up but I need the child id (request argument) to be the source
-                            response.source = request.argument;
-                            check_complete_and_send(&response);
-                        }
-                        if(pthread_mutex_unlock(&data_mutex) !=0){
-                            error_code = UNABLE_TO_UNLOCK_MUTEX;
-                            force_exit = true;
+                        if(release_mutex(&error_code)) {
+                            simulate_processing_time();
+                            if(get_mutex(&error_code)) {
+                                write_pipe_response(&response, response_buffer);
+
+                                if(parent_changed){
+                                    replay_history(&response);
+                                    response.source = id;
+                                }
+                                if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD) {
+                                    //in the check_pending I take the response source to check it because it 
+                                    //was in the bottom up but I need the child id (request argument) to be the source
+                                    response.source = request.argument;
+                                    check_complete_and_send(&response);
+                                }
+                                release_mutex(&error_code);
+                            }
                         }
                         continue;
                     }
@@ -159,43 +159,50 @@ error_code_t top_down_handler(){
 
                             if(IS_ERROR(error_code)){
                                 response.response_code = error_code;
-                                simulate_processing_time();
-                                write_pipe_response(&response, response_buffer);
+                                if(release_mutex(&error_code)){
+                                    simulate_processing_time();
+                                    if(get_mutex(&error_code)) {
+                                        write_pipe_response(&response, response_buffer);
+                                        release_mutex(&error_code);
+                                    }
+                                }
                             }                            
                         }
                         else{
                             response.response_code = UNEXPECTED_COMMAND;
-                            simulate_processing_time();
-                            write_pipe_response(&response, response_buffer);
-                        }
-                        if(pthread_mutex_unlock(&data_mutex) !=0){
-                            error_code = UNABLE_TO_UNLOCK_MUTEX;
-                            force_exit = true;
-                        }     
+                            if(release_mutex(&error_code)){
+                                simulate_processing_time();
+                                if(get_mutex(&error_code)) {
+                                    write_pipe_response(&response, response_buffer);
+                                    release_mutex(&error_code);
+                                }
+                            }
+                        }    
                         continue;
                     }
                     if(IS_DELETE(code)){
                         error_code = forward_to_children(&request);
                         if(IS_ERROR(error_code)){
                             response.response_code = error_code;
-                            simulate_processing_time();
-                            write_pipe_response(&response, response_buffer);
-                            force_exit = true;
-                        }
-                        if(pthread_mutex_unlock(&data_mutex) !=0){
-                            error_code = UNABLE_TO_UNLOCK_MUTEX;
-                            force_exit = true;
-                        }     
+                            if(release_mutex(&error_code)){
+                                simulate_processing_time();
+                                if(get_mutex(&error_code)) {
+                                    write_pipe_response(&response, response_buffer);
+                                    force_exit = true;
+                                    release_mutex(&error_code);
+                                }
+                            }
+                        }   
                         continue;
                     }//else
                     response.response_code = UNEXPECTED_COMMAND;
-                    simulate_processing_time();
-                    write_pipe_response(&response, response_buffer);
-
-                    if(pthread_mutex_unlock(&data_mutex) !=0){
-                        error_code = UNABLE_TO_UNLOCK_MUTEX;
-                        force_exit = true;
-                    }
+                        if(release_mutex(&error_code)){
+                            simulate_processing_time();
+                            if(get_mutex(&error_code)) {
+                                write_pipe_response(&response, response_buffer);
+                                release_mutex(&error_code);
+                            }
+                        }
                     continue;
                 }
                 else{//the hub doesn't have children
@@ -217,27 +224,24 @@ error_code_t top_down_handler(){
                     else{
                         response.response_code = UNEXPECTED_COMMAND;
                     }                        
-                    simulate_processing_time();
-                    write_pipe_response(&response, response_buffer);
-                    if(parent_changed){
-                        replay_history(&response);
-                        response.source = id;
+                    if(release_mutex(&error_code)){
+                        simulate_processing_time();
+                        if(get_mutex(&error_code)) {
+                            write_pipe_response(&response, response_buffer);
+                            if(parent_changed){
+                                replay_history(&response);
+                                response.source = id;
+                            }
+                            release_mutex(&error_code);
+                        }
                     }
-                    if(pthread_mutex_unlock(&data_mutex) !=0){
-                        error_code = UNABLE_TO_UNLOCK_MUTEX;
-                        force_exit = true;
-                    }    
                     continue;
                 }
             }
             else{
                 routing_data_t *routing_information = find_routing_data(routing_table, request.destination);
                 int destination = (routing_information == NULL ? NO_ROUTE : routing_information->next_hop_fd);
-                if(pthread_mutex_unlock(&data_mutex) !=0){
-                    error_code = UNABLE_TO_UNLOCK_MUTEX;
-                    force_exit = true;
-                    continue;
-                }  
+                if(!release_mutex(&error_code)) continue;
                 error_code = send_to_child(&request, destination);
             }
         }                
@@ -308,10 +312,12 @@ error_code_t send_to_child(request_t *request, int next_hop_fd){
         response.arguments_size = 1;
         response.arguments[CHILD_ID_ARGUMENT] = request->destination;
         simulate_processing_time();
-        write_pipe_response(&response, response_buffer);
+        if(get_mutex(&error_code)) {
+            write_pipe_response(&response, response_buffer);
+            release_mutex(&error_code);
+        }
     }
     else{
-        simulate_processing_time();
         write_pipe_request(request, request_buffer, next_hop_fd);
     }
     return error_code;
@@ -733,4 +739,23 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
     else if(write(snd_request_fd, buffer_write, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending request");
     }
+}
+
+bool get_mutex(error_code_t *error_code){
+    if(pthread_mutex_lock(&data_mutex) != 0){
+        *error_code = UNABLE_TO_LOCK_MUTEX;
+        print_error(STDERR_FILENO, error_code, id, "while trying to get the mutex");
+        return false;
+    }
+    return true;
+}
+
+bool release_mutex(error_code_t *error_code){
+    if(pthread_mutex_lock(&data_mutex) != 0){
+        *error_code = UNABLE_TO_UNLOCK_MUTEX;
+        print_error(STDERR_FILENO, error_code, id, "while trying to release the mutex");
+        force_exit = true;
+        return false;
+    }
+    return true;
 }
