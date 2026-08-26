@@ -481,7 +481,20 @@ bool handle_own_reply(response_t *child_response){
     if(!lock_data()){
         return false; //without the mutex the reply can not be matched, it is left to be forwarded verbatim
     }
+    //the match and the mirrored times are read in the same lock, so the reply carries a consistent snapshot
     bool ours = take_pending(child_response->command_code);
+    if(ours && IS_INFO(child_response->command_code)){
+        //a live state different from the last one the timer commanded means the child was switched manually,
+        //so a manual override is reported instead of a definite state (the next command clears it on its own).
+        //a control device child with nothing below answers with an undefined state, which is not a divergence
+        //and is forwarded as it is
+        if(child_response->arguments[STATE_ARGUMENT] != state
+            && child_response->arguments[STATE_ARGUMENT] != UNDEFINED_STATE){
+            child_response->arguments[STATE_ARGUMENT] = STATE_MANUAL_OVERRIDE;
+        }
+        child_response->arguments[BEGIN_ARGUMENT] = begin;
+        child_response->arguments[END_ARGUMENT] = end;
+    }
     unlock_data();
     if(!ours){
         return false;
@@ -495,19 +508,6 @@ bool handle_own_reply(response_t *child_response){
         //the child info reply already carries its live state and its on/open time in the first two positions,
         //which are kept as they are, so a parent reads them where every other device puts them; begin and end
         //replace whatever the child put after them
-        if(lock_data()){
-            //a live state different from the last one the timer commanded means the child was switched manually,
-            //so a manual override is reported instead of a definite state (the next command clears it on its own).
-            //a control device child with nothing below answers with an undefined state, which is not a divergence
-            //and is forwarded as it is
-            if(child_response->arguments[STATE_ARGUMENT] != state
-                && child_response->arguments[STATE_ARGUMENT] != UNDEFINED_STATE){
-                child_response->arguments[STATE_ARGUMENT] = STATE_MANUAL_OVERRIDE;
-            }
-            child_response->arguments[BEGIN_ARGUMENT] = begin;
-            child_response->arguments[END_ARGUMENT] = end;
-            unlock_data();
-        }
         child_response->arguments_size = MAX_TIMER_ARGUMENTS;
     }
     else if(IS_DELETE(child_response->command_code)){
@@ -709,34 +709,32 @@ void create_info_response(){
         response.arguments[BEGIN_ARGUMENT] = begin;
         response.arguments[END_ARGUMENT] = end;
         response.arguments_size = MAX_TIMER_ARGUMENTS;
-        unlock_data();
-        return;
     }
     //the reply is registered before the request leaves, so it can never arrive before the timer can match it
-    if(!add_pending(request.command_code)){
+    else if(!add_pending(request.command_code)){
         response.response_code = UNABLE_TO_ALLOCATE_HEAP; //the awaited reply could not be tracked
-        unlock_data();
-        return;
     }
-    //propagate the info down, rebuilt from the struct with the child as destination
-    request.destination = child_id;
-    error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
-    if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
-        take_pending(request.command_code); //the request never left, so no reply has to be awaited for it
-        //a formatting error is the timer own fault, a failed write means the child is gone and is dropped
-        if(!IS_ERROR(forward_code)){
-            error_code_t drop_code = drop_child(); //already holding the lock, so drop directly
-            if(IS_ERROR(drop_code)){
-                print_error(STDERR_FILENO, drop_code, id, "while releasing the unreachable child");
+    else{
+        //propagate the info down, rebuilt from the struct with the child as destination
+        request.destination = child_id;
+        error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
+        if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
+            take_pending(request.command_code); //the request never left, so no reply has to be awaited for it
+            //a formatting error is the timer own fault, a failed write means the child is gone and is dropped
+            if(!IS_ERROR(forward_code)){
+                error_code_t drop_code = drop_child(); //already holding the lock, so drop directly
+                if(IS_ERROR(drop_code)){
+                    print_error(STDERR_FILENO, drop_code, id, "while releasing the unreachable child");
+                }
             }
+            response.response_code = UNABLE_TO_WRITE_PIPE;
         }
-        response.response_code = UNABLE_TO_WRITE_PIPE;
-        unlock_data();
-        return;
+        else{
+            //the info response is built and sent by the bottom-up thread when the child replies, not here
+            defer_response = true;
+        }
     }
     unlock_data();
-    //the info response is built and sent by the bottom-up thread when the child replies, not here
-    defer_response = true;
 }
 
 void create_link_response(){
@@ -923,52 +921,48 @@ void create_switch_response(){
         response.response_code = UNABLE_TO_LOCK_MUTEX;
         return;
     }
+    //the switch label must match the child type (power for a bulb, open or close for a window or a fridge)
+    bool valid = has_child && ((IS_BULB_LIKE(child_type) && SWITCH_LABEL(code)==SWITCH_POWER)
+        || ((IS_WINDOW_LIKE(child_type) || IS_FRIDGE_LIKE(child_type))
+            && (SWITCH_LABEL(code)==SWITCH_OPEN || SWITCH_LABEL(code)==SWITCH_CLOSE)));
     if(!has_child){
         response.response_code = DEVICE_NOT_FOUND; //no child to mirror
-        unlock_data();
-        return;
     }
-    //the switch label must match the child type (power for a bulb, open or close for a window or a fridge)
-    bool valid = (IS_BULB_LIKE(child_type) && SWITCH_LABEL(code)==SWITCH_POWER)
-        || ((IS_WINDOW_LIKE(child_type) || IS_FRIDGE_LIKE(child_type))
-            && (SWITCH_LABEL(code)==SWITCH_OPEN || SWITCH_LABEL(code)==SWITCH_CLOSE));
-    if(!valid){
+    else if(!valid){
         response.response_code = UNEXPECTED_COMMAND;
-        unlock_data();
-        return;
     }
     //the reply is registered before the request leaves, so it can never arrive before the timer can match it
-    if(!add_pending(code)){
+    else if(!add_pending(code)){
         response.response_code = UNABLE_TO_ALLOCATE_HEAP; //the awaited reply could not be tracked
-        unlock_data();
-        return;
     }
-    //propagate the switch down, rebuilt from the struct with the child as destination
-    request.destination = child_id;
-    error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
-    if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
-        take_pending(code); //the request never left, so no reply has to be awaited for it
-        //a formatting error is the timer own fault, a failed write means the child is gone and is dropped
-        if(!IS_ERROR(forward_code)){
-            error_code_t drop_code = drop_child(); //already holding the lock, so drop directly
-            if(IS_ERROR(drop_code)){
-                print_error(STDERR_FILENO, drop_code, id, "while releasing the unreachable child");
+    else{
+        //propagate the switch down, rebuilt from the struct with the child as destination
+        request.destination = child_id;
+        error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
+        if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
+            take_pending(code); //the request never left, so no reply has to be awaited for it
+            //a formatting error is the timer own fault, a failed write means the child is gone and is dropped
+            if(!IS_ERROR(forward_code)){
+                error_code_t drop_code = drop_child(); //already holding the lock, so drop directly
+                if(IS_ERROR(drop_code)){
+                    print_error(STDERR_FILENO, drop_code, id, "while releasing the unreachable child");
+                }
             }
+            response.response_code = UNABLE_TO_WRITE_PIPE;
         }
-        response.response_code = UNABLE_TO_WRITE_PIPE;
-        unlock_data();
-        return;
-    }
-    //mirror the state the switch produces on the child; open/close in the off position is a no-op
-    if(SWITCH_POSITION(code)==POSITION_ON){
-        state = (SWITCH_LABEL(code)==SWITCH_CLOSE) ? STATE_OFF : STATE_ON;
-    }
-    else if(SWITCH_LABEL(code)==SWITCH_POWER){
-        state = STATE_OFF;
+        else{
+            //mirror the state the switch produces on the child; open/close in the off position is a no-op
+            if(SWITCH_POSITION(code)==POSITION_ON){
+                state = (SWITCH_LABEL(code)==SWITCH_CLOSE) ? STATE_OFF : STATE_ON;
+            }
+            else if(SWITCH_LABEL(code)==SWITCH_POWER){
+                state = STATE_OFF;
+            }
+            //the response is sent by the bottom-up thread when the child replies, not here
+            defer_response = true;
+        }
     }
     unlock_data();
-    //the response is sent by the bottom-up thread when the child replies, not here
-    defer_response = true;
 }
 
 //deleting a control device terminates the branch below it, so the delete is propagated to the child and the
@@ -981,30 +975,28 @@ void create_delete_response(){
     }
     if(!has_child){
         force_exit = true; //nothing below to terminate, the response is sent and the main loop ends
-        unlock_data();
-        return;
     }
     //the reply is registered before the request leaves, so it can never arrive before the timer can match it
-    if(!add_pending(request.command_code)){
+    else if(!add_pending(request.command_code)){
         response.response_code = UNABLE_TO_ALLOCATE_HEAP; //the awaited reply could not be tracked
         force_exit = true;
-        unlock_data();
-        return;
     }
-    //propagate the delete down, rebuilt from the struct with the child as destination
-    request.destination = child_id;
-    error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
-    if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
-        take_pending(request.command_code); //the request never left, so no reply has to be awaited for it
-        //the child can not be reached, its deletion is left to the controller and the timer terminates anyway
-        response.response_code = UNABLE_TO_WRITE_PIPE;
-        force_exit = true;
-        unlock_data();
-        return;
+    else{
+        //propagate the delete down, rebuilt from the struct with the child as destination
+        request.destination = child_id;
+        error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
+        if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
+            take_pending(request.command_code); //the request never left, so no reply has to be awaited for it
+            //the child can not be reached, its deletion is left to the controller and the timer terminates anyway
+            response.response_code = UNABLE_TO_WRITE_PIPE;
+            force_exit = true;
+        }
+        else{
+            //the response is sent by the bottom-up thread when the child confirms, and the shutdown follows it
+            defer_response = true;
+        }
     }
     unlock_data();
-    //the response is sent by the bottom-up thread when the child confirms, and the shutdown follows it
-    defer_response = true;
 }
 
 //opening in writing does not block because the child already opened its down pipe in reading at startup
