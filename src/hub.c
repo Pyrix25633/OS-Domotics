@@ -75,7 +75,7 @@ error_code_t top_down_handler(){
         if(!send){
             response.command_code = request.command_code;
             if(request.destination == id){
-                send = execute_command(&request, &response);
+                send = execute_command_top_down(&request, &response);
             }
             else{
                 send = send_to_child(&request, &response);
@@ -113,7 +113,7 @@ error_code_t top_down_handler(){
     return response.response_code;
 }
 
-bool execute_command(request_t *request, response_t *response){
+bool execute_command_top_down(request_t *request, response_t *response){
     command_code_t code = response->command_code;
 
     if(IS_LINK(code)){
@@ -277,6 +277,7 @@ bool send_to_child(request_t *request, response_t *response){
     if(destination == NO_ROUTE){
         response->response_code = ROUTE_NOT_FOUND;
         response->arguments[CHILD_ID_ARGUMENT] = request->destination;
+        response->arguments_size = 1;
         return true;
     }
     write_pipe_request(request, request_buffer, destination);
@@ -299,10 +300,7 @@ void* bottom_up_handler(void* arg){
             error_code = parse_response(&response, response_buffer, MAX_RESPONSE_SIZE);
         }
         if(pthread_mutex_lock(&data_mutex) !=0){
-            response.response_code = UNABLE_TO_LOCK_MUTEX;
-            response.command_code = NULL_COMMAND;
-            response.source = id;
-            response.arguments_size = 0;
+            print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "while processing the child response");
         }
         else{
             //if the response has errors then it's just forwarded
@@ -337,20 +335,19 @@ void* bottom_up_handler(void* arg){
                         }
                         continue;
                     }
-                    else{
-                        if(IS_DELETE(response.command_code)){
-                            error_code = remove_child(&response, NO_ID);
+                    if(IS_DELETE(response.command_code)){
+                        error_code = response.response_code;
+                        if(!remove_child(&response, NO_ID)){
                             //i don't have to modify the response
-                            if(IS_ERROR(error_code)){
-                                print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
-                            }
-                            write_pipe_response(&response, response_buffer);
-                            check_complete_and_send(&response);
-                            if(pthread_mutex_unlock(&data_mutex) !=0){
-                                force_exit = true;
-                            }
-                            continue;
+                            print_error(STDERR_FILENO, response.response_code, id, "while closing the child pipe");
                         }
+                        response.response_code = error_code;
+                        write_pipe_response(&response, response_buffer);
+                        check_complete_and_send(&response);
+                        if(pthread_mutex_unlock(&data_mutex) !=0){
+                            force_exit = true;
+                        }
+                        continue;
                     }
                 }
             }
@@ -604,7 +601,8 @@ bool link_change_parent(request_t *request, response_t *response){
 }
 
 bool remove_child(response_t *response, device_id_t parent_id){
-    routing_data_t *child = find_routing_data(routing_table, response->arguments[CHILD_ID_ARGUMENT]);
+    device_id_t child_id = (parent_id == NO_ID ? response->source : response->arguments[CHILD_ID_ARGUMENT]);
+    routing_data_t *child = find_routing_data(routing_table, child_id);
     if(child == NULL){
         response->response_code = CHILD_NOT_FOUND;
         return false;
@@ -621,7 +619,7 @@ bool remove_child(response_t *response, device_id_t parent_id){
             return false;
         }
     }
-    remove_routing_data(routing_table, response->arguments[CHILD_ID_ARGUMENT], (parent_id == NO_ID ? child->parent_id : parent_id));
+    remove_routing_data(routing_table, child_id, (parent_id == NO_ID ? child->parent_id : parent_id));
     //if the new parent stills one of my child I need to update it's type
     //otherwise I need to do it only upwards from its parent
 
@@ -633,7 +631,7 @@ bool remove_child(response_t *response, device_id_t parent_id){
     if(parent_id == NO_ID || parent != NULL){
         update_type_to_empty(routing_table, parent);
     }
-    update_type(response->arguments[CHILD_ID_ARGUMENT]);
+    update_type(child_id);
     return true;
 }
 
