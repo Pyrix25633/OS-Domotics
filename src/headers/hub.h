@@ -86,17 +86,13 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
 
 /**
  * It tries to remove the routing information of a child from the routing table,
- * 
  * the routing table is updated and also the device type
  *
- * @param child_id the id of the child to remove
+ * @param response to be set in case of errors
  * @param parent_id the id of the parent, set it to NO_ID if the child data is needed
- * @returns
- *  - `OK` if no errors occurred
- * 
- *  - `CHILD_NOT_FOUND` if the child wasn't found
+ * @return `true` if no errors occurred, `false` otherwise
  */ 
-error_code_t remove_child(device_id_t child_id, device_id_t parent_id);
+bool remove_child(response_t *response, device_id_t parent_id);
 
 /**
  * Closes a pipe
@@ -113,23 +109,20 @@ error_code_t close_pipe(int fd);
  * It takes the new parent id from the request, if it's different the pipe to communicate with the parent is changed
  * and also the current parent id
  * 
- * @param new_parent_id the new parent id received from the request
- * @param parent_changed to set as true if the parent has changed to perform a replay history
- * @return the error code to send in the response
+ * @param request the arrived request
+ * @param response to be set in case of errors
+ * @return `true` if no errors occurred, `false` otherwise
  */
-error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed);
+bool link_change_parent(request_t *request, response_t *response);
 
 /**
  * It forwards the request to a child
  * 
  * @param request The request to forward
- * @param next_hop_fd The file descriptor of the destination, can be set to `NO_ROUTE` to send an error response back to the parent
- * @return
- *  - `OK` if no errors occurred
- * 
- *  - `ROUTE_NOT_FOUND` if the child wasn't found
+ * @param response to be set in case of errors
+ * @return `true` if a response must be sent, `false` otherwise
  */
-error_code_t send_to_child(request_t *request, int next_hop_fd);
+bool send_to_child(request_t *request, response_t *response);
 
 /**
  * It formats the response and writes the string created in the pipe to send a response to the parent
@@ -179,7 +172,7 @@ void add_child(response_t *response);
  * 
  * @param response the received response, it will be modified
  */
-void link_response(response_t *response);
+void link_response_bottom_up(response_t *response);
 
 /**
  * The pending response is resolved and the arguments of the info response are set
@@ -287,13 +280,11 @@ void free_pending(pending_t **pending, pending_t *previous);
  * Forwards a request to the children to get their information about it, in order to send
  * an aggregate response later the response to send is put in the pending list
  * 
- * @param request the response to be sent
- * @return
- *  - `OK` if it succeeds
- * 
- *  - `UNABLE_TO_ALLOCATE_HEAP` if it fails
+ * @param request the request to be sent
+ * @param response to be set in case of errors
+ * @return `true` if no errors occurred, `false` otherwise
  */
-error_code_t forward_to_children(request_t *request);
+bool forward_to_children(request_t *request, response_t *response);
 
 /**
  * It updates the device type, the `child_id` given is ignored in the search
@@ -306,8 +297,30 @@ error_code_t forward_to_children(request_t *request);
  */
 void update_type(device_id_t child_id);
 
-bool get_mutex(error_code_t *error_code);
+/**
+ * It reads the pipe and parses the request
+ * 
+ * @param request where to put the data
+ * @param response to be set in case of errors
+ * @return `true` if no errors occurred, `false` otherwise
+ */
+bool get_request(request_t *request, response_t *response);
 
-bool release_mutex(error_code_t *error_code);
+/**
+ * It performs the link commands requested
+ * 
+ * @param request where to get the data from
+ * @param response to be set in case of errors
+ */
+void link_response_top_down(request_t *request, response_t *response);
+
+/**
+ * It performs the requested command
+ * 
+ * @param request where to get the data from
+ * @param response where to put the data in
+ * @return `true` if a response must be sent, `false` otherwise
+ */
+bool execute_command_top_down(request_t *request, response_t *response);
 
 #endif

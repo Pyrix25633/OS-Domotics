@@ -17,6 +17,8 @@ pending_t *pending_responses = NULL;
 device_id_t parent_id = CONTROLLER_ID;
 volatile bool force_exit = false; //the compiler does not optimize this variable (volatile)
 bool is_bottom_up_thread = false;
+bool parent_changed = false;
+bool remove_child_succeed = false;
 
 // - IPC data -
 
@@ -54,207 +56,166 @@ int main(int argc, char *argv[]) {
 }
 
 error_code_t top_down_handler(){
-    //can be used to read the requests from the parent of the hub and to write
+    //the request buffer can be used to read the requests from the parent of the hub and to write
     //the requests to the children
-    char request_buffer[MAX_REQUEST_SIZE];
+
     //can be used to write the response to the parent of the hub
     char response_buffer[MAX_RESPONSE_SIZE];
 
     request_t request;
     response_t response;
-    error_code_t error_code = UNEXPECTED_SHUTDOWN;
-
     response.source = id;
+    response.response_code = UNEXPECTED_SHUTDOWN;
 
     //it takes the last error
     while(!force_exit){
         response.arguments_size = 0;
-        error_code = read_pipe(rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE);
-        if(!IS_ERROR(error_code)){
-            error_code = parse_request(&request, request_buffer, MAX_REQUEST_SIZE);
-        }
-        if(IS_ERROR(error_code)){
-            response.command_code = NULL_COMMAND;
-            response.response_code = error_code;
-            simulate_processing_time();
-            if(get_mutex(&error_code)){
-                write_pipe_response(&response, response_buffer);
-                release_mutex(&error_code);
-            }
-            continue;
-        }
-        //no errors occurred while reading the request
-        command_code_t code = request.command_code;
-        response.command_code = code;
         response.response_code = OK;
-
-        //trying to get the mutex
-        if(get_mutex(&error_code)){
+        bool send = !get_request(&request, &response);
+        if(!send){
+            response.command_code = request.command_code;
             if(request.destination == id){
-                if(has_children){
-                    if(IS_INFO(code)){
-                        error_code = forward_to_children(&request);                  
-                        if(IS_ERROR(error_code)){
-                            response.response_code = error_code;
-                            if(release_mutex(&error_code)){
-                                simulate_processing_time();
-                                if(get_mutex(&error_code)) {
-                                    write_pipe_response(&response, response_buffer);
-                                    release_mutex(&error_code);
-                                }
-                            }
-                        }     
-                        continue;
-                    }
-                    if(IS_LINK(code)){
-                        bool parent_changed = false;
-                        response.source = id;
-                        if(LINK_SUBCOMMAND(code)==LINK_CHANGE_PARENT){
-                            response.arguments[PARENT_ID_ARGUMENT] = request.argument;
-                            response.response_code = link_change_parent(request.argument, &parent_changed);
-                        }
-                        else if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD){
-                            response.arguments[CHILD_ID_ARGUMENT] = request.argument;
-                            response.response_code = remove_child(request.argument, id);
-                        }
-                        else{
-                            response.response_code = UNEXPECTED_COMMAND;
-                            if(release_mutex(&error_code)){
-                                simulate_processing_time();
-                                if(get_mutex(&error_code)) {
-                                    write_pipe_response(&response, response_buffer);
-                                    release_mutex(&error_code);
-                                }
-                            }
-                            continue;
-                        }
-                        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
-                        response.arguments_size = 2;
-                        if(release_mutex(&error_code)) {
-                            simulate_processing_time();
-                            if(get_mutex(&error_code)) {
-                                write_pipe_response(&response, response_buffer);
-
-                                if(parent_changed){
-                                    replay_history(&response);
-                                    response.source = id;
-                                }
-                                if(LINK_SUBCOMMAND(code)==LINK_REMOVE_CHILD) {
-                                    //in the check_pending I take the response source to check it because it 
-                                    //was in the bottom up but I need the child id (request argument) to be the source
-                                    response.source = request.argument;
-                                    check_complete_and_send(&response);
-                                }
-                                release_mutex(&error_code);
-                            }
-                        }
-                        continue;
-                    }
-                    if(IS_SWITCH(code)){
-                        if(((IS_BULB_LIKE(device_type) && SWITCH_LABEL(code)==SWITCH_POWER)) ||
-                            ((IS_FRIDGE_LIKE(device_type) || IS_WINDOW_LIKE(device_type)) &&
-                            (SWITCH_LABEL(code)==SWITCH_OPEN || SWITCH_LABEL(code)==SWITCH_CLOSE))){
-
-                            error_code_t error_code = forward_to_children(&request);
-
-                            if(IS_ERROR(error_code)){
-                                response.response_code = error_code;
-                                if(release_mutex(&error_code)){
-                                    simulate_processing_time();
-                                    if(get_mutex(&error_code)) {
-                                        write_pipe_response(&response, response_buffer);
-                                        release_mutex(&error_code);
-                                    }
-                                }
-                            }                            
-                        }
-                        else{
-                            response.response_code = UNEXPECTED_COMMAND;
-                            if(release_mutex(&error_code)){
-                                simulate_processing_time();
-                                if(get_mutex(&error_code)) {
-                                    write_pipe_response(&response, response_buffer);
-                                    release_mutex(&error_code);
-                                }
-                            }
-                        }    
-                        continue;
-                    }
-                    if(IS_DELETE(code)){
-                        error_code = forward_to_children(&request);
-                        if(IS_ERROR(error_code)){
-                            response.response_code = error_code;
-                            if(release_mutex(&error_code)){
-                                simulate_processing_time();
-                                if(get_mutex(&error_code)) {
-                                    write_pipe_response(&response, response_buffer);
-                                    force_exit = true;
-                                    release_mutex(&error_code);
-                                }
-                            }
-                        }   
-                        continue;
-                    }//else
-                    response.response_code = UNEXPECTED_COMMAND;
-                        if(release_mutex(&error_code)){
-                            simulate_processing_time();
-                            if(get_mutex(&error_code)) {
-                                write_pipe_response(&response, response_buffer);
-                                release_mutex(&error_code);
-                            }
-                        }
-                    continue;
-                }
-                else{//the hub doesn't have children
-                    bool parent_changed = false;
-                    if(IS_INFO(code)){
-                        response.arguments_size = 2;
-                        response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
-                        response.arguments[OPEN_SECONDS_ARGUMENT] = 0;
-                    }
-                    else if(IS_DELETE(code)){
-                        force_exit = true;
-                    }
-                    else if(IS_LINK(code) && LINK_SUBCOMMAND(code)==LINK_CHANGE_PARENT){
-                        response.arguments[PARENT_ID_ARGUMENT] = request.argument;
-                        response.response_code = link_change_parent(request.argument, &parent_changed);
-                        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
-                        response.arguments_size = 2;
-                    }
-                    else{
-                        response.response_code = UNEXPECTED_COMMAND;
-                    }                        
-                    if(release_mutex(&error_code)){
-                        simulate_processing_time();
-                        if(get_mutex(&error_code)) {
-                            write_pipe_response(&response, response_buffer);
-                            if(parent_changed){
-                                replay_history(&response);
-                                response.source = id;
-                            }
-                            release_mutex(&error_code);
-                        }
-                    }
-                    continue;
-                }
+                send = execute_command(&request, &response);
             }
             else{
-                routing_data_t *routing_information = find_routing_data(routing_table, request.destination);
-                int destination = (routing_information == NULL ? NO_ROUTE : routing_information->next_hop_fd);
-                if(!release_mutex(&error_code)) continue;
-                error_code = send_to_child(&request, destination);
+                send = send_to_child(&request, &response);
             }
-        }                
+        }
+        if(send){
+            simulate_processing_time();
+            if(pthread_mutex_lock(&data_mutex) != 0){
+                print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "while sending the response");
+                response.response_code = UNABLE_TO_LOCK_MUTEX;
+                parent_changed = false;
+                remove_child_succeed = false;
+            }
+            else{
+                write_pipe_response(&response, response_buffer);
+                if(parent_changed){
+                    replay_history(&response);
+                    response.source = id;
+                    parent_changed = false;
+                }
+                if(remove_child_succeed){
+                    response.source = request.argument;
+                    check_complete_and_send(&response);
+                    remove_child_succeed = false;
+                    response.source = id;
+                }
+                if(pthread_mutex_unlock(&data_mutex) != 0){
+                    print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while sending the response");
+                    response.response_code = UNABLE_TO_UNLOCK_MUTEX;
+                    force_exit = true;
+                }
+            }
+        }
     }
-    return error_code;
+    return response.response_code;
 }
 
-error_code_t forward_to_children(request_t *request){
-    char request_buffer[MAX_REQUEST_SIZE];
+bool execute_command(request_t *request, response_t *response){
+    command_code_t code = response->command_code;
 
+    if(IS_LINK(code)){
+        link_response_top_down(request, response);
+        return true;
+    }
+
+    if(has_children){
+        bool valid_switch = ((IS_BULB_LIKE(device_type) && SWITCH_LABEL(code)==SWITCH_POWER)) ||
+                            ((IS_FRIDGE_LIKE(device_type) || IS_WINDOW_LIKE(device_type)) &&
+                            (SWITCH_LABEL(code)==SWITCH_OPEN || SWITCH_LABEL(code)==SWITCH_CLOSE));
+
+        bool forward = IS_INFO(code) || (IS_SWITCH(code) && valid_switch) || IS_DELETE(code);
+
+        if(!forward){
+            response->response_code = UNEXPECTED_COMMAND;
+            return true;
+        }
+        if(pthread_mutex_lock(&data_mutex) != 0){
+            response->response_code = UNABLE_TO_LOCK_MUTEX;
+            return true;
+        }
+        bool succeed = forward_to_children(request, response);
+        if(pthread_mutex_unlock(&data_mutex) != 0){
+            response->response_code = UNABLE_TO_UNLOCK_MUTEX;
+            force_exit = true;
+            return true;
+        }
+        if(!succeed) return true;
+        return false;
+    }
+    //no children
+    if(IS_INFO(code)){
+        response->arguments_size = 2;
+        response->arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
+        response->arguments[OPEN_SECONDS_ARGUMENT] = 0;
+        return true;
+    }
+    if(IS_DELETE(code)){
+        force_exit = true;
+        return true;
+    }
+    response->response_code = UNEXPECTED_COMMAND;
+    return true;
+}
+
+void link_response_top_down(request_t *request, response_t *response){
+    
+    if(LINK_SUBCOMMAND(request->command_code) == LINK_CHANGE_PARENT){
+        response->arguments[PARENT_ID_ARGUMENT] = request->argument;
+        if(!link_change_parent(request, response)) return;
+    }
+    else if(has_children && LINK_SUBCOMMAND(request->command_code) == LINK_REMOVE_CHILD){
+        response->arguments[CHILD_ID_ARGUMENT] = request->argument;
+
+        if(pthread_mutex_lock(&data_mutex) != 0){
+            response->response_code = UNABLE_TO_LOCK_MUTEX;
+            return;
+        }
+        bool succeed = remove_child(response, id);
+        if(pthread_mutex_unlock(&data_mutex) != 0){
+            response->response_code = UNABLE_TO_UNLOCK_MUTEX;
+            force_exit = true;
+            return;
+        }
+        if(!succeed) return;
+        remove_child_succeed = true;
+    }
+    else{
+        response->response_code = UNEXPECTED_COMMAND;
+        return;
+    }
+
+    response->arguments_size = 2;
+    response->arguments[DEVICE_TYPE_ARGUMENT] = device_type;
+}
+
+bool get_request(request_t *request, response_t *response){
+    char request_buffer[MAX_REQUEST_SIZE];
+    response->command_code = NULL_COMMAND;
+    error_code_t error_code = read_pipe(rcv_requests_parent_fd, request_buffer, MAX_REQUEST_SIZE);
+    if(IS_ERROR(error_code)) {
+        response->response_code = error_code;
+        return false;
+    }
+    error_code = parse_request(request, request_buffer, MAX_REQUEST_SIZE);
+    if(IS_ERROR(error_code)) {
+        response->response_code = error_code;
+        return false;
+    }
+    return true;
+}
+
+bool forward_to_children(request_t *request, response_t *response){
+    char request_buffer[MAX_REQUEST_SIZE];
     routing_data_t *direct_child = find_direct_routing_data(routing_table, id, NULL);
     pending_t *pending = init_pending(request->command_code);
-    if(pending == NULL) return UNABLE_TO_ALLOCATE_HEAP;
+
+    if(pending == NULL){
+        response->response_code = UNABLE_TO_ALLOCATE_HEAP;
+        return false;
+    }
     //forward to all direct children
     u_int32_t i = 0;
     while(direct_child != NULL){
@@ -265,17 +226,18 @@ error_code_t forward_to_children(request_t *request){
         direct_child = find_direct_routing_data(routing_table, id, direct_child);
     }
     pending->pending_devices_size = i;
+
     //add the pending to the list
     if(pending_responses == NULL){
         pending_responses = pending;
-        return OK;
+        return true;
     }
     pending_t *current = pending_responses;
     while(current->next != NULL){
         current = current->next;
     }
     current->next = pending;
-    return OK;
+    return true;
 }
 
 pending_t* init_pending(command_code_t command_code){
@@ -298,29 +260,27 @@ pending_t* init_pending(command_code_t command_code){
     return pending;
 }
 
-error_code_t send_to_child(request_t *request, int next_hop_fd){
-    error_code_t error_code = OK;
-    response_t response;
+bool send_to_child(request_t *request, response_t *response){
     char request_buffer[MAX_REQUEST_SIZE];
-    char response_buffer[MAX_RESPONSE_SIZE];
-                
-    if(next_hop_fd == NO_ROUTE){
-        response.source = id;
-        response.command_code = request->command_code;
-        response.response_code = ROUTE_NOT_FOUND;
-        error_code = ROUTE_NOT_FOUND;
-        response.arguments_size = 1;
-        response.arguments[CHILD_ID_ARGUMENT] = request->destination;
-        simulate_processing_time();
-        if(get_mutex(&error_code)) {
-            write_pipe_response(&response, response_buffer);
-            release_mutex(&error_code);
-        }
+
+    if(pthread_mutex_lock(&data_mutex) != 0){
+        response->response_code = UNABLE_TO_LOCK_MUTEX;
+        return true;
     }
-    else{
-        write_pipe_request(request, request_buffer, next_hop_fd);
+    routing_data_t *routing_information = find_routing_data(routing_table, request->destination);
+    int destination = (routing_information == NULL ? NO_ROUTE : routing_information->next_hop_fd);
+    if(pthread_mutex_unlock(&data_mutex) != 0){
+        response->response_code = UNABLE_TO_UNLOCK_MUTEX;
+        force_exit = true;
+        return true;
     }
-    return error_code;
+    if(destination == NO_ROUTE){
+        response->response_code = ROUTE_NOT_FOUND;
+        response->arguments[CHILD_ID_ARGUMENT] = request->destination;
+        return true;
+    }
+    write_pipe_request(request, request_buffer, destination);
+    return false;
 }
 
 void* bottom_up_handler(void* arg){
@@ -356,7 +316,7 @@ void* bottom_up_handler(void* arg){
                 code = response.command_code;
                 
                 if(IS_LINK(code) && !IS_ERROR(response.response_code)){
-                    link_response(&response);
+                    link_response_bottom_up(&response);
                 }
                 else{
                     pending_t* previous = NULL;
@@ -379,7 +339,7 @@ void* bottom_up_handler(void* arg){
                     }
                     else{
                         if(IS_DELETE(response.command_code)){
-                            error_code = remove_child(response.source, NO_ID);
+                            error_code = remove_child(&response, NO_ID);
                             //i don't have to modify the response
                             if(IS_ERROR(error_code)){
                                 print_error(STDERR_FILENO, error_code, id, "while closing the child pipe");
@@ -556,7 +516,7 @@ error_code_t open_pipe(device_id_t device_id, int *snd_requests_child){
     return OK;
 }
 
-void link_response(response_t *response){
+void link_response_bottom_up(response_t *response){
     if(LINK_SUBCOMMAND(response->command_code)==LINK_REMOVE_CHILD){
         response->response_code = link_remove_child_received(response);
     }
@@ -621,31 +581,47 @@ void delete_response(response_t *response, pending_t *solved_response){
     }
 }
 
-error_code_t link_change_parent(device_id_t new_parent_id, bool *parent_changed){
-    error_code_t error_code = OK;
-    
-    if(parent_id != new_parent_id){
-        error_code = change_snd_responses_pipe(new_parent_id, &snd_responses_parent_fd);
-        if(!IS_ERROR(error_code)){
-            parent_id = new_parent_id;
-            *parent_changed = true;
+bool link_change_parent(request_t *request, response_t *response){
+    if(parent_id != request->argument){
+        if(pthread_mutex_lock(&data_mutex) != 0){
+            response->response_code = UNABLE_TO_LOCK_MUTEX;
+            return false;
         }
+        error_code_t error_code = change_snd_responses_pipe(request->argument, &snd_responses_parent_fd);
+        if(pthread_mutex_unlock(&data_mutex) != 0){
+            response->response_code = UNABLE_TO_UNLOCK_MUTEX;
+            force_exit = true;
+            return false;
+        }
+        if(IS_ERROR(error_code)){
+            response->response_code = error_code;
+            return false;
+        }
+        parent_id = request->argument;
+        parent_changed = true;
     }
-    return error_code;
+    return true;
 }
 
-error_code_t remove_child(device_id_t child_id, device_id_t parent_id){
-    routing_data_t *child = find_routing_data(routing_table, child_id);
+bool remove_child(response_t *response, device_id_t parent_id){
+    routing_data_t *child = find_routing_data(routing_table, response->arguments[CHILD_ID_ARGUMENT]);
     if(child == NULL){
-        return CHILD_NOT_FOUND;
+        response->response_code = CHILD_NOT_FOUND;
+        return false;
     }
     if((parent_id == NO_ID ? child->parent_id : parent_id) == id){
         children--;
         if(children == 0) has_children = false;
     }
     device_id_t found_parent_id = child->parent_id;
-    if(found_parent_id == id) close_pipe(child->next_hop_fd);
-    remove_routing_data(routing_table, child_id, (parent_id == NO_ID ? child->parent_id : parent_id));
+    if(found_parent_id == id) {
+        error_code_t error_code = close_pipe(child->next_hop_fd);
+        if(IS_ERROR(error_code)){
+            response->response_code = error_code;
+            return false;
+        }
+    }
+    remove_routing_data(routing_table, response->arguments[CHILD_ID_ARGUMENT], (parent_id == NO_ID ? child->parent_id : parent_id));
     //if the new parent stills one of my child I need to update it's type
     //otherwise I need to do it only upwards from its parent
 
@@ -657,8 +633,8 @@ error_code_t remove_child(device_id_t child_id, device_id_t parent_id){
     if(parent_id == NO_ID || parent != NULL){
         update_type_to_empty(routing_table, parent);
     }
-    update_type(child_id);
-    return OK;
+    update_type(response->arguments[CHILD_ID_ARGUMENT]);
+    return true;
 }
 
 void update_type(device_id_t child_id){
@@ -739,23 +715,4 @@ void write_pipe_request(request_t* request, char* buffer_write, int snd_request_
     else if(write(snd_request_fd, buffer_write, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "while sending request");
     }
-}
-
-bool get_mutex(error_code_t *error_code){
-    if(pthread_mutex_lock(&data_mutex) != 0){
-        *error_code = UNABLE_TO_LOCK_MUTEX;
-        print_error(STDERR_FILENO, *error_code, id, "while trying to get the mutex");
-        return false;
-    }
-    return true;
-}
-
-bool release_mutex(error_code_t *error_code){
-    if(pthread_mutex_unlock(&data_mutex) != 0){
-        *error_code = UNABLE_TO_UNLOCK_MUTEX;
-        print_error(STDERR_FILENO, *error_code, id, "while trying to release the mutex");
-        force_exit = true;
-        return false;
-    }
-    return true;
 }
