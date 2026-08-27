@@ -257,15 +257,6 @@ void* autoclose_routine(void *arg) {
 
     set_state(STATE_CLOSED, true);
 
-    if(pthread_mutex_unlock(&data_mutex) != 0) {
-        print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "in autoclose thread");
-        /*
-         Here the main thread is waiting to lock the mutex, it's not performing
-         any operation, so the program can exit without problems
-        */
-        handle_shutdown(UNABLE_TO_UNLOCK_MUTEX);
-    }
-
     char response_buffer[MAX_RESPONSE_SIZE];
     response_t response;
     response.source = id;
@@ -277,6 +268,15 @@ void* autoclose_routine(void *arg) {
         print_error(STDERR_FILENO, error_code, id, "in autoclose thread");
     } else if(write(snd_responses_fd, response_buffer, MAX_RESPONSE_SIZE) < 0) {
         print_error(STDERR_FILENO, UNABLE_TO_WRITE_PIPE, id, "in autoclose thread");
+    }
+
+    if(pthread_mutex_unlock(&data_mutex) != 0) {
+        print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "in autoclose thread");
+        /*
+         Here the main thread is waiting to lock the mutex, it's not performing
+         any operation, so the program can exit without problems
+        */
+        handle_shutdown(UNABLE_TO_UNLOCK_MUTEX);
     }
 
     pthread_exit(NULL);
