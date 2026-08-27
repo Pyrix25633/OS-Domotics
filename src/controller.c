@@ -26,7 +26,6 @@ char user_buffer[USER_BUFFER_SIZE];
 // - IPC data -
 
 int rcv_responses_fd;
-int next_hop_fd;
 volatile bool force_exit = false;
 volatile bool pending_shutdown = false;
 char request_buffer[MAX_REQUEST_SIZE];
@@ -429,9 +428,6 @@ error_code_t check_user_command(user_command_t *user_command) {
             }
         }
     }
-    if(!IS_ERROR(error_code)) {
-        next_hop_fd = target->next_hop_fd;
-    }
     if(pthread_mutex_unlock(&data_mutex) != 0) {
         force_exit = true;
         return UNABLE_TO_UNLOCK_MUTEX;
@@ -456,7 +452,16 @@ error_code_t execute_user_command(user_command_t *user_command) {
         request.destination = user_command->target;
         request.command_code = user_command->message_code;
         request.argument = user_command->argument;
-        return write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, next_hop_fd);
+        if(pthread_mutex_lock(&data_mutex) != 0) {
+            return UNABLE_TO_LOCK_MUTEX;
+        }
+        routing_data_t *target = find_routing_data(routing_table, user_command->target);
+        error_code_t error_code = target == NULL ? ROUTE_NOT_FOUND : write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, target->next_hop_fd);
+        if(pthread_mutex_unlock(&data_mutex) != 0) {
+            force_exit = true;
+            return UNABLE_TO_UNLOCK_MUTEX;
+        }
+        return error_code;
     }
     else {
         if(user_command->code == ADD_COMMAND) {

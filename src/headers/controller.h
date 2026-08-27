@@ -67,6 +67,7 @@ int main(int argc, char *argv[]);
  * `INVALID_COMMAND_ARGUMENT` if any of the arguments is missing or doesn't have a valid format,
  * `UNABLE_TO_LOCK_MUTEX` if data mutex could not be locked,
  * `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
+ * `ROUTE_NOT_FOUND` if the target device has been removed from the routing table before the request could be sent,
  * `DEVICE_TYPE_MISMATCH` if the command is not compatible with the target device,
  * `SYSTEM_OFF` if the system is off and the command is not a switch main,F
  * `CANNOT_ADD_TO_PARENT` if the parent wouldn't change or is a Timer already with a child,
@@ -187,6 +188,7 @@ error_code_t check_user_command(user_command_t *user_command);
  * 
  * @returns `BUFFER_TOO_SHORT` if the formatted request does not fit in the buffer,
  * `REQUEST_FORMAT_ERROR` if there was an error formatting the request,
+ * `ROUTE_NOT_FOUND` if the target device could not be found,
  * `UNABLE_TO_WRITE_PIPE` if the write failed,
  * `UNABLE_TO_CREATE_PIPE` if the pipe where the device will receive commands could not be created,
  * `UNABLE_TO_OPEN_PIPE` if the pipe could not be opened in write mode,
