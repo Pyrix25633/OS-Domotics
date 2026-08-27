@@ -40,7 +40,7 @@ int main(int argc, char *argv[]) {
 
     id = get_id_from_arguments(argc, argv);
     start_device_fifos(id, &rcv_requests_parent_fd, &snd_responses_parent_fd, &rcv_responses_children_fd);
-    srand(time(NULL));
+    srand(time(NULL) ^ getpid());
     init_routing_table(routing_table);
     device_type = HUB_DEVICE;
 
