@@ -115,12 +115,14 @@ error_code_t parse_response(response_t *response, char *buffer, size_t size) {
     response->arguments_size = 0;
 
     // Parse arguments if the response should have arguments
-    if(HAS_RESPONSE_ARGUMENTS(command_code) && !(IS_INFO(response->command_code) && IS_ERROR(response->response_code))) {
+    bool parse_arguments = HAS_RESPONSE_ARGUMENTS(command_code) && !(IS_INFO(response->command_code) && IS_ERROR(response->response_code));
+    bool try_parse_arguments = IS_SWITCH(response->command_code) || IS_DELETE(response->command_code);
+    if(parse_arguments || try_parse_arguments) {
         unsigned i = 0;
         int parsed;
         token = strtok_r(NULL, " ", &last);
         if(token == NULL) {
-            return RESPONSE_FORMAT_ERROR;
+            return parse_arguments ? RESPONSE_FORMAT_ERROR : OK;
         }
         do {
             parsed = string_to_unsigned(token);
