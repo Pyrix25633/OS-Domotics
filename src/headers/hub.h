@@ -36,10 +36,19 @@ typedef struct pending_t {
  * @param argc Number of arguments received
  * @param argv Argument vector of length `argc`, each string is terminated by `'\0'`
  * 
- * TODO: Determine all other possible exit values, add them every time you find out another error that requires complete
- * termination of the process can occur
- * 
- * @returns `OK`
+ * @returns `MISSING_ID_ARGUMENT` if the ID command-line argument is missing,
+ * `UNABLE_TO_SET_SIGHANDLER` if a signal handler could not be set,
+ * `UNABLE_TO_CREATE_PIPE` if the pipe where the device will receive commands could not be created,
+ * `UNABLE_TO_OPEN_PIPE` if the pipe could not be opened in write mode,
+ * `UNABLE_TO_CREATE_THREAD` if the thread dedicated to reading responses could not be created,
+ * `UNEXPECTED_END_OF_FILE` if the pipe was closed by the parent,
+ * `UNABLE_TO_READ_PIPE` if there was an error reading the pipe,
+ * `BUFFER_TOO_SHORT` if the string is not NULL-terminated and so the reading buffer was too short,
+ * `REQUEST_FORMAT_ERROR` if there was an error in the format,
+ * `UNABLE_TO_LOCK_MUTEX` if data mutex could not be locked,
+ * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
+ * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM`,
+ * `OK` otherwise
  */
 int main(int argc, char *argv[]);
 

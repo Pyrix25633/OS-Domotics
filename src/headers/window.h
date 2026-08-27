@@ -36,6 +36,7 @@
  * @returns `MISSING_ID_ARGUMENT` if the ID command-line argument is missing,
  * `UNABLE_TO_OPEN_PIPE` if the IPC pipes could not be opened,
  * `UNABLE_TO_CLOSE_PIPE` if the IPC pipes could not be closed,
+ * `UNABLE_TO_SET_SIGHANDLER` if a signal handler could not be set,
  * `OK` otherwise
  */
 int main(int argc, char *argv[]);

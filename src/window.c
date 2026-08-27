@@ -34,7 +34,7 @@ int main(int argc, char *argv[]) {
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, NULL);
 
     last_closed = last_opened = time(NULL);
-    srand(last_closed); //set random seed with the current time so it's always different
+    srand(last_closed ^ getpid()); //set random seed with the current time so it's always different
 
     error_code_t error_code = UNEXPECTED_SHUTDOWN;
 
