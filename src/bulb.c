@@ -31,14 +31,18 @@ char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send
 
 // the controller starts a bulb process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
+    //the handlers are set before opening the pipes: the open of the down fifo blocks until the controller
+    //opens it for writing, and a signal arriving in the meantime would kill the process with no clean shutdown
+    set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGPIPE, sigpipe_handler);
+
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec
     response.source = id;
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, NULL);
 
-    set_signal_handler(SIGTERM, sigterm_handler);
-    set_signal_handler(SIGPIPE, sigpipe_handler);
-
-    srand(time(NULL)); //set random seed with the current time so it's always different
+    //the pid is mixed in because time(NULL) has a one second granularity and the devices are created in a
+    //row, so seeding with the time alone gives the same processing delays to every device born in the same second
+    srand(time(NULL) ^ getpid());
 
     //the loop below may not run, so the code is initialized to avoid an undefined value
     error_code_t error_code = OK;

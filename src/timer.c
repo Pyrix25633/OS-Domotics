@@ -68,7 +68,9 @@ int main(int argc, char *argv[]) {
     //signal is ignored and the failing write reports the error, which is then handled where it happened
     set_signal_handler(SIGPIPE, SIG_IGN);
 
-    srand(time(NULL)); //set random seed with the current time so it's always different
+    //the pid is mixed in because time(NULL) has a one second granularity and the devices are created in a
+    //row, so seeding with the time alone gives the same processing delays to every device born in the same second
+    srand(time(NULL) ^ getpid());
 
     //start the bottom-up thread that reads the child responses and forwards them up to the parent
     if(pthread_create(&child_responses_thread, NULL, child_responses_routine, NULL) != 0){
