@@ -982,26 +982,22 @@ void* responses_routine(void *arg) {
             print_error(STDERR_FILENO, error_code, id, "after receiving response");
             continue;
         }
-
-        if(!IS_ERROR(error_code)) { // Parsed successfully and mutex locked
-            if(!IS_ERROR(response.response_code) && IS_LINK(response.command_code)) {
-                error_code = update_with_link_response(&response);
-                if(IS_ERROR(error_code)) {
-                    print_error(STDERR_FILENO, error_code, id, "while updating with link response");
-                }
-            }
-
-            output_response(&response);
-
-            if(!IS_ERROR(response.response_code) && IS_DELETE(response.command_code)) {
-                error_code = update_with_delete_response(&response);
-                if(IS_ERROR(error_code)) {
-                    print_error(STDERR_FILENO, error_code, id, "while updating with link response");
-                }
+        
+        // Parsed successfully and mutex locked
+        if(!IS_ERROR(response.response_code) && IS_LINK(response.command_code)) {
+            error_code = update_with_link_response(&response);
+            if(IS_ERROR(error_code)) {
+                print_error(STDERR_FILENO, error_code, id, "while updating with link response");
             }
         }
-        else {
-            print_error(STDERR_FILENO, error_code, id, "while parsing response");
+
+        output_response(&response);
+
+        if(!IS_ERROR(response.response_code) && IS_DELETE(response.command_code)) {
+            error_code = update_with_delete_response(&response);
+            if(IS_ERROR(error_code)) {
+                print_error(STDERR_FILENO, error_code, id, "while updating with link response");
+            }
         }
 
         if(pthread_mutex_unlock(&data_mutex) != 0) {
