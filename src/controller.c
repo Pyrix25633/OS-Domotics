@@ -44,6 +44,8 @@ int main(int argc, char *argv[]) {
 
     start_responses_fifo();
 
+    srand(time(NULL) ^ getpid()); // Seed random generator with current time and PID, always different
+
     init_routing_table(routing_table);
 
     error_code_t error_code = start_ncurses(argc, argv);

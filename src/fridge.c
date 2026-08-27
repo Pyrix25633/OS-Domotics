@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
 
     last_closed = last_opened = last_thermostat_set = time(NULL);
 
-    srand(last_closed); // Seed random generator with current time, always different
+    srand(last_closed ^ getpid()); // Seed random generator with current time and PID, always different
 
     error_code_t error_code = UNEXPECTED_SHUTDOWN; // Should not terminate before the first command
 
