@@ -47,6 +47,7 @@
  * @param argv Argument vector of length `argc`, each string is terminated by `'\0'`
  * 
  * @returns `MISSING_ID_ARGUMENT` if the ID command-line argument is missing,
+ * `UNABLE_TO_SET_SIGHANDLER` if a signal handler could not be set,
  * `UNABLE_TO_OPEN_PIPE` if the IPC pipes could not be opened,
  * `UNABLE_TO_CLOSE_PIPE` if the IPC pipes could not be closed,
  * `UNABLE_TO_CANCEL_THREAD` if the autoclose thread could not be cancelled,
