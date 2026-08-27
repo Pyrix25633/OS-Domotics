@@ -421,6 +421,7 @@ void update_pending(pending_t *pending, response_t *response){
 
 void format_response_type(response_t *response, pending_t *pending){
     response->source = id;
+    response->response_code = OK;
     command_code_t code = response->command_code;
     if(IS_INFO(code)) {
         info_response(response, pending);
