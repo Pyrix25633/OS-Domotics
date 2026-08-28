@@ -40,6 +40,8 @@ typedef struct pending_t {
  * `UNABLE_TO_SET_SIGHANDLER` if a signal handler could not be set,
  * `UNABLE_TO_CREATE_PIPE` if the pipe where the device will receive commands could not be created,
  * `UNABLE_TO_OPEN_PIPE` if the pipe could not be opened in write mode,
+ * `UNABLE_TO_CLOSE_PIPE` if the pipe of the old direct child could not be closed,
+ * `UNABLE_TO_REMOVE_PIPE` if the pipe could not be removed,
  * `UNABLE_TO_CREATE_THREAD` if the thread dedicated to reading responses could not be created,
  * `UNEXPECTED_END_OF_FILE` if the pipe was closed by the parent,
  * `UNABLE_TO_READ_PIPE` if there was an error reading the pipe,
