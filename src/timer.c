@@ -42,6 +42,7 @@ int rcv_responses_child_fd; //read is blocking       - pipe where the child writ
 //open it only when it gets a child, in the same way change_snd_responses_pipe does for the parent
 int snd_requests_child_fd;  //write is non blocking  - pipe to send requests down to the child, valid only if has_child
 volatile bool force_exit = false; //set by the main thread, read by the child-responses thread, so volatile
+volatile error_code_t shutdown_code = OK; //set when a failure forces the exit, so main does not report a success
 request_t request; //destination, command_code, argument
 response_t response;
 char buffer_read[MAX_REQUEST_SIZE];   //buffer to read the request from the pipe
@@ -64,6 +65,7 @@ int main(int argc, char *argv[]) {
     init_routing_table(routing_table); //empty until a control-device child is acquired, a leaf child never uses it
 
     set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGINT, sigterm_handler); //same handler as SIGTERM: a Ctrl+C reaches the whole process group
     //a control device writes in two directions, so a broken pipe does not always mean the same thing: the
     //signal is ignored and the failing write reports the error, which is then handled where it happened
     set_signal_handler(SIGPIPE, SIG_IGN);
@@ -92,7 +94,8 @@ int main(int argc, char *argv[]) {
     while(!force_exit) {
         error_code = execute_command();
     }
-    handle_shutdown(error_code);
+    //a failure that forced the exit is reported instead of the code of the last command, which would be a success
+    handle_shutdown(IS_ERROR(shutdown_code) ? shutdown_code : error_code);
 }
 
 void handle_shutdown(error_code_t error) {
@@ -159,6 +162,7 @@ bool unlock_data(){
     if(pthread_mutex_unlock(&data_mutex) != 0){
         print_error(STDERR_FILENO, UNABLE_TO_UNLOCK_MUTEX, id, "while unlocking the shared data");
         force_exit = true;
+        shutdown_code = UNABLE_TO_UNLOCK_MUTEX; //the exit is forced from here, so main has no other way to know why
         return false;
     }
     return true;
@@ -578,7 +582,7 @@ void *schedule_routine(void *arg){
     (void)arg; //unused
     while(!force_exit){
         if(!lock_data()){
-            continue; //without the mutex the times can not be read, retry on the next iteration
+            return NULL; //without the mutex the times can not be read, and retrying would spin printing errors
         }
         u_int16_t local_begin = begin;
         u_int16_t local_end = end;

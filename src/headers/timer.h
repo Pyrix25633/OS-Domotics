@@ -40,8 +40,17 @@ typedef struct pending_node_t {
  * @param argv Argument vector of length `argc`, each string is terminated by `'\0'`
  *
  * @returns `MISSING_ID_ARGUMENT` if the ID command-line argument is missing,
+ * `UNABLE_TO_SET_SIGHANDLER` if a signal handler could not be set,
  * `UNABLE_TO_OPEN_PIPE` if the IPC pipes could not be opened,
+ * `UNABLE_TO_CREATE_PIPE` if the pipe where the child writes its responses could not be created,
+ * `UNABLE_TO_CREATE_THREAD` if the child responses thread or the schedule thread could not be created,
+ * `UNABLE_TO_LOCK_MUTEX` if the mutex could not be locked to write to the parent,
+ * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
  * `UNABLE_TO_CLOSE_PIPE` if the IPC pipes could not be closed,
+ * `UNABLE_TO_REMOVE_PIPE` if the pipe where the child writes its responses could not be removed,
+ * `BROKEN_PIPE` if a write to the parent failed,
+ * `UNEXPECTED_END_OF_FILE` if the parent closed the pipe where the requests are received,
+ * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM` or `SIGINT`,
  * `OK` otherwise
  */
 int main(int argc, char *argv[]);
@@ -53,7 +62,7 @@ int main(int argc, char *argv[]);
 void handle_shutdown(error_code_t error);
 
 /**
- * Handles the shutdown caused by a `SIGTERM` signal
+ * Handles the shutdown caused by a `SIGTERM` or `SIGINT` signal
  * @param sig_num Number of the received signal, unused
  */
 void sigterm_handler(int sig_num);

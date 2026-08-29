@@ -34,6 +34,7 @@ int main(int argc, char *argv[]) {
     //the handlers are set before opening the pipes: the open of the down fifo blocks until the controller
     //opens it for writing, and a signal arriving in the meantime would kill the process with no clean shutdown
     set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGINT, sigterm_handler); //same handler as SIGTERM: a Ctrl+C reaches the whole process group
     set_signal_handler(SIGPIPE, sigpipe_handler);
 
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec
@@ -44,7 +45,7 @@ int main(int argc, char *argv[]) {
     //row, so seeding with the time alone gives the same processing delays to every device born in the same second
     srand(time(NULL) ^ getpid());
 
-    //the loop below may not run, so the code is initialized to avoid an undefined value
+    //initialized because the compiler can not tell that the loop below always runs at least once
     error_code_t error_code = OK;
     //the main thread is blocked waiting for requests in a loop (while the exit is not forced by the delete command)
     //when a request is received it is executed, one by one in order of arrival
