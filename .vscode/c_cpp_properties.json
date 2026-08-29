@@ -3,7 +3,7 @@
         {
             "name": "Linux",
             "includePath": [
-                "${workspaceFolder}/src/headers"
+                "${workspaceFolder}/code/src/headers"
             ]
         }
     ],

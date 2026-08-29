@@ -1,6 +1,6 @@
 # Binary files
-bin/*
+code/bin/*
 *.o
 
 # Temporary IPC files
-ipc/*
+code/ipc/*
