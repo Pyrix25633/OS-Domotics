@@ -27,6 +27,7 @@ char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send
 // the controller starts a window process with the exec command using the executable file in /bin
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGINT, sigterm_handler);
     set_signal_handler(SIGPIPE, sigpipe_handler); //when a device write on a pipe but no device is listening anymore due to crash or child removed
 
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec

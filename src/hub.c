@@ -489,12 +489,12 @@ void handle_shutdown(error_code_t error) {
             remove_routing_data(routing_table, current_child_id, id);
         }
     }
-
-    error_code = end_device_fifos(id, rcv_requests_parent_fd, snd_responses_parent_fd, rcv_responses_children_fd);
+    error_code_t err = end_device_fifos(id, rcv_requests_parent_fd, snd_responses_parent_fd, rcv_responses_children_fd);
+    if(IS_ERROR(err)) error_code = err;
     if(IS_ERROR(error_code)){
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
-    else{ 
+    else{
         error_code = error; 
     }
     exit(error_code);
