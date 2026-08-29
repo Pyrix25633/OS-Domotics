@@ -10,7 +10,7 @@ The project has been developed by all three members of the group from scratch st
 
 The project uses two libraries:
 - `pthread`, for threads and mutexes, part of the standard system libraries;
-- `ncurses`, for the Controller user interface, provided by the package `libncurses-dev` on the `apt` public repository.
+- `ncurses`, for the Controller user interface, not used by the other executables, on Ubuntu it can be installed with `sudo apt install libncurses-dev`, it is already included in the `apt` public repository.
 
 ## How to Compile
 
