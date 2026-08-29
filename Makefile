@@ -3,7 +3,7 @@ CC = gcc
 # The -std=c2x (C23) flag is only used to suppress pedantic warnings about binary constants (0b...)
 # The project still compiles without it, it can be removed if it causes problems with the C version
 CFLAGS = -MMD -MP -Isrc/headers -Wall -Wextra -pedantic -std=c2x -O2
-LFLAGS = -lpthread -lncurses
+LFLAGS = -lpthread
 # Name of the file to be compiled and run
 EXEC_NAME = bin/$(FILE)
 # All devices source files for complete compilation
@@ -33,6 +33,9 @@ default: bin/ ipc/ $(EXEC_NAME)
 # Linking step, need all object files
 bin/%: bin/%.o $(GENERIC_OBJS)
 	$(CC) -o $@ $^ $(LFLAGS)
+
+# Link ncurses just for the Controller, this way the other binaries still build
+bin/controller: LFLAGS += -lncurses
 
 # Tells "make" to watch for dependency files, used to recompile if an used .h has changed, even if the .c has not
 -include $(ALL_DEPS)
