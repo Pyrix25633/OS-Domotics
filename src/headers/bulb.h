@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <time.h>
-    
+
 // Default values
 
 #define MAX_BULB_ARGUMENTS      2

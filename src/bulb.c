@@ -2,11 +2,6 @@
 
 #include "bulb.h"
 
-//start - make FILE="bulb" (ARGS="id" only to test, then it's given by the controller)
-//print_error only if i can't send an error response
-
-//response: id command_code response_code arguments
-
 // - Explicit device data -
 
 device_id_t id;
@@ -24,7 +19,7 @@ time_t last_turned_off;
 int rcv_requests_fd;  //read is blocking       - pipe to receive requests from the parent or manual commands
 int snd_responses_fd; //write is non blocking  - pipe to send responses to parent or manual commands
 bool force_exit = false;
-request_t request; //destination, command_code, argument
+request_t request;
 response_t response;
 char buffer_read[MAX_REQUEST_SIZE];   //buffer to read the request from the pipe
 char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send it to the pipe
@@ -45,7 +40,6 @@ int main(int argc, char *argv[]) {
     //row, so seeding with the time alone gives the same processing delays to every device born in the same second
     srand(time(NULL) ^ getpid());
 
-    //initialized because the compiler can not tell that the loop below always runs at least once
     error_code_t error_code = OK;
     //the main thread is blocked waiting for requests in a loop (while the exit is not forced by the delete command)
     //when a request is received it is executed, one by one in order of arrival
@@ -56,25 +50,21 @@ int main(int argc, char *argv[]) {
 }
 
 void handle_shutdown(error_code_t error) {
-    //leaf device: it has no children pipe, so the last argument is NO_FILE_DESCRIPTOR
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, NO_FILE_DESCRIPTOR);
     if(IS_ERROR(error_code)){
-        //prints the error on standard error, best practice to do
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
-    else{ error_code = error; } //no closing error: return the code that caused the shutdown
+    else{ error_code = error; }
     exit(error_code);
 }
 
-//SIGTERM is used by the controller for a clean deletion, the device shuts down returning the code
 void sigterm_handler(int sig_num) {
-    (void)sig_num; //unused, the handler is registered for a single signal
+    (void)sig_num;
     handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
-//SIGPIPE means a write to a pipe with no reader, it is a critical error, the device shuts down
 void sigpipe_handler(int sig_num) {
-    (void)sig_num; //unused, the handler is registered for a single signal
+    (void)sig_num;
     handle_shutdown(BROKEN_PIPE);
 }
 
@@ -85,7 +75,7 @@ error_code_t read_pipe(){
         force_exit = true;
         return UNEXPECTED_END_OF_FILE;
     }
-    if(size != MAX_REQUEST_SIZE){ //a wrong number of bytes was read, the message is not a valid fixed-size one
+    if(size != MAX_REQUEST_SIZE){
         return UNABLE_TO_READ_PIPE;
     }
     return parse_request(&request, buffer_read, MAX_REQUEST_SIZE);
@@ -104,7 +94,7 @@ void write_pipe(){
 
 error_code_t execute_command(){
     command_code_t code;
-    response.command_code = NULL_COMMAND; //default, overwritten below when a valid request is parsed
+    response.command_code = NULL_COMMAND;
     response.arguments_size = 0;
 
     error_code_t error_code = read_pipe();
@@ -129,7 +119,6 @@ error_code_t execute_command(){
         }
     }
 
-    //the delay is applied before responding, for any command, error responses included
     simulate_processing_time();
     write_pipe();
 
@@ -147,7 +136,7 @@ void create_link_response(){
         //the request argument is the new parent id
         device_id_t new_parent_id = request.argument;
         response.arguments[PARENT_ID_ARGUMENT] = new_parent_id; //to give always a feedback
-        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type; //the parent learns the child type from this response
+        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
         response.arguments_size = 2;
 
         if(parent_id!=new_parent_id){

@@ -27,8 +27,8 @@
 
 // Types
 
-//a command sent to the child and still awaiting its reply; the awaited commands form a simple linked list, the
-//timer has a single child so no aggregation is needed and only the command code has to be tracked
+//a command sent to the child and still awaiting its reply, the awaited commands form a simple linked list and
+//the timer has a single child, so no aggregation is needed and only the command code has to be tracked
 typedef struct pending_node_t {
     command_code_t command_code;
     struct pending_node_t *next;
@@ -70,8 +70,9 @@ void sigterm_handler(int sig_num);
 /**
  * Locks the mutex that guards the data shared between the threads
  *
- * The mutex is statically initialized, so a failure should not happen; if it does the error is printed and the
- * caller must not access the shared data. A failed lock is not fatal on its own, the command is answered with an error
+ * The mutex is statically initialized, so a failure should not happen, but if it does the error is printed and
+ * the caller must not access the shared data, and a failed lock is not fatal on its own because the command
+ * is answered with an error
  *
  * @returns `true` if the mutex was locked, `false` otherwise
  */
@@ -285,15 +286,15 @@ void create_switch_response();
 /**
  * Propagates the delete to the child, so the whole branch below the timer is terminated
  *
- * The response is deferred to the child confirmation, which also triggers the shutdown; if there is no child,
- * or the request could not be sent, the exit is requested immediately and the response is sent by the caller
+ * The response is deferred to the child confirmation, which also triggers the shutdown, and if there is no
+ * child, or the request could not be sent, the exit is requested immediately and the response is sent by the caller
  */
 void create_delete_response();
 
 /**
  * Opens in writing the down pipe of the child (the child itself created it), so the timer can send requests to it
  *
- * It is the down-going twin of `change_snd_responses_pipe`, could be moved to `utils` to be shared with the Hub
+ * It is the down-going twin of `change_snd_responses_pipe` (maybe could be moved to `utils` to be shared with the Hub)
  *
  * @param child_id The id of the child
  * @param snd_requests_child_fd Pointer where the function will put the file descriptor to send requests to the child

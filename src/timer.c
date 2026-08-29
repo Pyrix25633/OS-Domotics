@@ -2,13 +2,6 @@
 
 #include "timer.h"
 
-//start - make FILE="timer" (ARGS="id" only to test, then it's given by the controller)
-//print_error only if i can't send an error response
-
-//response: id command_code response_code arguments
-
-//! the timer is a control device, so it also has the pipe where the child writes its responses
-
 // - Explicit device data -
 
 device_id_t id;
@@ -43,7 +36,7 @@ int rcv_responses_child_fd; //read is blocking       - pipe where the child writ
 int snd_requests_child_fd;  //write is non blocking  - pipe to send requests down to the child, valid only if has_child
 volatile bool force_exit = false; //set by the main thread, read by the child-responses thread, so volatile
 volatile error_code_t shutdown_code = OK; //set when a failure forces the exit, so main does not report a success
-request_t request; //destination, command_code, argument
+request_t request;
 response_t response;
 char buffer_read[MAX_REQUEST_SIZE];   //buffer to read the request from the pipe
 char buffer_write[MAX_RESPONSE_SIZE]; //buffer to write the response before send it to the pipe
@@ -60,9 +53,8 @@ pthread_mutex_t data_mutex = PTHREAD_MUTEX_INITIALIZER; //guards the state share
 int main(int argc, char *argv[]) {
     id = get_id_from_arguments(argc, argv); //id given by the controller when it does the exec
     response.source = id;
-    //the last argument is not NULL because the timer is a control device, so the pipe for the child is created too
     start_device_fifos(id, &rcv_requests_fd, &snd_responses_fd, &rcv_responses_child_fd);
-    init_routing_table(routing_table); //empty until a control-device child is acquired, a leaf child never uses it
+    init_routing_table(routing_table);
 
     set_signal_handler(SIGTERM, sigterm_handler);
     set_signal_handler(SIGINT, sigterm_handler); //same handler as SIGTERM: a Ctrl+C reaches the whole process group
@@ -74,45 +66,38 @@ int main(int argc, char *argv[]) {
     //row, so seeding with the time alone gives the same processing delays to every device born in the same second
     srand(time(NULL) ^ getpid());
 
-    //start the bottom-up thread that reads the child responses and forwards them up to the parent
     if(pthread_create(&child_responses_thread, NULL, child_responses_routine, NULL) != 0){
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating the child responses thread");
         handle_shutdown(UNABLE_TO_CREATE_THREAD);
     }
     child_thread_running = true;
 
-    //start the schedule thread that switches the child on at begin and off at end
     if(pthread_create(&schedule_thread, NULL, schedule_routine, NULL) != 0){
         print_error(STDERR_FILENO, UNABLE_TO_CREATE_THREAD, id, "while creating the schedule thread");
         handle_shutdown(UNABLE_TO_CREATE_THREAD);
     }
     schedule_thread_running = true;
 
-    //force_exit is volatile, so the loop below may not run: the code is initialized to avoid an undefined value
     error_code_t error_code = OK;
-    //the main thread handles the requests coming from the parent, one by one in order of arrival
     while(!force_exit) {
         error_code = execute_command();
     }
-    //a failure that forced the exit is reported instead of the code of the last command, which would be a success
     handle_shutdown(IS_ERROR(shutdown_code) ? shutdown_code : error_code);
 }
 
 void handle_shutdown(error_code_t error) {
     //the child-responses thread is blocked on a read that never returns EOF (up pipe in O_RDWR), so it is
-    //cancelled and joined before closing the pipes it uses; it is skipped when the shutdown is requested by
+    //cancelled and joined before closing the pipes it uses, and it is skipped when the shutdown is requested by
     //that same thread, on the child delete confirmation, because a thread can not cancel and join itself
     if(child_thread_running && !pthread_equal(pthread_self(), child_responses_thread)){
         if(pthread_cancel(child_responses_thread) != 0){
             print_error(STDERR_FILENO, UNABLE_TO_CANCEL_THREAD, id, "while cancelling the child responses thread");
         }
-        //the join is attempted anyway, it is what guarantees the thread is stopped before its pipes are closed
         if(pthread_join(child_responses_thread, NULL) != 0){
             print_error(STDERR_FILENO, UNABLE_TO_JOIN_THREAD, id, "while joining the child responses thread");
         }
         child_thread_running = false;
     }
-    //the schedule thread may be sleeping or writing to the child, it is cancelled and joined before its pipe is closed
     if(schedule_thread_running){
         if(pthread_cancel(schedule_thread) != 0){
             print_error(STDERR_FILENO, UNABLE_TO_CANCEL_THREAD, id, "while cancelling the schedule thread");
@@ -122,33 +107,28 @@ void handle_shutdown(error_code_t error) {
         }
         schedule_thread_running = false;
     }
-    //the child down pipe is only opened for writing, the child owns it, so it is just closed and not deleted
     if(has_child){
         if(close(snd_requests_child_fd) < 0){
             print_error(STDERR_FILENO, UNABLE_TO_CLOSE_PIPE, id, "while closing the child requests pipe");
         }
-        //free the routing table nodes of a control-device child subtree, the threads are already joined so no lock
         remove_routing_data(routing_table, child_id, id);
     }
-    //control device: the last argument is the child pipe and not NO_FILE_DESCRIPTOR, so it is closed and deleted too
     error_code_t error_code = end_device_fifos(id, rcv_requests_fd, snd_responses_fd, rcv_responses_child_fd);
     if(IS_ERROR(error_code)){
-        //prints the error on standard error, best practice to do
         print_error(STDERR_FILENO, error_code, id, "while closing and deleting pipes");
     }
-    else{ error_code = error; } //no closing error: return the code that caused the shutdown
+    else{ error_code = error; }
     exit(error_code);
 }
 
-//SIGTERM is used by the controller for a clean deletion, the device shuts down returning the code
 void sigterm_handler(int sig_num) {
-    (void)sig_num; //unused, the handler is registered for a single signal
+    (void)sig_num;
     handle_shutdown(UNEXPECTED_SHUTDOWN);
 }
 
-//the data mutex is statically initialized, so a lock failure should not happen; if it does the shared state can
-//not be accessed safely, so the error is reported and false is returned and the caller must not touch the data.
-//a failed lock is not fatal on its own (the command is answered with an error), while a failed unlock leaves the
+//the data mutex is statically initialized, so a lock failure should not happen, but if it does the shared state can
+//not be accessed safely, so the error is reported and false is returned and the caller must not touch the data,
+//and a failed lock is not fatal on its own (the command is answered with an error), while a failed unlock leaves the
 //mutex stuck locked and forces the exit
 bool lock_data(){
     if(pthread_mutex_lock(&data_mutex) != 0){
@@ -168,7 +148,6 @@ bool unlock_data(){
     return true;
 }
 
-//records a command sent to the child among the ones whose reply is awaited, the caller must already hold the lock
 bool add_pending(command_code_t code){
     pending_node_t *node = malloc(sizeof(pending_node_t));
     if(node == NULL){
@@ -190,7 +169,7 @@ bool add_pending(command_code_t code){
     return true;
 }
 
-//removes the first awaited command matching the given one and tells whether it was found; a child that is a
+//removes the first awaited command matching the given one and tells whether it was found, a child that is a
 //control device can complete different commands out of order, so the match is done on the command and not
 //simply on the oldest entry, the caller must already hold the lock
 bool take_pending(command_code_t code){
@@ -220,7 +199,7 @@ error_code_t read_pipe(){
         force_exit = true;
         return UNEXPECTED_END_OF_FILE;
     }
-    if(size != MAX_REQUEST_SIZE){ //a wrong number of bytes was read, the message is not a valid fixed-size one
+    if(size != MAX_REQUEST_SIZE){
         return UNABLE_TO_READ_PIPE;
     }
     return parse_request(&request, buffer_read, MAX_REQUEST_SIZE);
@@ -237,11 +216,10 @@ void write_pipe(){
 }
 
 //the child-responses thread writes to the same parent pipe, and a link can re-point it, so the write is
-//guarded; with SIGPIPE ignored the write fails instead of terminating the process, but towards the parent
+//guarded, and with SIGPIPE ignored the write fails instead of terminating the process, but towards the parent
 //there is nobody left to report the failure to, so it stays fatal and the timer shuts down as before
 void write_to_parent(char *buffer, char *message){
     if(!lock_data()){
-        //the parent-response path can not proceed without the mutex, so the timer shuts down
         handle_shutdown(UNABLE_TO_LOCK_MUTEX);
         return;
     }
@@ -268,7 +246,7 @@ void release_unreachable_child(){
     unlock_data();
 }
 
-//the declared type carries the leaf bits of the child, so the parent knows which switch label the branch takes.
+//the declared type carries the leaf bits of the child, so the parent knows which switch label the branch takes,
 //a leaf child keeps the type it declared, while a control-device child changes its own type as its branch is
 //filled or emptied, so its current type is read from the routing table, the caller must already hold the lock
 void refresh_child_type(){
@@ -291,13 +269,11 @@ void acquire_child(response_t *child_response){
     }
     device_id_t new_child_id = child_response->source;
     device_type_t new_child_type = child_response->arguments[DEVICE_TYPE_ARGUMENT];
-    //opening does not block, the child already opened its down pipe in reading, done outside the lock
     int new_child_fd;
     if(IS_ERROR(open_child_requests_pipe(new_child_id, &new_child_fd))){
         print_error(STDERR_FILENO, UNABLE_TO_OPEN_PIPE, id, "while opening the child requests pipe");
         return;
     }
-    //these scalars are read by the main thread, so they are published together under the lock
     if(!lock_data()){
         close(new_child_fd); //the fd could not be published, it is closed to avoid a leak
         return;
@@ -305,16 +281,14 @@ void acquire_child(response_t *child_response){
     child_id = new_child_id;
     child_type = new_child_type;
     snd_requests_child_fd = new_child_fd;
-    
+
     //a control-device child brings its own subtree: it is tracked in the routing table so the whole branch can be
-    //replayed to a new parent, a leaf child has no descendants and needs only the scalars above (hybrid approach)
-    
-    //the && short-circuits: for a leaf child, IS_CONTROL is false and the insert is never evaluated
+    //replayed to a new parent, a leaf child has no descendants and needs only the scalars above
     if((IS_CONTROL(new_child_type))
         && IS_ERROR(insert_direct_routing_data(routing_table, new_child_id, new_child_type, id, new_child_fd))){
         print_error(STDERR_FILENO, UNABLE_TO_ALLOCATE_HEAP, id, "while adding the child to the routing table");
     }
-    refresh_child_type(); //the child is in place, so the declared type can be built from it
+    refresh_child_type();
     has_child = true; //set last, the main thread checks it before using the other child scalars
     unlock_data();
 }
@@ -326,7 +300,6 @@ void acquire_descendant(response_t *child_response){
     if(!((IS_LINK(code)) && LINK_SUBCOMMAND(code) == LINK_CHANGE_PARENT)){
         return;
     }
-    //a failed response is ignored, the direct child is not a descendant and is handled by acquire_child
     if(child_response->response_code != OK || child_response->arguments[PARENT_ID_ARGUMENT] == id){
         return;
     }
@@ -334,16 +307,11 @@ void acquire_descendant(response_t *child_response){
     device_type_t descendant_type = child_response->arguments[DEVICE_TYPE_ARGUMENT];
     device_id_t descendant_parent = child_response->arguments[PARENT_ID_ARGUMENT];
 
-    //insert_indirect_routing_data looks up the parent in the table first: if it is missing it returns
-    //ROUTE_NOT_FOUND and inserts nothing, meaning the device is not part of the timer subtree, so it is skipped.
-    //In the correct top-down replay the parent is always inserted before its children, so this is defensive
     if(!lock_data()){
         return;
     }
     error_code_t error_code = insert_indirect_routing_data(routing_table, descendant_id, descendant_type, descendant_parent);
     if(!IS_ERROR(error_code)){
-        //the branch below is no longer empty, so the type of every node up to the child is recomputed: the walk
-        //stops by itself at the child, because the timer is not part of its own routing table
         routing_data_t *descendant = find_routing_data(routing_table, descendant_id);
         if(descendant != NULL){
             update_type_to_not_empty(routing_table, descendant);
@@ -353,7 +321,6 @@ void acquire_descendant(response_t *child_response){
         }
     }
     unlock_data();
-    //ROUTE_NOT_FOUND is the expected "not in the subtree" outcome and is ignored, only real errors are printed
     if(IS_ERROR(error_code) && error_code != ROUTE_NOT_FOUND){
         print_error(STDERR_FILENO, error_code, id, "while adding a descendant to the routing table");
     }
@@ -369,29 +336,23 @@ void release_child(response_t *child_response){
     if(!lock_data()){
         return;
     }
-    //a delete of the direct child is routed by the timer and never comes back as a remove-child request, so
-    //the child is dropped here: otherwise the next request would be written to a pipe with no reader
     if(has_child && child_response->source == child_id){
         error_code_t error_code = drop_child();
-        //nothing can be reported to the parent here, the delete response of the child is already on its way up
         if(IS_ERROR(error_code)){
             print_error(STDERR_FILENO, error_code, id, "while releasing the deleted child");
         }
     }
     else{
         routing_data_t *node = find_routing_data(routing_table, child_response->source);
-        //remove_routing_data cascades, so removing the top of a deleted branch also drops all its descendants
         if(node != NULL){
-            //the removal frees the node, so its parent is read before it
             device_id_t descendant_parent = node->parent_id;
             remove_routing_data(routing_table, child_response->source, descendant_parent);
-            //the branch it belonged to may be empty now, so the type of every node up to the child is recomputed
             routing_data_t *parent = find_routing_data(routing_table, descendant_parent);
             if(parent != NULL){
                 update_type_to_empty(routing_table, parent);
             }
             if(has_child){
-                refresh_child_type(); //the child type changed with its branch, so the declared type follows it
+                refresh_child_type();
             }
         }
     }
@@ -399,8 +360,8 @@ void release_child(response_t *child_response){
 }
 
 //when a device is removed from a parent below the timer, that parent answers the remove-child request and its
-//response travels up through here: it is the only notice that the device left the subtree, so the node is dropped.
-//Without this the subtree replay would announce to a new parent a device that is no longer below the timer, and
+//response travels up through here: it is the only notice that the device left the subtree, so the node is dropped,
+//otherwise the subtree replay would announce to a new parent a device that is no longer below the timer, and
 //the new parent would take over a device that belongs to somebody else
 void release_removed_descendant(response_t *child_response){
     command_code_t code = child_response->command_code;
@@ -408,7 +369,7 @@ void release_removed_descendant(response_t *child_response){
         return;
     }
     if(child_response->response_code != OK){
-        return; //the removal failed, the subtree is unchanged
+        return;
     }
     device_id_t removed_id = child_response->arguments[CHILD_ID_ARGUMENT];
     device_id_t removed_parent = child_response->source;
@@ -417,17 +378,14 @@ void release_removed_descendant(response_t *child_response){
         return;
     }
     routing_data_t *node = find_routing_data(routing_table, removed_id);
-    //only a node that the sender really has below itself is dropped, any other response is just forwarded
     if(node != NULL && node->parent_id == removed_parent){
-        //remove_routing_data cascades, so a removed branch leaves with all of its descendants
         remove_routing_data(routing_table, removed_id, removed_parent);
-        //the branch may be empty now, so the type of every node up to the child is recomputed
         routing_data_t *parent = find_routing_data(routing_table, removed_parent);
         if(parent != NULL){
             update_type_to_empty(routing_table, parent);
         }
         if(has_child){
-            refresh_child_type(); //the child type changed with its branch, so the declared type follows it
+            refresh_child_type();
         }
     }
     unlock_data();
@@ -435,7 +393,6 @@ void release_removed_descendant(response_t *child_response){
 
 //forgets the child and goes back to the plain timer type, the caller must already hold the lock
 error_code_t drop_child(){
-    //the whole subtree leaves with the child (cascades to all descendants, a leaf child was never tracked)
     remove_routing_data(routing_table, child_id, id);
     error_code_t error_code = OK;
     if(close(snd_requests_child_fd) < 0){
@@ -448,8 +405,8 @@ error_code_t drop_child(){
 
 //bottom-up thread: reads the responses coming from the child and forwards them up to the parent
 void *child_responses_routine(void *arg){
-    (void)arg; //unused
-    char child_buffer[MAX_RESPONSE_SIZE]; //raw bytes from the child, forwarded up unchanged
+    (void)arg;
+    char child_buffer[MAX_RESPONSE_SIZE];
     char parse_buffer[MAX_RESPONSE_SIZE]; //copy to parse, parse_response inserts terminators in the buffer
     response_t child_response;
     while(!force_exit){
@@ -460,22 +417,16 @@ void *child_responses_routine(void *arg){
             print_error(STDERR_FILENO, UNABLE_TO_READ_PIPE, id, "while reading a child response");
             continue;
         }
-        //the change-parent response of a new child is intercepted to acquire it, parsing a copy of the bytes
         memcpy(parse_buffer, child_buffer, MAX_RESPONSE_SIZE);
         if(!IS_ERROR(parse_response(&child_response, parse_buffer, MAX_RESPONSE_SIZE))){
             acquire_child(&child_response);
-            //a change-parent response of a deeper descendant is recorded in the routing table for the subtree replay
             acquire_descendant(&child_response);
-            //a delete response drops the device that sent it, the direct child or a tracked descendant
             release_child(&child_response);
-            //a remove-child response travelling up says that a descendant left the subtree
             release_removed_descendant(&child_response);
-            //a reply to a request the timer sent for mirroring is turned into the timer own response, not forwarded
             if(handle_own_reply(&child_response)){
                 continue;
             }
         }
-        //forward the child response to the parent
         write_to_parent(child_buffer, "while forwarding a child response");
     }
     return NULL;
@@ -485,13 +436,12 @@ void *child_responses_routine(void *arg){
 //response (source set to the timer) and sent up, and true is returned so the caller does not forward it too
 bool handle_own_reply(response_t *child_response){
     if(!lock_data()){
-        return false; //without the mutex the reply can not be matched, it is left to be forwarded verbatim
+        return false;
     }
-    //the match and the mirrored times are read in the same lock, so the reply carries a consistent snapshot
     bool ours = take_pending(child_response->command_code);
     if(ours && IS_INFO(child_response->command_code)){
         //a live state different from the last one the timer commanded means the child was switched manually,
-        //so a manual override is reported instead of a definite state (the next command clears it on its own).
+        //so a manual override is reported instead of a definite state (the next command clears it on its own),
         //a control device child with nothing below answers with an undefined state, which is not a divergence
         //and is forwarded as it is
         if(child_response->arguments[STATE_ARGUMENT] != state
@@ -508,16 +458,16 @@ bool handle_own_reply(response_t *child_response){
 
     child_response->source = id; //the parent gets the response from the timer, not from the child
     if(IS_SWITCH(child_response->command_code)){
-        child_response->arguments_size = 0; //a switch response carries no arguments
+        child_response->arguments_size = 0;
     }
     else if(IS_INFO(child_response->command_code)){
         //the child info reply already carries its live state and its on/open time in the first two positions,
-        //which are kept as they are, so a parent reads them where every other device puts them; begin and end
+        //which are kept as they are, so a parent reads them where every other device puts them, while begin and end
         //replace whatever the child put after them
         child_response->arguments_size = MAX_TIMER_ARGUMENTS;
     }
     else if(IS_DELETE(child_response->command_code)){
-        child_response->arguments_size = 0; //a delete response carries no arguments
+        child_response->arguments_size = 0;
     }
 
     char buffer[MAX_RESPONSE_SIZE];
@@ -539,7 +489,6 @@ bool handle_own_reply(response_t *child_response){
 //builds the switch command for the child from its type and sends it down, the label depends on the child
 //type (power for a bulb, open or close for a window or a fridge), the position turns it on or off
 error_code_t send_child_switch(bool activate){
-    //the child scalars are shared with the other threads, so they are snapshotted under the lock
     if(!lock_data()){
         return UNABLE_TO_LOCK_MUTEX;
     }
@@ -549,16 +498,14 @@ error_code_t send_child_switch(bool activate){
     int child_fd = snd_requests_child_fd;
     unlock_data();
     if(!present){
-        return CHILD_NOT_FOUND; //nothing to switch
+        return CHILD_NOT_FOUND;
     }
 
     command_code_t switch_code = SWITCH;
     if(IS_BULB_LIKE(type)){
-        //a bulb has a single power switch, the position turns it on or off
         switch_code |= SWITCH_POWER | (activate ? POSITION_ON : POSITION_OFF);
     }
     else{
-        //a window or a fridge have separate open and close momentary switches, both triggered on
         switch_code |= (activate ? SWITCH_OPEN : SWITCH_CLOSE) | POSITION_ON;
     }
 
@@ -571,7 +518,7 @@ error_code_t send_child_switch(bool activate){
         return error_code;
     }
     if(write(child_fd, buffer, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
-        release_unreachable_child(); //the child is gone, the scheduler keeps running for a future one
+        release_unreachable_child();
         return UNABLE_TO_WRITE_PIPE;
     }
     return OK;
@@ -579,7 +526,7 @@ error_code_t send_child_switch(bool activate){
 
 //schedule thread: sleeps until the next begin or end and switches the child on or off, repeating each day
 void *schedule_routine(void *arg){
-    (void)arg; //unused
+    (void)arg;
     while(!force_exit){
         if(!lock_data()){
             return NULL; //without the mutex the times can not be read, and retrying would spin printing errors
@@ -588,7 +535,6 @@ void *schedule_routine(void *arg){
         u_int16_t local_end = end;
         unlock_data();
 
-        //current time of the day in seconds, begin and end are minutes from midnight
         time_t now = time(NULL);
         struct tm *local_time = localtime(&now);
         int now_second = local_time->tm_hour * 3600 + local_time->tm_min * 60 + local_time->tm_sec;
@@ -611,7 +557,6 @@ void *schedule_routine(void *arg){
         //sleep is a cancellation point, so pthread_cancel can wake the thread at shutdown
         sleep(target_second - now_second);
 
-        //the state is mirrored only if the switch was actually sent to the child
         if(send_child_switch(activate) == OK && lock_data()){
             state = activate ? STATE_ON : STATE_OFF;
             unlock_data();
@@ -622,17 +567,15 @@ void *schedule_routine(void *arg){
 
 error_code_t execute_command(){
     command_code_t code;
-    response.command_code = NULL_COMMAND; //default, overwritten below when a valid request is parsed
+    response.command_code = NULL_COMMAND;
     response.arguments_size = 0;
-    defer_response = false; //reset each command, set only when the response will come from the child reply
+    defer_response = false;
 
     error_code_t error_code = read_pipe();
     if(IS_ERROR(error_code)){
         response.response_code = error_code;
     }
     else if(request.destination != id) {
-        //the request is not for the timer, so it is for the child or for something under it
-        //has_child and the child fd are set by the child-responses thread, so they are read under the lock
         if(!lock_data()){
             response.response_code = UNABLE_TO_LOCK_MUTEX;
         }
@@ -641,26 +584,21 @@ error_code_t execute_command(){
             int child_fd = snd_requests_child_fd;
             unlock_data();
             if(forward){
-                //buffer_read has been modified by parse_request, so the request is rebuilt from the struct
                 error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
                 if(!IS_ERROR(forward_code) && write(child_fd, buffer_read, MAX_REQUEST_SIZE) == MAX_REQUEST_SIZE){
                     return error_code; //forwarded: the response is sent by the destination and not by the timer
                 }
-                //a formatting error is the timer own fault, a failed write means the child is gone and is dropped
                 if(!IS_ERROR(forward_code)){
                     release_unreachable_child();
                 }
-                //the forwarding failed, so the destination will not answer: the timer answers with an error itself
                 response.response_code = UNABLE_TO_WRITE_PIPE;
             }
             else{
-                //no child: nobody below can handle it, only the timer can answer
                 response.response_code = DEVICE_NOT_FOUND;
             }
         }
     }
     else{
-        //no errors occurred while parsing the request and the destination is correct
         code = request.command_code;
         response.command_code = code;
         response.response_code = OK;
@@ -675,9 +613,7 @@ error_code_t execute_command(){
         }
     }
 
-    //when deferred the response is sent by the child-responses thread on the child reply (delays overlap)
     if(!defer_response){
-        //the delay is applied before responding, for any command, error responses included
         simulate_processing_time();
         write_pipe();
     }
@@ -702,33 +638,30 @@ error_code_t execute_command(){
 //mirrored when it replies (in the bottom-up thread), which is what makes a manual override on the child visible
 void create_info_response(){
     //snapshot, pending and the write to the child share the same short lock: the write is non blocking (the
-    //child reads its request immediately), so holding the lock across it does not serialize anything. The delay
+    //child reads its request immediately), so holding the lock across it does not serialize anything, the delay
     //(simulate_processing_time) is the only blocking step and stays outside the lock, in execute_command
     if(!lock_data()){
         response.response_code = UNABLE_TO_LOCK_MUTEX;
         return;
     }
     if(!has_child){
-        //no child to query, the timer answers on its own with an undefined mirrored state, like the hub does
         response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
-        response.arguments[ON_SECONDS_ARGUMENT] = 0; //no child, so there is no mirrored time
+        response.arguments[ON_SECONDS_ARGUMENT] = 0;
         response.arguments[BEGIN_ARGUMENT] = begin;
         response.arguments[END_ARGUMENT] = end;
         response.arguments_size = MAX_TIMER_ARGUMENTS;
     }
     //the reply is registered before the request leaves, so it can never arrive before the timer can match it
     else if(!add_pending(request.command_code)){
-        response.response_code = UNABLE_TO_ALLOCATE_HEAP; //the awaited reply could not be tracked
+        response.response_code = UNABLE_TO_ALLOCATE_HEAP;
     }
     else{
-        //propagate the info down, rebuilt from the struct with the child as destination
         request.destination = child_id;
         error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
         if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
             take_pending(request.command_code); //the request never left, so no reply has to be awaited for it
-            //a formatting error is the timer own fault, a failed write means the child is gone and is dropped
             if(!IS_ERROR(forward_code)){
-                error_code_t drop_code = drop_child(); //already holding the lock, so drop directly
+                error_code_t drop_code = drop_child();
                 if(IS_ERROR(drop_code)){
                     print_error(STDERR_FILENO, drop_code, id, "while releasing the unreachable child");
                 }
@@ -736,7 +669,6 @@ void create_info_response(){
             response.response_code = UNABLE_TO_WRITE_PIPE;
         }
         else{
-            //the info response is built and sent by the bottom-up thread when the child replies, not here
             defer_response = true;
         }
     }
@@ -745,9 +677,8 @@ void create_info_response(){
 
 void create_link_response(){
     if(LINK_SUBCOMMAND(request.command_code)==LINK_CHANGE_PARENT){
-        //the request argument is the new parent id
         device_id_t new_parent_id = request.argument;
-        response.arguments[PARENT_ID_ARGUMENT] = new_parent_id; //to give always a feedback
+        response.arguments[PARENT_ID_ARGUMENT] = new_parent_id;
         response.arguments_size = 2;
         //device_type is set by the child-responses thread and snd_responses_fd is written by it too, so reading
         //the type and re-pointing the pipe are both done under the same lock
@@ -755,21 +686,19 @@ void create_link_response(){
             response.response_code = UNABLE_TO_LOCK_MUTEX;
             return;
         }
-        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type; //the parent learns the timer type from this response
+        response.arguments[DEVICE_TYPE_ARGUMENT] = device_type;
         if(parent_id!=new_parent_id){
             response.response_code = change_snd_responses_pipe(new_parent_id,&snd_responses_fd);
             if(response.response_code == OK){
                 parent_id = new_parent_id;
-                parent_changed = true; //the child is replayed to the new parent after the timer own response
+                parent_changed = true;
             }
         }
         unlock_data();
     }
     else if(LINK_SUBCOMMAND(request.command_code)==LINK_REMOVE_CHILD){
-        //the request argument is the child id to remove
-        response.arguments[CHILD_ID_ARGUMENT] = request.argument; //to give always a feedback
+        response.arguments[CHILD_ID_ARGUMENT] = request.argument;
         response.arguments_size = 2;
-        //the child scalars are shared with the child-responses thread, so they are accessed under the lock
         if(!lock_data()){
             response.response_code = UNABLE_TO_LOCK_MUTEX;
             return;
@@ -787,13 +716,11 @@ void create_link_response(){
     else{
         response.response_code = UNEXPECTED_COMMAND;
     }
-    //a child is no longer added here, it is acquired from its change-parent response
 }
 
 //re-announces the child to the new parent by faking its change-parent response, so the new parent and the
 //chain above rebuild the branch, the source is the child and the declared parent is the timer
 void replay_child_add(){
-    //the child scalars are shared with the child-responses thread, so they are snapshotted under the lock
     if(!lock_data()){
         return;
     }
@@ -802,15 +729,15 @@ void replay_child_add(){
     device_type_t replayed_child_type = child_type;
     unlock_data();
     if(!present){
-        return; //no child, nothing to replay
+        return;
     }
 
     response_t child_add;
     child_add.source = replayed_child_id;
     child_add.command_code = LINK | LINK_CHANGE_PARENT; //looks like the child own change-parent response
     child_add.response_code = OK;
-    child_add.arguments[PARENT_ID_ARGUMENT] = id;                     //the child parent is the timer
-    child_add.arguments[DEVICE_TYPE_ARGUMENT] = replayed_child_type;  //the child declares its own type
+    child_add.arguments[PARENT_ID_ARGUMENT] = id;
+    child_add.arguments[DEVICE_TYPE_ARGUMENT] = replayed_child_type;
     child_add.arguments_size = 2;
 
     char buffer[MAX_RESPONSE_SIZE];
@@ -823,21 +750,18 @@ void replay_child_add(){
 }
 
 //re-announces the whole tracked subtree to the new parent, one faked change-parent response per node, each with
-//the node own parent and type, so the new parent and the chain above rebuild every branch; used when the child is
+//the node own parent and type, so the new parent and the chain above rebuild every branch, used when the child is
 //a control device, find_all_routing_data returns a node always after its parent so the branch is rebuilt top-down
 void replay_subtree(){
     response_t node_add;
-    node_add.command_code = LINK | LINK_CHANGE_PARENT; //looks like the node own change-parent response
+    node_add.command_code = LINK | LINK_CHANGE_PARENT;
     node_add.response_code = OK;
     node_add.arguments_size = 2;
     char buffer[MAX_RESPONSE_SIZE];
 
-    //the table and snd_responses_fd are shared with the child-responses thread, so the whole traversal is guarded:
-    //the node pointer is the cursor for the next find_all_routing_data call and must stay valid until the end.
-    //write_to_parent can not be used here, it takes the same lock, so the failure is reported after the loop
     bool failed = false;
     if(!lock_data()){
-        return; //without the mutex the table can not be traversed safely
+        return;
     }
     routing_data_t *node = find_all_routing_data(routing_table, id, NULL);
     while(node != NULL && !failed){
@@ -849,7 +773,6 @@ void replay_subtree(){
         node = find_all_routing_data(routing_table, id, node);
     }
     unlock_data();
-    //the replay goes to the parent, so a failure leaves nobody to answer to and the timer shuts down
     if(failed){
         print_error(STDERR_FILENO, BROKEN_PIPE, id, "while replaying the subtree");
         handle_shutdown(BROKEN_PIPE);
@@ -862,7 +785,6 @@ void reschedule(){
         if(pthread_cancel(schedule_thread) != 0){
             print_error(STDERR_FILENO, UNABLE_TO_CANCEL_THREAD, id, "while cancelling the schedule thread");
         }
-        //the join makes sure the old thread is stopped before a new one is started, so they never overlap
         if(pthread_join(schedule_thread, NULL) != 0){
             print_error(STDERR_FILENO, UNABLE_TO_JOIN_THREAD, id, "while joining the schedule thread");
         }
@@ -875,14 +797,13 @@ void reschedule(){
     schedule_thread_running = true;
 }
 
-//begin and end are minutes from midnight, the professor said that there are no timers across midnight
-//so the only invalid case is begin > end (as stated in the spec, section 2.2.8), so begin == end is allowed
+//begin and end are minutes from midnight, and a timer does not run across midnight, so the only
+//invalid case is begin > end, while begin == end is allowed
 void create_registry_response(){
-    response.arguments[REGISTRY_ARGUMENT] = request.argument; //to give always a feedback
+    response.arguments[REGISTRY_ARGUMENT] = request.argument;
     response.arguments_size = 1;
     bool changed = false;
 
-    //begin and end are read by the schedule thread, so they are validated and updated under the lock
     if(!lock_data()){
         response.response_code = UNABLE_TO_LOCK_MUTEX;
         return;
@@ -911,45 +832,38 @@ void create_registry_response(){
     }
     unlock_data();
 
-    //the schedule thread was sleeping on the old times, it is restarted so it uses the new begin or end
     if(changed){
         reschedule();
     }
 }
 
-//the timer mirrors the state of its child, so a switch is propagated down; the state becomes consistent after
+//the timer mirrors the state of its child, so a switch is propagated down, the state becomes consistent after
 //the propagation, and the manual override is cleared because the mirrored state is set to the commanded one
 void create_switch_response(){
     command_code_t code = request.command_code;
-    //snapshot, validation, pending, write to the child and the state mirror share one lock: the write is non
-    //blocking, so holding the lock across it does not serialize anything; the delay stays outside, as for info
     if(!lock_data()){
         response.response_code = UNABLE_TO_LOCK_MUTEX;
         return;
     }
-    //the switch label must match the child type (power for a bulb, open or close for a window or a fridge)
     bool valid = has_child && ((IS_BULB_LIKE(child_type) && SWITCH_LABEL(code)==SWITCH_POWER)
         || ((IS_WINDOW_LIKE(child_type) || IS_FRIDGE_LIKE(child_type))
             && (SWITCH_LABEL(code)==SWITCH_OPEN || SWITCH_LABEL(code)==SWITCH_CLOSE)));
     if(!has_child){
-        response.response_code = DEVICE_NOT_FOUND; //no child to mirror
+        response.response_code = DEVICE_NOT_FOUND;
     }
     else if(!valid){
         response.response_code = UNEXPECTED_COMMAND;
     }
-    //the reply is registered before the request leaves, so it can never arrive before the timer can match it
     else if(!add_pending(code)){
-        response.response_code = UNABLE_TO_ALLOCATE_HEAP; //the awaited reply could not be tracked
+        response.response_code = UNABLE_TO_ALLOCATE_HEAP;
     }
     else{
-        //propagate the switch down, rebuilt from the struct with the child as destination
         request.destination = child_id;
         error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
         if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
-            take_pending(code); //the request never left, so no reply has to be awaited for it
-            //a formatting error is the timer own fault, a failed write means the child is gone and is dropped
+            take_pending(code);
             if(!IS_ERROR(forward_code)){
-                error_code_t drop_code = drop_child(); //already holding the lock, so drop directly
+                error_code_t drop_code = drop_child();
                 if(IS_ERROR(drop_code)){
                     print_error(STDERR_FILENO, drop_code, id, "while releasing the unreachable child");
                 }
@@ -957,14 +871,12 @@ void create_switch_response(){
             response.response_code = UNABLE_TO_WRITE_PIPE;
         }
         else{
-            //mirror the state the switch produces on the child; open/close in the off position is a no-op
             if(SWITCH_POSITION(code)==POSITION_ON){
                 state = (SWITCH_LABEL(code)==SWITCH_CLOSE) ? STATE_OFF : STATE_ON;
             }
             else if(SWITCH_LABEL(code)==SWITCH_POWER){
                 state = STATE_OFF;
             }
-            //the response is sent by the bottom-up thread when the child replies, not here
             defer_response = true;
         }
     }
@@ -974,7 +886,6 @@ void create_switch_response(){
 //deleting a control device terminates the branch below it, so the delete is propagated to the child and the
 //timer answers only when the child confirms, then the shutdown is performed by the child-responses thread
 void create_delete_response(){
-    //snapshot, pending and the write to the child share one lock, as for info and switch; the delay stays outside
     if(!lock_data()){
         response.response_code = UNABLE_TO_LOCK_MUTEX;
         return;
@@ -982,30 +893,25 @@ void create_delete_response(){
     if(!has_child){
         force_exit = true; //nothing below to terminate, the response is sent and the main loop ends
     }
-    //the reply is registered before the request leaves, so it can never arrive before the timer can match it
     else if(!add_pending(request.command_code)){
-        response.response_code = UNABLE_TO_ALLOCATE_HEAP; //the awaited reply could not be tracked
+        response.response_code = UNABLE_TO_ALLOCATE_HEAP;
         force_exit = true;
     }
     else{
-        //propagate the delete down, rebuilt from the struct with the child as destination
         request.destination = child_id;
         error_code_t forward_code = format_request(&request, buffer_read, MAX_REQUEST_SIZE);
         if(IS_ERROR(forward_code) || write(snd_requests_child_fd, buffer_read, MAX_REQUEST_SIZE) != MAX_REQUEST_SIZE){
-            take_pending(request.command_code); //the request never left, so no reply has to be awaited for it
-            //the child can not be reached, its deletion is left to the controller and the timer terminates anyway
+            take_pending(request.command_code);
             response.response_code = UNABLE_TO_WRITE_PIPE;
             force_exit = true;
         }
         else{
-            //the response is sent by the bottom-up thread when the child confirms, and the shutdown follows it
             defer_response = true;
         }
     }
     unlock_data();
 }
 
-//opening in writing does not block because the child already opened its down pipe in reading at startup
 error_code_t open_child_requests_pipe(device_id_t child_id, int *snd_requests_child_fd){
     char name[PIPE_NAME_MAX_LENGTH];
     if(IS_ERROR(create_fifo_name(child_id, DIRECTION_DOWN, name, PIPE_NAME_MAX_LENGTH))
