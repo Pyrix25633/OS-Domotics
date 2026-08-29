@@ -53,7 +53,7 @@
  * `UNEXPECTED_END_OF_FILE` if the pipe was closed by the parent,
  * `UNABLE_TO_CANCEL_THREAD` if the autoclose thread could not be cancelled,
  * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
- * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM`,
+ * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM` or `SIGINT`,
  * `BROKEN_PIPE` if it received `SIGPIPE`,
  * `OK` otherwise
  */
@@ -124,7 +124,7 @@ void write_pipe();
 void handle_shutdown(error_code_t error);
 
 /**
- * Handles the shutdown caused by a `SIGTERM` signal
+ * Handles the shutdown caused by a `SIGTERM` or `SIGINT` signal
  * 
  * @param sig_num Signal number, unused
  */

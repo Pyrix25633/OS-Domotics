@@ -72,7 +72,7 @@ int main(int argc, char *argv[]);
  * `DEVICE_NOT_FOUND` if there is no device with the specified target ID,
  * `ROUTE_NOT_FOUND` if the target device has been removed from the routing table before the request could be sent,
  * `DEVICE_TYPE_MISMATCH` if the command is not compatible with the target device,
- * `SYSTEM_OFF` if the system is off and the command is not a switch main,F
+ * `SYSTEM_OFF` if the system is off and the command is not a switch main,
  * `CANNOT_ADD_TO_PARENT` if the parent wouldn't change or is a Timer already with a child,
  * `LINKING_PARENT_TO_CHILD` if the link would create cycles,
  * `UNABLE_TO_UNLOCK_MUTEX` if data mutex could not be locked,
