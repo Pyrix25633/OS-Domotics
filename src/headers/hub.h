@@ -49,7 +49,7 @@ typedef struct pending_t {
  * `REQUEST_FORMAT_ERROR` if there was an error in the format,
  * `UNABLE_TO_LOCK_MUTEX` if data mutex could not be locked,
  * `UNABLE_TO_UNLOCK_MUTEX` if the mutex could not be unlocked,
- * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM`,
+ * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM` or `SIGINT`,
  * `UNEXPECTED_COMMAND` if the command received cannot be handled,
  * `UNABLE_TO_ALLOCATE_HEAP` if the malloc has failed,
  * `CHILD_NOT_FOUND` if the device could not be found,
