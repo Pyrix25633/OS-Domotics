@@ -42,7 +42,9 @@
  * @param argc Number of arguments received
  * @param argv Argument vector of length `argc`, each string is terminated by `'\0'`
  * 
- * @returns `UNABLE_TO_CREATE_PIPE` if the pipe where the Controller receives
+ * @returns the response code of the last handled command,
+ * or one of the codes below if the shutdown was caused by a fatal error:
+ * `UNABLE_TO_CREATE_PIPE` if the pipe where the Controller receives
  * responses from children could not be created and opened,
  * `UNABLE_TO_SET_SIGHANDLER` if a signal handler could not be set,
  * `UNABLE_TO_RESTORE_STDERR` if it was impossible to restore `stderr` after failing to redirect it,
