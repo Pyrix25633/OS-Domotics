@@ -1115,13 +1115,7 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
 
 error_code_t shutdown_devices(device_id_t parent_id, bool complete) {
     // About to shutdown, mutex not used to read data as it may be locked and/or not working
-    routing_data_t *device;
-    if(complete) {
-        device = find_all_routing_data(routing_table, parent_id, NULL);
-    }
-    else {
-        device = find_direct_routing_data(routing_table, parent_id, NULL);
-    }
+    routing_data_t *device = find_all_routing_data(routing_table, parent_id, NULL);
     error_code_t error_code = OK;
     error_code_t tmp;
     while(device != NULL) {
