@@ -890,10 +890,10 @@ void format_info_user_message(response_t *response, char user_message[USER_MESSA
     else {
         char intermediate[RESPONSE_STATUS_SIZE];
         if(IS_BULB_LIKE(type)) {
-            snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s, max last time on: %um", state_string, time/60);
+            snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s, max last time on: %um", state_string, time);
         }
         else if(IS_WINDOW_LIKE(type)) {
-            snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s, max last time open: %um", state_string, time/60);
+            snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s, max last time open: %um", state_string, time);
         }
         else if(IS_FRIDGE_LIKE(type)) {
             snprintf(intermediate, RESPONSE_STATUS_SIZE, "state: %s, max last time open: %us", state_string, time);

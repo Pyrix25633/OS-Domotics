@@ -127,7 +127,7 @@ error_code_t execute_command(){
 
 void create_info_response(){
     response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[ON_SECONDS_ARGUMENT] = (state==STATE_OFF ? LAST_SECONDS_ON : CURRENT_SECONDS_ON);
+    response.arguments[ON_SECONDS_ARGUMENT] = (state==STATE_OFF ? LAST_SECONDS_ON : CURRENT_SECONDS_ON)/60;
     response.arguments_size = MAX_BULB_ARGUMENTS;
 }
 
