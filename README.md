@@ -16,7 +16,7 @@ The project uses two libraries:
 
 ### Targets
 
-The `Makefile` supports the following targets:
+The `Makefile` has to be launched from the `code` folder, it supports the following targets:
 - `build`, compiles the entire project;
 - `clean`, removes temporary files that may be left over in case of serious errors;
 - `run`, cleans, builds and then executes the Controller, which can then be used to create other devices.

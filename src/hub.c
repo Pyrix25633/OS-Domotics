@@ -149,7 +149,7 @@ bool execute_command_top_down(request_t *request, response_t *response){
     if(IS_INFO(code)){
         response->arguments_size = 2;
         response->arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
-        response->arguments[OPEN_SECONDS_ARGUMENT] = 0;
+        response->arguments[OPEN_TIME_ARGUMENT] = 0;
         return true;
     }
     if(IS_DELETE(code)){
@@ -399,8 +399,8 @@ void update_pending(pending_t *pending, response_t *response){
             pending->state = STATE_MANUAL_OVERRIDE;
         }
         //max time update
-        if(response->arguments[OPEN_SECONDS_ARGUMENT] > pending->max_time){
-            pending->max_time = response->arguments[OPEN_SECONDS_ARGUMENT];
+        if(response->arguments[OPEN_TIME_ARGUMENT] > pending->max_time){
+            pending->max_time = response->arguments[OPEN_TIME_ARGUMENT];
         }
     }
     //check for errors
@@ -556,7 +556,7 @@ void add_child(response_t *response){
 
 void info_response(response_t *response, pending_t *solved_response){
     response->arguments[STATE_ARGUMENT] = solved_response->state;
-    response->arguments[OPEN_SECONDS_ARGUMENT] = solved_response->max_time;
+    response->arguments[OPEN_TIME_ARGUMENT] = solved_response->max_time;
     response->arguments_size = 2;
     if(solved_response->has_error){
         response->arguments[ADDITIONAL_INFO_ARGUMENT] = CHILD_ERROR;

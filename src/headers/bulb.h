@@ -21,8 +21,8 @@
 // Macros - can be used instead of doing very small functions
 
 //current seconds on / duration of the last time it was on
-#define CURRENT_SECONDS_ON      time(NULL) - last_turned_on
-#define LAST_SECONDS_ON         last_turned_off - last_turned_on
+#define CURRENT_SECONDS_ON (time(NULL) - last_turned_on)
+#define LAST_SECONDS_ON    (last_turned_off - last_turned_on)
 
 /**
  * Main function of the Bulb Program

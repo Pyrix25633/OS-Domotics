@@ -21,8 +21,8 @@
 // Macros - can be used instead of doing very small functions
 
 //current seconds open
-#define CURRENT_SECONDS_OPEN    time(NULL) - last_opened
-#define LAST_SECONDS_OPEN       last_closed - last_opened
+#define CURRENT_SECONDS_OPEN (time(NULL) - last_opened)
+#define LAST_SECONDS_OPEN    (last_closed - last_opened)
 
 //no action switch command
 #define NO_ACTION_SWITCH_OPEN SWITCH_LABEL(request.command_code)==SWITCH_OPEN && SWITCH_POSITION(request.command_code)==POSITION_OFF

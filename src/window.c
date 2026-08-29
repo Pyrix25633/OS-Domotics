@@ -126,7 +126,7 @@ error_code_t execute_command(){
 
 void create_info_response(){
     response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[OPEN_SECONDS_ARGUMENT] = (state==STATE_CLOSED ? LAST_SECONDS_OPEN : CURRENT_SECONDS_OPEN)/60;
+    response.arguments[OPEN_TIME_ARGUMENT] = (state==STATE_CLOSED ? LAST_SECONDS_OPEN : CURRENT_SECONDS_OPEN)/60;
     response.arguments_size = MAX_WINDOW_ARGUMENTS;
 }
 

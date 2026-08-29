@@ -852,7 +852,7 @@ error_code_t update_with_delete_response(response_t *response) {
 
 void format_info_user_message(response_t *response, char user_message[USER_MESSAGE_SIZE], device_type_t type) {
     control_device_state_t state = response->arguments[STATE_ARGUMENT];
-    u_int16_t time = response->arguments[OPEN_SECONDS_ARGUMENT]; // Or `ON_SECONDS_ARGUMENT`
+    u_int16_t time = response->arguments[OPEN_TIME_ARGUMENT]; // Or `ON_TIME_ARGUMENT`
     char state_string[16];
     if(state == STATE_MANUAL_OVERRIDE) {
         strcpy(state_string, "manual override");
@@ -877,10 +877,10 @@ void format_info_user_message(response_t *response, char user_message[USER_MESSA
         }
     }
     if(IS_BULB(type)) {
-        snprintf(user_message, USER_MESSAGE_SIZE, "state: %s, last time on: %um", state_string, time/60);
+        snprintf(user_message, USER_MESSAGE_SIZE, "state: %s, last time on: %um", state_string, time);
     }
     else if(IS_WINDOW(type)) {
-        snprintf(user_message, USER_MESSAGE_SIZE, "state: %s, last time open: %um", state_string, time/60);
+        snprintf(user_message, USER_MESSAGE_SIZE, "state: %s, last time open: %um", state_string, time);
     }
     else if(IS_FRIDGE(type)) {
         snprintf(user_message, USER_MESSAGE_SIZE, "state: %s, last time open: %us, delay: %us, percentage: %u%%, thermostat: %u°C, temperature: %.1f°C",

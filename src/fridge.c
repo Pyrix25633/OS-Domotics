@@ -112,7 +112,7 @@ error_code_t read_pipe() {
 void create_info_response() {
     response.arguments_size = 6;
     response.arguments[STATE_ARGUMENT] = state;
-    response.arguments[OPEN_SECONDS_ARGUMENT] = (state == STATE_OPEN) ? (time(NULL) - last_opened) : (last_closed - last_opened);
+    response.arguments[OPEN_TIME_ARGUMENT] = (state == STATE_OPEN) ? (time(NULL) - last_opened) : (last_closed - last_opened);
     response.arguments[AUTOCLOSE_DELAY_ARGUMENT] = autoclose_delay;
     response.arguments[FILL_PERCENTAGE_ARGUMENT] = fill_percentage;
     response.arguments[THERMOSTAT_ARGUMENT] = thermostat;

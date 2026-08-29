@@ -92,8 +92,8 @@ typedef struct response_t {
 #define REGISTRY_ARGUMENT          0
 #define ADDITIONAL_SWITCH_ARGUMENT 0
 #define ADDITIONAL_DELETE_ARGUMENT 0
-#define OPEN_SECONDS_ARGUMENT      1
-#define ON_SECONDS_ARGUMENT        1
+#define OPEN_TIME_ARGUMENT         1
+#define ON_TIME_ARGUMENT           1
 #define DEVICE_TYPE_ARGUMENT       1
 #define AUTOCLOSE_DELAY_ARGUMENT   2
 #define BEGIN_ARGUMENT             2

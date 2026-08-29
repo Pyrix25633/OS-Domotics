@@ -646,7 +646,7 @@ void create_info_response(){
     }
     if(!has_child){
         response.arguments[STATE_ARGUMENT] = UNDEFINED_STATE;
-        response.arguments[ON_SECONDS_ARGUMENT] = 0;
+        response.arguments[ON_TIME_ARGUMENT] = 0;
         response.arguments[BEGIN_ARGUMENT] = begin;
         response.arguments[END_ARGUMENT] = end;
         response.arguments_size = MAX_TIMER_ARGUMENTS;
