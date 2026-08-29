@@ -375,7 +375,7 @@ void handle_shutdown(error_code_t error, bool in_responses_thread);
  * Sends `SIGTERM` to all devices that have the specified parent ID and their children, and cleans up their pipes
  * 
  * @param parent_id The parent ID
- * @param complete If also children should be removed from the routing table and their pipes should be cleaned up
+ * @param complete If also children should be removed from the routing table
  * 
  * @returns `UNABLE_TO_SEND_SIGNAL` if the `SIGTERM` signal could not be sent,
  * `UNABLE_TO_REMOVE_PIPE` if a pipe could not be removed and not because the file didn't exist,
