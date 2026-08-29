@@ -645,14 +645,14 @@ void output_response(response_t *response) {
         char type[ERROR_TYPE_SIZE];
         char info[ERROR_INFO_SIZE];
         set_error_type_info(response->response_code, type, info);
-        snprintf(response_status, RESPONSE_STATUS_SIZE, "failed, %s error: 0x%2x %s", type, response->response_code, info);
+        snprintf(response_status, RESPONSE_STATUS_SIZE, "failed, %s error: 0x%02x %s", type, response->response_code, info);
     }
     else {
         strcpy(response_status, "successful");
     }
     if(IS_SWITCH(code)) {
         char child_error[CHILD_ERROR_SIZE];
-        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_SWITCH_ARGUMENT]);
+        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%02x", response->arguments[ADDITIONAL_SWITCH_ARGUMENT]);
         snprintf(user_message, USER_MESSAGE_SIZE, "switch %s %s%s",
             SWITCH_LABEL(code) == SWITCH_POWER ? "power" : (SWITCH_LABEL(code) == SWITCH_OPEN ? "open" : "close"),
             SWITCH_POSITION(code) == POSITION_ON ? "on" : "off",
@@ -669,7 +669,7 @@ void output_response(response_t *response) {
     }
     else if(IS_DELETE(code)) {
         char child_error[CHILD_ERROR_SIZE];
-        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_DELETE_ARGUMENT]);
+        snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%02x", response->arguments[ADDITIONAL_DELETE_ARGUMENT]);
         snprintf(user_message, USER_MESSAGE_SIZE, "delete%s", response->arguments_size == 1 ? child_error : "");
     }
     else if(IS_LINK(code)) {
@@ -903,7 +903,7 @@ void format_info_user_message(response_t *response, char user_message[USER_MESSA
         }
         if(IS_HUB(type)) {
             char child_error[CHILD_ERROR_SIZE];
-            snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%2x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
+            snprintf(child_error, CHILD_ERROR_SIZE, ", child error 0x%02x", response->arguments[ADDITIONAL_INFO_ARGUMENT]);
             snprintf(user_message, USER_MESSAGE_SIZE, "%s%s", intermediate,
                 response->arguments_size == 3 ? child_error : "");
         }
@@ -1100,7 +1100,9 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
         error_code = tmp;
         print_error(STDERR_FILENO, error_code, id, "while cleaning up devices");
     }
-    if((remove(REGISTRY_FILE) < 0 || remove(TMP_REGISTRY_FILE) < 0) && errno != ENOENT) {
+    bool registry_remove_error = remove(REGISTRY_FILE) < 0 && errno != ENOENT;
+    bool tmp_remove_error = remove(TMP_REGISTRY_FILE) < 0 && errno != ENOENT;
+    if(registry_remove_error || tmp_remove_error) {
         error_code = UNABLE_TO_REMOVE_FILE;
         print_error(STDERR_FILENO, error_code, id, "while cleaning up registry files");
     }

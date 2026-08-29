@@ -29,7 +29,7 @@ void print_error(int fd, int error_code, int device_id, char *message) {
     if(error_code == UNABLE_TO_RESTORE_STDERR) {
         fd = STDOUT_FILENO;
     }
-    dprintf(fd, "%s error: 0x%2x %s%s, source: %s%s\n", type, error_code, info, code, source, msg);
+    dprintf(fd, "%s error: 0x%02x %s%s, source: %s%s\n", type, error_code, info, code, source, msg);
 }
 
 void set_error_type_info(error_code_t error_code, char type[ERROR_TYPE_SIZE], char info[ERROR_INFO_SIZE]) {

@@ -35,6 +35,7 @@ response_t response;
 
 int main(int argc, char *argv[]) {
     set_signal_handler(SIGTERM, sigterm_handler);
+    set_signal_handler(SIGINT, sigterm_handler);
     set_signal_handler(SIGPIPE, sigpipe_handler);
 
     id = get_id_from_arguments(argc, argv);
