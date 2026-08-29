@@ -1418,7 +1418,10 @@ ssize_t input(char *buffer, size_t size) {
     ssize_t n;
     if(redirect) {
         n = wgetnstr(input_win, buffer, size);
-        return n != 0 ? -UNABLE_TO_READ_FILE : 0;
+        if(n == -1) {
+            return EOF;
+        }
+        return n != 0 ? -UNABLE_TO_READ_FILE : (ssize_t)strlen(buffer);
     }
     else {
         size_t i = 0;
