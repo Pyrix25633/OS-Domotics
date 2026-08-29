@@ -1128,19 +1128,11 @@ error_code_t shutdown_devices(device_id_t parent_id, bool complete) {
             error_code = UNABLE_TO_SEND_SIGNAL;
         }
 
-        if(device->parent_id == id) {
-            close(device->next_hop_fd); // Not checking for errors, could be already closed
+        tmp = end_child_device_fifos(device);
+        if(IS_ERROR(tmp)) {
+            error_code = tmp;
         }
-        if(complete) {
-            tmp = end_child_device_fifos(device);
-            if(IS_ERROR(tmp)) {
-                error_code = tmp;
-            }
-            device = find_all_routing_data(routing_table, parent_id, device);
-        }
-        else {
-            device = find_direct_routing_data(routing_table, parent_id, device);
-        }
+        device = find_all_routing_data(routing_table, parent_id, device);
     }
     if(!complete) {
         return error_code;
@@ -1242,7 +1234,7 @@ void* sigchld_routine(void *arg) {
                 routing_data_t *parent = find_routing_data(routing_table, current->parent_id);
                 if(parent != NULL) { // Check that the parent has not crashed before notifying
                     tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
-                    if(IS_ERROR(tmp)) {
+                    if(IS_ERROR(tmp) && !force_exit) { // If it's exiting than some devices are already been terminated
                         error_code = tmp;
                         print_error(STDERR_FILENO, error_code, id, "while notifying parent of dead device");
                     }
