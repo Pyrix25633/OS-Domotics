@@ -37,7 +37,7 @@
  * `UNABLE_TO_OPEN_PIPE` if the IPC pipes could not be opened,
  * `UNABLE_TO_CLOSE_PIPE` if the IPC pipes could not be closed,
  * `UNABLE_TO_SET_SIGHANDLER` if a signal handler could not be set,
- * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM`,
+ * `UNEXPECTED_SHUTDOWN` if it received `SIGTERM` or `SIGINT`,
  * `UNEXPECTED_END_OF_FILE` if the pipe was closed by the parent,
  * `BROKEN_PIPE` if it received `SIGPIPE`,
  * `OK` otherwise
