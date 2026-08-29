@@ -227,7 +227,7 @@ void delete_response(response_t *response, pending_t *solved_response);
 void* bottom_up_handler(void* arg);
 
 /**
- * Handles the shutdown caused by a `SIGTERM` signal
+ * Handles the shutdown caused by a `SIGTERM` or `SIGINT` signal
  * @param sig_num Signal number, unused
  */
 void sigterm_handler(int sig_num);

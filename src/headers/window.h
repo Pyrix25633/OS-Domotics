@@ -52,7 +52,7 @@ int main(int argc, char *argv[]);
 void handle_shutdown(error_code_t error);
 
 /**
- * Handles the shutdown caused by a `SIGTERM` signal
+ * Handles the shutdown caused by a `SIGTERM` or `SIGINT` signal
  * @param sig_num Signal number, unused
  */
 void sigterm_handler(int sig_num);
