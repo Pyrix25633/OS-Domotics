@@ -1227,7 +1227,7 @@ void* sigchld_routine(void *arg) {
             char device_type[DEVICE_TYPE_SIZE];
             format_device_type(current->type, device_type);
             if(WIFEXITED(exit_code)) {
-                output("# %s with ID %u exited with error code: 0x%2x", device_type, current->id, WEXITSTATUS(exit_code));
+                output("# %s with ID %u exited with error code: 0x%02x", device_type, current->id, WEXITSTATUS(exit_code));
             }
             else {
                 output("# %s with ID %u crashed", device_type, current->id);
