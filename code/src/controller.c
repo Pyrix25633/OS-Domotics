@@ -1069,6 +1069,7 @@ void handle_shutdown(error_code_t error, bool in_responses_thread) {
     if(atomic_flag_test_and_set(&handle_shutdown_called)) { // Already exiting, prevent deadlock
         return;
     }
+    force_exit = true; // Not set in all cases when handle_shutdown is called, but it's used as a flag sometimes
     error_code_t error_code = OK;
     error_code_t tmp = end_responses_fifo();
     if(IS_ERROR(tmp)) {
@@ -1182,6 +1183,10 @@ void sigchld_handler(int sig_num) {
 void* sigchld_routine(void *arg) {
     (void)arg; // Unused parameter
 
+    if(force_exit) { // The shutdown procedure is already terminating the devices and cleaning up
+        pthread_exit(NULL);
+    }
+
     if(pthread_mutex_lock(&data_mutex) != 0) {
         print_error(STDERR_FILENO, UNABLE_TO_LOCK_MUTEX, id, "acquiring mutex to handle SIGCHLD");
         pthread_exit(NULL);
@@ -1234,7 +1239,7 @@ void* sigchld_routine(void *arg) {
                 routing_data_t *parent = find_routing_data(routing_table, current->parent_id);
                 if(parent != NULL) { // Check that the parent has not crashed before notifying
                     tmp = write_pipe(&request, request_buffer, MAX_REQUEST_SIZE, current->next_hop_fd);
-                    if(IS_ERROR(tmp) && !force_exit) { // If it's exiting than some devices are already been terminated
+                    if(IS_ERROR(tmp) && !force_exit) { // If it's exiting then some devices have already been terminated
                         error_code = tmp;
                         print_error(STDERR_FILENO, error_code, id, "while notifying parent of dead device");
                     }
