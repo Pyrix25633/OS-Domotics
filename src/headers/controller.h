@@ -384,7 +384,7 @@ void handle_shutdown(error_code_t error, bool in_responses_thread);
 error_code_t shutdown_devices(device_id_t parent_id, bool complete);
 
 /**
- * Handles the shutdown caused by a `SIGTERM` signal
+ * Handles the shutdown caused by a `SIGTERM` or `SIGINT` signal
  * 
  * @param sig_num Signal number, unused
  */
